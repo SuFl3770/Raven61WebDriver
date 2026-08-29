@@ -136,3 +136,28 @@ pre.dump { font-family: var(--mono); font-size: 12px; background: var(--bg); bor
 .log .in { color: var(--ok); }
 .log .feature-set, .log .feature-get { color: var(--warn); }
 .log .note { color: var(--fg-dim); font-style: italic; }
+
+/* --- build identity ------------------------------------------------------ */
+.version-badge {
+  position: fixed;
+  right: 10px;
+  bottom: 8px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-1);
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  backdrop-filter: blur(4px);
+  font-size: 11px;
+  color: var(--fg-dim);
+  /* Interactive so the tooltip works; it covers only its own corner. */
+  user-select: text;
+}
+.version-badge:hover { color: var(--fg); border-color: var(--accent); }
+.version-badge .dot { width: 6px; height: 6px; }
+.version-badge.stable .dot { background: var(--ok); }
+.version-badge.nightly .dot { background: var(--warn); }
