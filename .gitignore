@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vite/
+*.local
+captures/
+
+# Stock driver, kept locally for reverse engineering — not ours to redistribute.
+Raven Driver/

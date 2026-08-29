@@ -1,0 +1,26 @@
+{
+  "name": "raven61-web-driver",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Web driver for the Raven61 hall-effect keyboard (WebHID): device connection and live key-depth monitoring",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/w3c-web-hid": "^1.0.6",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.7.3",
+    "vite": "^6.3.5"
+  }
+}
