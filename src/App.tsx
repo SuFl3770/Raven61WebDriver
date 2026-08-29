@@ -1,6 +1,14 @@
 import { useState, type ReactNode } from 'react'
+import { Actuation } from './features/Actuation'
+import { Keymap } from './features/Keymap'
 import { Monitor } from './features/Monitor'
+import { RapidTrigger } from './features/RapidTrigger'
 import { DevicePanel } from './tools/DevicePanel'
+import { Events } from './tools/Events'
+import { HidExplorer } from './tools/HidExplorer'
+import { Prober } from './tools/Prober'
+import { ReportConsole } from './tools/ReportConsole'
+import { TrafficLogView } from './tools/TrafficLogView'
 import { useCodec, useCodecAutoSelect, useConnection } from './state/link'
 
 interface Tab {
@@ -11,7 +19,15 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'device', label: '장치', render: () => <DevicePanel /> },
+  { id: 'actuation', label: '액추에이션', render: () => <Actuation /> },
+  { id: 'rt', label: '래피드 트리거', render: () => <RapidTrigger /> },
   { id: 'monitor', label: '모니터', render: () => <Monitor /> },
+  { id: 'keymap', label: '키맵', render: () => <Keymap /> },
+  { id: 'explorer', label: '탐색기', render: () => <HidExplorer /> },
+  { id: 'console', label: '콘솔', render: () => <ReportConsole /> },
+  { id: 'prober', label: '프로버', render: () => <Prober /> },
+  { id: 'events', label: '이벤트', render: () => <Events /> },
+  { id: 'log', label: '로그', render: () => <TrafficLogView /> },
 ]
 
 export default function App() {
@@ -35,7 +51,12 @@ export default function App() {
 
       <nav className="tabs" role="tablist">
         {TABS.map((t) => (
-          <button key={t.id} role="tab" aria-selected={t.id === active} onClick={() => setActive(t.id)}>
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={t.id === active}
+            onClick={() => setActive(t.id)}
+          >
             {t.label}
           </button>
         ))}

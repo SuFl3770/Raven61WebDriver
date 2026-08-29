@@ -3,12 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Web driver for the Raven61 hall-effect keyboard (WebHID): device connection and live key-depth monitoring",
+  "description": "Web driver / configurator for the Raven61 hall-effect keyboard (WebHID)",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "pcap": "node tools/pcap/extract.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",

@@ -1,0 +1,230 @@
+# Raven61 프로토콜 리버스 엔지니어링 절차
+
+순정 윈도우 드라이버(`Raven Driver.exe`, 32비트 MFC C++)가 보드와 주고받는 통신을 복원하는
+과정입니다. 결과를 `src/protocol/` 아래 코덱으로 옮기면 웹 드라이버의 기능 패널이 자동으로
+활성화됩니다.
+
+이미 밝혀진 내용은 [protocol.md](./protocol.md) 에 있습니다. 요약:
+
+- 장치: **VID `0x19F5`**, PID `FE20` / `FED0` / `FEB1`, USB 인터페이스 **MI_01**
+- 통신: **OUTPUT / INPUT 리포트** (`WriteFile` / `ReadFile`), 65바이트 버퍼, 리포트 ID 0
+- 프레임: `payload[0]=0x55` 매직, `[1]` 명령, `[3]` 체크섬, `[4..63]` 데이터, ACK `0xAA`
+- 명령 13종. `0x01` 시작 -> 작업 -> `0x02` 종료·적용
+- 키 주소: `layouts/Raven61.xml` 의 `key_index`
+- 값 인코딩: 1 카운트 = 0.02 mm
+- 설정 모델: SQLite `t_key_perf_data` 스키마 그대로
+
+남은 것은 **명령별 데이터 배치**뿐입니다.
+
+> 자기 소유 기기의 상호운용성 확보를 위한 분석입니다. 순정 드라이버를 재배포하거나 그 코드를
+> 그대로 옮기지 말고, 관찰된 프로토콜만 독립적으로 구현하세요. 순정 드라이버 폴더는
+> `.gitignore` 에 넣어 두었습니다.
+
+---
+
+## 캡처가 안 될 때 - 먼저 이걸 확인하세요
+
+이 저장소의 이전 판은 **틀린 지침**을 담고 있었습니다. 그대로 따라 하면 아무것도 잡히지
+않습니다:
+
+| 틀린 지침 | 실제 |
+|-----------|------|
+| `HidD_SetFeature` 를 후킹하라 | 그 함수는 **호출되지 않습니다**. `GetProcAddress` 로 주소만 받아 두고 씁니다 |
+| 컨트롤 전송(`usb.transfer_type == 0x02`)을 필터하라 | 설정 통신은 **인터럽트 전송**입니다 |
+| FEATURE 리포트를 보라 | **OUTPUT / INPUT 리포트**입니다 |
+
+올바른 대상은 HID 장치 핸들에 대한 **`WriteFile` / `ReadFile`** 이고, USB 레벨에서는
+**인터럽트 전송**입니다.
+
+```
+usb.device_address == 5 && usb.transfer_type == 0x01 && usb.capdata
+```
+
+웹 드라이버로 접속할 때는 **순정 드라이버를 종료**해 두세요.
+
+---
+
+## 0. 시작 전 백업
+
+프로버나 콘솔로 미지의 명령을 보내기 전에 **순정 드라이버에서 현재 설정을 프로파일로
+내보내 두세요.** 이 보드는 펌웨어 업그레이드 후 키 캘리브레이션이 필요하다고 순정
+드라이버가 안내합니다 — 캘리브레이션 데이터를 건드리는 명령이 존재한다는 뜻이고, 그걸
+잘못 밟으면 스트로크 정확도가 깨집니다. 되돌릴 수단 없이 스윕을 돌리지 마세요.
+
+---
+
+## 1. 순정 드라이버 DB — 이미 끝난 단계
+
+순정 드라이버는 설정을 `<device>_datav6.db` SQLite 파일에 그대로 저장합니다. 이 방법으로
+값 인코딩과 설정 모델은 **이미 확정**되었습니다 ([protocol.md](./protocol.md) §4, §7):
+
+- 1 카운트 = **0.02 mm** (1.0mm→50, 2.0mm→100, 기본 1.5mm→75)
+- DB의 `key_code` 는 `key_index` 가 아니라 **HID usage**
+- 프로파일 3개, 레이어 4개, `key_mode` 0=일반 / 1=RT
+
+같은 방법을 다른 설정에도 쓸 수 있습니다. 순정 드라이버에서 **한 가지만** 바꿔 저장한 뒤:
+
+```bash
+python tools/db/extract.py before.db --diff after.db
+```
+
+바뀐 필드가 도메인 용어로 바로 나옵니다. 새 DB를 JSON으로 뽑으려면:
+
+```bash
+python tools/db/extract.py "Raven61 HE_datav6.db" > profile.json
+```
+
+아직 DB로 확인하지 않은 것: 고급 키(DKS/MT/TGL/RS/SOCD/OKS) 저장 형식,
+`perf_tachyon_mode` 와 `perf_sensitivity_mode` 의 의미, `fn_layer` 101 의 역할.
+
+---
+
+## 2. 명령 바이트 관찰
+
+프레임은 이미 알고 있으므로 남은 건 각 명령의 데이터 배치입니다. 난이도 순:
+
+### 방법 A - 보드에 직접 물어보기 (캡처 불필요, 권장)
+
+프레임을 알기 때문에 웹 드라이버가 **유효한 패킷**을 만들 수 있습니다. 체크섬이 맞는
+패킷만 보드가 응답하므로, 예전의 맹목적 스윕과 달리 실제로 답이 옵니다.
+
+1. 순정 드라이버를 완전히 종료
+2. 웹 드라이버 **장치** 탭 -> `Raven 계열 (VID 0x19F5)` 로 연결
+3. **프로버** 탭 -> 모드 `Raven61 프레임`, "순정이 실제로 보내는 13개 명령만 시도" 체크
+4. 어떤 명령이 ACK(`0xAA`)를 돌려주는지, 응답 본문에 무엇이 실려 오는지 확인
+
+읽기 명령을 찾으면 응답에서 **이미 아는 값**을 찾으면 됩니다: 액추에이션 75(1.5mm),
+RT 5/5, 하단 데드존 10 같은 바이트가 61개 키 분량으로 늘어선 곳이 성능 설정 블록입니다.
+`python tools/db/extract.py <DB>` 로 현재 보드 설정을 뽑아 두고 대조하세요.
+
+### 방법 B - Frida (가장 쉬운 런타임 관찰)
+
+USBPcap 이나 API Monitor 설정이 까다로우면 이쪽이 훨씬 간단합니다.
+
+```bash
+pip install frida-tools
+frida -f "Raven Driver.exe" -l tools/frida/trace-hid.js
+```
+
+`tools/frida/trace-hid.js` 가 `WriteFile` / `ReadFile` 을 후킹해 65바이트 버퍼를 hex 로
+찍어 줍니다.
+
+### 방법 C - USBPcap / Wireshark
+
+1. Wireshark 설치 시 **USBPcap** 체크, 재부팅
+2. 관리자 권한으로 실행, 키보드가 붙은 `USBPcapN` 인터페이스 선택
+3. 표시 필터 - **인터럽트** 전송:
+
+```
+usb.device_address == 5 && usb.transfer_type == 0x01 && usb.capdata
+```
+
+키 입력 자체도 인터럽트 IN 으로 오므로, OUT 만 보려면
+`usb.endpoint_address.direction == 0` 을 더하세요.
+
+## 3. 한 번에 하나씩 — 단일 변수 캡처
+
+**한 캡처에서 딱 한 가지만 바꾸세요.** 각 캡처는 시작 → 변경 하나 + 저장 → 정지 →
+이름 붙여 저장(`a-esc-actuation-1.0mm.pcapng`).
+
+| # | 캡처 | 알아내는 것 |
+|---|------|-------------|
+| 0 | 드라이버를 켜기만 하고 아무것도 안 함 | 핸드셰이크 / 설정 읽기 명령 |
+| 1 | Esc 액추에이션 = 1.0mm 저장 | 성능 설정 쓰기 명령의 뼈대 |
+| 2 | Esc 액추에이션 = 2.0mm 저장 | **값** 바이트 위치 — 50 → 100 이 보이면 그 자리 |
+| 3 | A 키 액추에이션 = 1.0mm 저장 | **키 주소** 바이트와 그 체계 — 아래 참고 |
+| 4 | Esc 래피드 트리거 ON | `key_mode` 플래그 위치 |
+| 5 | Esc 데드존 ON, 위 0.2 / 아래 0.3 | 데드존 3개 필드 위치 |
+| 6 | Esc 키맵을 F1 으로 변경 | 키맵 명령 + 키코드 표현 |
+| 7 | "Save" 버튼만 누름 | 플래시 저장이 별도 명령인지 |
+| 8 | 자석축 테스트 화면을 연다 | 아날로그 스트리밍 채널 |
+
+캡처 3이 특히 강력합니다. 명령이 키를 **HID usage** 로 지정하는지 **`key_index`** 로
+지정하는지가 여기서 갈립니다:
+
+| 키 | HID usage | `key_index` |
+|----|-----------|-------------|
+| Esc | 41 (`0x29`) | 16 (`0x10`) |
+| A | 4 (`0x04`) | 49 (`0x31`) |
+
+캡처 1과 3에서 바뀐 바이트가 `29 → 04` 면 usage, `10 → 31` 이면 `key_index` 입니다.
+순정 드라이버의 DB는 usage 를 쓰지만 그건 내부 모델일 뿐이라, 실제 명령은 확인해야 합니다.
+
+캡처 2에서는 값 바이트가 `32 → 64` (50 → 100) 로 보여야 합니다. 이미 스케일을 알고 있으니
+어느 바이트가 값인지 눈으로 바로 짚을 수 있습니다.
+
+### 비교 도구
+
+`tools/pcap/extract.mjs` 가 캡처를 웹 드라이버 로그와 같은 형식으로 바꿔 줍니다.
+
+```bash
+node tools/pcap/extract.mjs --diff captures/a-esc-1.0.json captures/b-esc-2.0.json
+```
+
+`.pcapng` 를 바로 넘기면 `tshark` 를 자동 호출합니다. PATH에 없으면
+`C:\Program Files\Wireshark` 를 추가하세요.
+
+## 4. 체크섬 - 이미 확정
+
+`payload[3] = sum(payload[4..63]) & 0xFF`. `src/protocol/frame.ts` 의 `buildPacket` 이
+자동으로 붙여 줍니다. 별도 확인 작업은 필요 없습니다.
+
+## 5. 웹 드라이버로 재현
+
+1. **장치** 탭 - 프리셋 `Raven 계열 (VID 0x19F5)` 로 연결합니다.
+2. **탐색기** 탭 - OUTPUT / INPUT 리포트의 ID와 길이를 확인합니다. 순정 드라이버 기준
+   65바이트(리포트 ID 포함)여야 합니다.
+3. **프로버** 탭 - 모드 `Raven61 프레임`. 체크섬이 자동으로 붙습니다.
+4. **콘솔** 탭 - 특정 바이트열을 직접 시험할 때. 체크섬은 직접 맞춰야 합니다.
+5. **로그** 탭 - 두 줄을 클릭해 A/B로 찍으면 바이트 차이를 짚어 줍니다.
+
+## 6. 코덱으로 옮기기
+
+`src/protocol/unknown.ts` 를 본떠 새 파일을 만들고 `src/protocol/registry.ts` 의
+`CODECS` 배열 **맨 앞**에 넣습니다. 구현한 메서드만큼 UI 패널이 켜집니다.
+
+```ts
+export const raven61V1: Raven61Codec = {
+  id: 'raven61-v1',
+  label: 'Raven61 v1',
+  confidence: 'partial',
+  async probe(link) { /* 식별 명령을 보내고 기대한 응답인지 확인 */ },
+  async readKeyConfigs(link) { /* … */ },
+}
+```
+
+`probe` 는 **부작용이 없어야** 합니다 — 연결할 때마다 자동으로 호출됩니다.
+
+---
+
+## 바이너리를 더 파야 할 때
+
+`Raven Driver.exe` 는 패킹되어 있지 않은 **32비트(PE32/x86) MFC C++** 실행 파일 1.8MB 입니다.
+같은 폴더의 `DeviceDriver.exe` 는 바이트 단위로 동일한 사본입니다.
+
+- 문자열: UTF-16 과 ASCII 양쪽에 있습니다. SQL, 장치 ID, UI 문구가 여기서 나왔습니다.
+- 정적 분석 도구가 `tools/bin/` 에 있습니다. `pe.py` 는 의존성 없는 PE32 리더,
+  `commands.py` 는 명령 표 추출기입니다:
+
+  ```bash
+  pip install capstone
+  python tools/bin/commands.py "<순정 드라이버>/Raven Driver.exe"
+  ```
+
+  원리: 모든 명령이 하나의 송수신 헬퍼(`0x45a940`)를 거치고, 각 호출자가 스택 지역에
+  65바이트 패킷을 만들면서 헤더를 즉시값으로 씁니다. 호출자를 디스어셈블해 그 지역에
+  들어가는 `mov byte/word/dword [ebp-N], imm` 을 모으면 헤더가 복원됩니다.
+- 더 깊이 보려면 [Ghidra](https://ghidra-sre.org/) 로 열고 `0x45a940` 의 호출자를
+  따라가세요. 데이터 영역을 채우는 코드가 곧 명령 인코더입니다.
+- `mui.dll` 은 리소스 DLL, `CH375DLL.DLL` / `driver/CH372DRV.EXE` 는 WCH USB 브리지로
+  펌웨어 업그레이드 경로로 추정됩니다.
+
+## 이미 끝난 작업
+
+- **키 매트릭스 매핑** — `layouts/Raven61.xml` 의 `key_index` 로 해결. 61개 키를 하나씩
+  캡처할 필요가 없습니다. `tools/layout/from-vendor-xml.mjs` 로 재생성합니다.
+- **값 인코딩** — 순정 DB 두 개를 비교해 1 카운트 = 0.02 mm 확정.
+  `src/protocol/encoding.ts` 에 반영, `tools/db/extract.py` 로 재확인 가능합니다.
+- **설정 모델 전체** - 키별 필드, 전역 설정, 프로파일·레이어 구조.
+- **전송 방식과 패킷 프레임** - 바이너리 정적 분석으로 확정. 캡처 없이 나왔습니다.
+  `src/protocol/frame.ts` 에 구현, `tools/bin/commands.py` 로 재현 가능합니다.

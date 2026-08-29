@@ -6,3 +6,7 @@ captures/
 
 # Stock driver, kept locally for reverse engineering — not ours to redistribute.
 Raven Driver/
+
+# Python bytecode from the analysis tools.
+__pycache__/
+*.pyc
