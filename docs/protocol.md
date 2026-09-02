@@ -4,7 +4,8 @@
 출처 표기: `[bin]` 순정 드라이버 바이너리, `[xml]` 순정 드라이버 데이터 파일,
 `[hw]` 실제 장치에서 확인, `[cap]` USB 캡처, `[db]` 순정 드라이버 SQLite DB.
 
-절차는 [reverse-engineering.md](./reverse-engineering.md) 참고.
+절차는 [reverse-engineering.md](./reverse-engineering.md), 각 사실을 어떻게 알아냈고
+무엇이 틀렸었는지는 [findings.md](./findings.md) 참고.
 
 ---
 

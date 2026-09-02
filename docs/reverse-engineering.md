@@ -1,5 +1,8 @@
 # Raven61 프로토콜 리버스 엔지니어링 절차
 
+알아낸 사실은 [protocol.md](./protocol.md), 그 도출 과정과 실패 기록은
+[findings.md](./findings.md).
+
 순정 윈도우 드라이버(`Raven Driver.exe`, 32비트 MFC C++)가 보드와 주고받는 통신을 복원하는
 과정입니다. 결과를 `src/protocol/` 아래 코덱으로 옮기면 웹 드라이버의 기능 패널이 자동으로
 활성화됩니다.

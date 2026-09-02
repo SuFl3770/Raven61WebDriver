@@ -62,6 +62,7 @@ WebHID를 지원하지 않습니다.
 
 - 캡처 절차와 방법론: [docs/reverse-engineering.md](docs/reverse-engineering.md)
 - 알아낸 내용 기록: [docs/protocol.md](docs/protocol.md)
+- 추론 과정·증거 등급·틀렸던 결론: [docs/findings.md](docs/findings.md)
 - 명령 표 추출 (정적 분석): `python tools/bin/commands.py "<순정 드라이버>/Raven Driver.exe"`
 - 순정 DB 읽기/비교: `python tools/db/extract.py a.db --diff b.db`
 - 런타임 추적: `frida -f "Raven Driver.exe" -l tools/frida/trace-hid.js`
