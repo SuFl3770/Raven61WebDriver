@@ -1,4 +1,15 @@
 /**
+ * FALLBACK ONLY. Modifier identification no longer needs this.
+ *
+ * The events do name every key after all: `payload[2]` carries the HID modifier
+ * bitmask, and the stock driver resolves the eight unnamed keys from it
+ * (0x426050 — see docs/protocol.md §3.2). `parseKeyEvent` now does the same, so
+ * `usageIsReal` is true for all 61 keys and nothing below is consulted.
+ *
+ * It is kept because it costs nothing and covers a board that leaves
+ * `payload[2]` at zero. Do not extend it: both fields it matches on are
+ * calibration outputs, and a stale entry resolves to the *wrong* key.
+ *
  * Identities for the keys whose analog events do not name themselves.
  *
  * The board reports each key's HID usage in `payload[3]`, except for the seven

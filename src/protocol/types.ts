@@ -82,6 +82,8 @@ export interface KeySample {
   sensorId: number
   adcBaseline: number
   usageIsReal: boolean
+  /** False for reports that cannot name a key at all — see KeyEvent. */
+  identifiable: boolean
   /** 0.0 (released) … travelMm (bottomed out). */
   depthMm: number
   /** Unscaled sensor value, kept for calibration work. */

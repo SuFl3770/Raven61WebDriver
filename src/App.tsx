@@ -1,15 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import { Actuation } from './features/Actuation'
+import { InputPoint } from './features/InputPoint'
 import { Keymap } from './features/Keymap'
-import { Monitor } from './features/Monitor'
-import { RapidTrigger } from './features/RapidTrigger'
+import { Settings } from './features/Settings'
+import { Debug } from './tools/Debug'
 import { DevicePanel } from './tools/DevicePanel'
-import { Events } from './tools/Events'
-import { HidExplorer } from './tools/HidExplorer'
-import { Prober } from './tools/Prober'
-import { ReportConsole } from './tools/ReportConsole'
-import { TrafficLogView } from './tools/TrafficLogView'
+import { Sensors } from './tools/Sensors'
 import { useCodec, useCodecAutoSelect, useConnection } from './state/link'
+import { useSettings } from './state/settings'
 
 interface Tab {
   id: string
@@ -19,23 +16,25 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'device', label: '장치', render: () => <DevicePanel /> },
-  { id: 'actuation', label: '액추에이션', render: () => <Actuation /> },
-  { id: 'rt', label: '래피드 트리거', render: () => <RapidTrigger /> },
-  { id: 'monitor', label: '모니터', render: () => <Monitor /> },
+  { id: 'input', label: '입력 지점', render: () => <InputPoint /> },
+  { id: 'sensors', label: '센서', render: () => <Sensors /> },
   { id: 'keymap', label: '키맵', render: () => <Keymap /> },
-  { id: 'explorer', label: '탐색기', render: () => <HidExplorer /> },
-  { id: 'console', label: '콘솔', render: () => <ReportConsole /> },
-  { id: 'prober', label: '프로버', render: () => <Prober /> },
-  { id: 'events', label: '이벤트', render: () => <Events /> },
-  { id: 'log', label: '로그', render: () => <TrafficLogView /> },
+  { id: 'settings', label: '설정', render: () => <Settings /> },
 ]
+
+/** Shown only with debug mode on — see state/settings.ts. */
+const DEBUG_TAB: Tab = { id: 'debug', label: '디버그', render: () => <Debug /> }
 
 export default function App() {
   useCodecAutoSelect()
   const [active, setActive] = useState('device')
   const { device, connected } = useConnection()
+  const { debug } = useSettings()
   const codec = useCodec()
-  const tab = TABS.find((t) => t.id === active) ?? TABS[0]!
+  const tabs = debug ? [...TABS, DEBUG_TAB] : TABS
+  // Turning debug mode off while its tab is open falls back to the first tab
+  // rather than rendering nothing.
+  const tab = tabs.find((t) => t.id === active) ?? tabs[0]!
 
   return (
     <div className="app">
@@ -50,7 +49,7 @@ export default function App() {
       </header>
 
       <nav className="tabs" role="tablist">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"

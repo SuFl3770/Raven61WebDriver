@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FILTER_PRESETS, describeDevice, scoreDevice } from '../hid/filters'
+import { FILTER_PRESETS, describeDevice, pickConfigInterface, rankDevice } from '../hid/filters'
 import { HidLink } from '../hid/link'
 import { isVendorPage } from '../hid/reportInfo'
 import { Notice, Panel } from '../ui/Panel'
@@ -41,6 +41,13 @@ export function DevicePanel() {
   }
 
   const preset = FILTER_PRESETS.find((p) => p.id === presetId)!
+  const ranked = known
+    .map((d) => ({ d, rank: rankDevice(d) }))
+    .sort((a, b) => b.rank.score - a.rank.score)
+  const recommended = ranked[0]?.d ?? null
+  // Opening the typing interface looks like a successful connection but no
+  // analog events ever arrive, so say so instead of leaving the monitor blank.
+  const wrongInterface = connected && recommended !== null && device !== recommended
 
   return (
     <Panel title="장치">
@@ -52,7 +59,7 @@ export function DevicePanel() {
             </option>
           ))}
         </select>
-        <button className="primary" onClick={run(() => link.pickDevice(preset.filters))}>
+        <button className="primary" onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
           장치 선택…
         </button>
         <button onClick={run(() => link.close())} disabled={!connected}>
@@ -74,6 +81,15 @@ export function DevicePanel() {
         </div>
       )}
 
+      {wrongInterface && (
+        <div style={{ marginTop: 10 }}>
+          <Notice kind="warn">
+            지금 열린 인터페이스는 설정 채널이 아닌 것으로 보입니다. 아래 목록에서 <b>권장</b> 표시가 붙은
+            것을 열어야 모니터에 키 깊이가 들어옵니다.
+          </Notice>
+        </div>
+      )}
+
       {device && (
         <div style={{ marginTop: 12 }} className="small">
           <div className="mono">{describeDevice(device)}</div>
@@ -87,36 +103,42 @@ export function DevicePanel() {
       {known.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div className="small dim" style={{ marginBottom: 6 }}>
-            이미 권한을 허용한 장치 (점수가 높을수록 설정용 인터페이스일 가능성이 큼)
+            이미 권한을 허용한 인터페이스. 키보드 하나가 여러 개로 나뉘어 보이는 것이 정상이며,
+            설정·모니터가 흐르는 것은 그중 하나뿐입니다 — 점수가 가장 높은 <b>권장</b> 인터페이스입니다.
           </div>
           <table>
             <thead>
               <tr>
-                <th>장치</th>
+                <th>인터페이스</th>
                 <th style={{ width: 70 }}>점수</th>
+                <th>근거</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
             <tbody>
-              {[...known]
-                .sort((a, b) => scoreDevice(b) - scoreDevice(a))
-                .map((d, i) => (
-                  <tr key={`${d.vendorId}-${d.productId}-${i}`}>
-                    <td className="mono">{describeDevice(d)}</td>
-                    <td>{scoreDevice(d)}</td>
-                    <td>
-                      <button
-                        onClick={run(async () => {
-                          await link.open(d)
-                          await refreshCodec()
-                        })}
-                        disabled={d === device && connected}
-                      >
-                        {d === device && connected ? '사용 중' : '열기'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+              {ranked.map(({ d, rank }, i) => (
+                <tr key={`${d.vendorId}-${d.productId}-${i}`}>
+                  <td className="mono">
+                    {describeDevice(d)}
+                    {d === recommended && (
+                      <span className="small" style={{ color: 'var(--accent)' }}> ← 권장</span>
+                    )}
+                  </td>
+                  <td>{rank.score}</td>
+                  <td className="small dim">{rank.reasons.join(', ') || '—'}</td>
+                  <td>
+                    <button
+                      onClick={run(async () => {
+                        await link.open(d)
+                        await refreshCodec()
+                      })}
+                      disabled={d === device && connected}
+                    >
+                      {d === device && connected ? '사용 중' : '열기'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

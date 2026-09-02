@@ -1,4 +1,5 @@
-import { isVendorPage } from './reportInfo'
+import { PAYLOAD_LENGTH } from '../protocol/frame'
+import { inputReports, isVendorPage, outputReports } from './reportInfo'
 
 /**
  * Device ids recovered from the stock driver binary. It matches devices by the
@@ -49,22 +50,110 @@ export function isRavenDevice(device: HIDDevice): boolean {
 }
 
 /**
- * Heuristic ranking for "which of these interfaces is the configurator
- * channel". A known Raven id wins outright; otherwise a vendor-defined
- * collection carrying feature reports is the best guess, since the stock
- * driver talks over HidD_SetFeature / HidD_GetFeature.
+ * How a candidate interface scored, and why.
+ *
+ * A composite keyboard exposes several HID interfaces under the same VID/PID,
+ * and only one of them carries the configurator channel. `requestDevice`
+ * returns all of them at once, so something has to choose — and it cannot be
+ * "the first one", which on this board is the plain keyboard interface.
  */
-export function scoreDevice(device: HIDDevice): number {
-  let score = isRavenDevice(device) ? 100 : 0
-  if (score > 0 && (RAVEN_PRODUCT_IDS as readonly number[]).includes(device.productId)) score += 50
-  for (const c of device.collections) {
-    if (!isVendorPage(c.usagePage ?? 0)) continue
-    score += 10
-    if ((c.featureReports?.length ?? 0) > 0) score += 8
-    if ((c.inputReports?.length ?? 0) > 0) score += 5
-    if ((c.outputReports?.length ?? 0) > 0) score += 5
+export interface DeviceRank {
+  score: number
+  reasons: string[]
+}
+
+/** Usage pages that identify an interface as one of the boot/HID roles. */
+const BOOT_KEYBOARD = { page: 0x01, usage: 0x06 }
+const CONSUMER_PAGE = 0x0c
+
+function collectionsOf(device: HIDDevice): HIDCollectionInfo[] {
+  const out: HIDCollectionInfo[] = []
+  const walk = (list: readonly HIDCollectionInfo[]) => {
+    for (const c of list) {
+      out.push(c)
+      if (c.children?.length) walk(c.children)
+    }
   }
-  return score
+  walk(device.collections)
+  return out
+}
+
+/**
+ * Ranks an interface by how much it looks like the configurator channel.
+ *
+ * The decisive signal is the report shape rather than the usage page: the
+ * driver moves fixed 64-byte payloads in both directions (docs/protocol.md §2),
+ * and no boot keyboard or consumer-control interface declares reports that
+ * size. The usage page only breaks ties, because vendors are inconsistent about
+ * whether the configurator collection is vendor-defined.
+ */
+export function rankDevice(device: HIDDevice): DeviceRank {
+  const reasons: string[] = []
+  let score = 0
+
+  if (isRavenDevice(device)) {
+    score += 100
+    reasons.push('Raven VID')
+    if ((RAVEN_PRODUCT_IDS as readonly number[]).includes(device.productId)) {
+      score += 20
+      reasons.push('알려진 PID')
+    }
+  }
+
+  const ins = inputReports(device)
+  const outs = outputReports(device)
+
+  if (ins.some((r) => r.byteLength === PAYLOAD_LENGTH)) {
+    score += 60
+    reasons.push(`${PAYLOAD_LENGTH}바이트 IN`)
+  }
+  if (outs.some((r) => r.byteLength === PAYLOAD_LENGTH)) {
+    score += 60
+    reasons.push(`${PAYLOAD_LENGTH}바이트 OUT`)
+  }
+
+  for (const c of collectionsOf(device)) {
+    const page = c.usagePage ?? 0
+    if (isVendorPage(page)) {
+      score += 20
+      reasons.push('벤더 페이지')
+    } else if (page === BOOT_KEYBOARD.page && (c.usage ?? 0) === BOOT_KEYBOARD.usage) {
+      // The typing interface. It never carries the config channel, and writing
+      // to it would only toggle lock LEDs.
+      score -= 60
+      reasons.push('키보드 인터페이스')
+    } else if (page === CONSUMER_PAGE) {
+      score -= 30
+      reasons.push('컨슈머 컨트롤')
+    }
+  }
+
+  return { score, reasons: [...new Set(reasons)] }
+}
+
+export function scoreDevice(device: HIDDevice): number {
+  return rankDevice(device).score
+}
+
+/**
+ * The interface to open out of everything one pick returned.
+ *
+ * Chrome's chooser lists physical devices, so selecting the keyboard hands back
+ * every interface it exposes. Opening `devices[0]` picked the typing interface,
+ * which never streams analog events — the monitor stayed empty until the user
+ * opened the right one by hand.
+ */
+export function pickConfigInterface(devices: readonly HIDDevice[]): HIDDevice | null {
+  let best: HIDDevice | null = null
+  let bestScore = -Infinity
+  for (const d of devices) {
+    const { score } = rankDevice(d)
+    if (score > bestScore) {
+      best = d
+      bestScore = score
+    }
+  }
+  return best
 }
 
 export function describeDevice(device: HIDDevice): string {

@@ -71,12 +71,28 @@ export class HidLink {
     return navigator.hid.getDevices()
   }
 
-  /** Must be called from a user gesture — Chrome requires it for the picker. */
-  async pickDevice(filters: HIDDeviceFilter[] = []): Promise<HIDDevice | null> {
+  /**
+   * Must be called from a user gesture — Chrome requires it for the picker.
+   *
+   * The chooser lists physical devices, so one pick can return several
+   * interfaces of the same keyboard. `choose` decides which of them to open;
+   * the default keeps the browser's order, which is rarely the right one for a
+   * composite device.
+   */
+  async pickDevice(
+    filters: HIDDeviceFilter[] = [],
+    choose: (devices: readonly HIDDevice[]) => HIDDevice | null = (d) => d[0] ?? null,
+  ): Promise<HIDDevice | null> {
     if (!HidLink.supported()) throw new HidError('WebHID is unavailable in this browser')
     const devices = await navigator.hid.requestDevice({ filters })
-    const picked = devices[0]
-    if (!picked) return null
+    if (devices.length === 0) return null
+    const picked = choose(devices) ?? devices[0]!
+    if (devices.length > 1) {
+      this.log.note(
+        `picked interface ${devices.indexOf(picked) + 1}/${devices.length} of ` +
+          `${picked.productName || 'device'}`,
+      )
+    }
     await this.open(picked)
     return picked
   }

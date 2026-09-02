@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffOffsets, toHex } from '../hid/hex'
 import { RAVEN61_KEYS } from '../keyboard/raven61'
 import { isEvent, parseKeyEvent, type KeyEvent as AnalogEvent } from '../protocol/frame'
+import { MONITOR, armAnalogStream } from '../protocol/raven61'
 import { identityOf, sensorMap, useSensorMap } from '../state/sensorMap'
 import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, Panel } from '../ui/Panel'
@@ -19,9 +20,11 @@ const KEEP = 400
  * Listens for reports the board sends without being asked.
  *
  * The stock driver has a dedicated loop for these (0x42c8a0): it reads with a
- * 10 ms timeout and no preceding write, and dispatches on payload[1..3] when
- * payload[0] is 0xA0. Nothing here writes to the device — it only listens, so
- * it is safe to leave running.
+ * 10 ms timeout and dispatches on payload[1..3] when payload[0] is 0xA0.
+ *
+ * Listening alone writes nothing, which is what makes this tab safe to leave
+ * running. But the board only streams once it has been armed (protocol §3.2),
+ * so arming is offered as an explicit opt-in rather than done silently.
  */
 export function Events() {
   const { connected } = useConnection()
@@ -29,6 +32,10 @@ export function Events() {
   const [onlyEvents, setOnlyEvents] = useState(true)
   const [listening, setListening] = useState(false)
   const [binding, setBinding] = useState<string | null>(null)
+  const [arm, setArm] = useState(false)
+  const [armError, setArmError] = useState<string | null>(null)
+  const release = useRef<(() => Promise<void>) | null>(null)
+  const armSeq = useRef(0)
   const bindings = useSensorMap()
   const seq = useRef(0)
   const t0 = useRef(0)
@@ -51,6 +58,39 @@ export function Events() {
       })
     })
   }, [listening, onlyEvents])
+
+  /**
+   * Driven from the checkbox rather than an effect. Under StrictMode the effect
+   * version disarmed itself: the first arm resolved after its own cleanup and
+   * sent 0xa9, which landed after the second arm. See Sensors.tsx.
+   */
+  const setArmed = async (on: boolean) => {
+    const seq = ++armSeq.current
+    setArm(on)
+    setArmError(null)
+    const previous = release.current
+    release.current = null
+    await previous?.()
+    if (!on || seq !== armSeq.current) return
+    try {
+      const fn = await armAnalogStream(link)
+      if (seq !== armSeq.current) await fn()
+      else release.current = fn
+    } catch (e) {
+      setArmError(e instanceof Error ? e.message : String(e))
+      setArm(false)
+    }
+  }
+
+  // Never leave the board unable to type because a tab went away.
+  useEffect(
+    () => () => {
+      armSeq.current++
+      void release.current?.()
+      release.current = null
+    },
+    [],
+  )
 
   /**
    * Which physical keys the board has reported at least once. Pressing every
@@ -103,7 +143,9 @@ export function Events() {
           <span className="small">
             보드가 <b>요청 없이 올려보내는</b> 리포트를 듣습니다. 순정 드라이버는 이걸 전용 루프로
             폴링하며, <span className="mono">0xa0</span> 로 시작하는 리포트를 이벤트로 처리합니다.
-            여기서는 아무것도 전송하지 않으므로 켜 두어도 안전합니다.
+            듣기만 할 때는 아무것도 전송하지 않습니다. 다만 보드는 <b>켜 줘야</b> 스트림을 흘리므로
+            (명세 §3.2), 아무것도 안 오면 아래 <b>스트림 켜기</b> 를 함께 켜세요. 보고를 켠 직후 테스트
+            모드를 빠져나오므로 <b>타이핑은 그대로 동작</b>하고 보정도 일어나지 않습니다.
           </span>
         </Notice>
         <div className="row" style={{ marginTop: 12 }}>
@@ -119,12 +161,31 @@ export function Events() {
             />{' '}
             0xa0 이벤트만
           </label>
+          <label className="small dim">
+            <input
+              type="checkbox"
+              checked={arm}
+              disabled={!connected}
+              onChange={(e) => void setArmed(e.target.checked)}
+            />{' '}
+            스트림 켜기 (<span className="mono">0x{MONITOR.arm.toString(16)}</span> →{' '}
+            <span className="mono">0x{MONITOR.disarm.toString(16)}</span>) — <b>켜는 동안 타이핑 안 됨</b>
+          </label>
           <span className="small dim">{events.length}건 수신</span>
         </div>
+        {armError && (
+          <div style={{ marginTop: 10 }}>
+            <Notice kind="err">
+              <span className="small">
+                스트림을 켜지 못했습니다: <span className="mono">{armError}</span>
+              </span>
+            </Notice>
+          </div>
+        )}
         {listening && events.length === 0 && (
           <div className="small dim" style={{ marginTop: 10 }}>
-            아직 아무것도 오지 않습니다. 키를 눌러 보고, 그래도 없으면 스트리밍을 켜는 명령이 따로
-            있다는 뜻입니다.
+            아직 아무것도 오지 않습니다. 키를 눌러 보고, 그래도 없으면 <b>스트림 켜기</b> 를 켜세요 —
+            보드는 켜 주지 않으면 아무것도 올려보내지 않습니다.
           </div>
         )}
       </Panel>

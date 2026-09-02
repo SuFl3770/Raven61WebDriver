@@ -11,6 +11,7 @@ export interface KeyIdentity {
 }
 
 const STORAGE_KEY = 'raven61.sensorMap.v2'
+const IGNORE_KEY = 'raven61.sensorMap.ignoreBuiltIn'
 
 /**
  * Identity of the key an analog event came from.
@@ -30,6 +31,15 @@ export function identityOf(event: KeyIdentity): string {
 /** Fingerprint -> key index, for the keys that do not name themselves. */
 class SensorMap {
   private map = new Map<string, number>()
+  /**
+   * When set, the built-in fingerprint table is not consulted at all.
+   *
+   * The table pairs a sensor value with a resting ADC, and calibration moves
+   * *both* — a key has been seen changing its sensor value outright. A stale
+   * table then does not merely fail to match, it matches the wrong key, which
+   * is worse than no match. This exists so that can be switched off.
+   */
+  private ignoreBuiltIn = false
   private listeners = new Set<() => void>()
   private snapshot: ReadonlyMap<string, number> = new Map()
 
@@ -40,6 +50,7 @@ class SensorMap {
 
   private load(): void {
     try {
+      this.ignoreBuiltIn = localStorage.getItem(IGNORE_KEY) === '1'
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return
       for (const [fp, index] of JSON.parse(raw) as [string, number][]) {
@@ -72,12 +83,31 @@ class SensorMap {
     if (event.usageIsReal) return keyByUsage(event.usage)?.index
     const bound = this.map.get(event.fingerprint)
     if (bound !== undefined) return bound
+    if (this.ignoreBuiltIn) return undefined
     return matchFingerprint(event.sensorId, event.adcBaseline)?.keyIndex
+  }
+
+  get builtInIgnored(): boolean {
+    return this.ignoreBuiltIn
+  }
+
+  setIgnoreBuiltIn(on: boolean): void {
+    this.ignoreBuiltIn = on
+    try {
+      localStorage.setItem(IGNORE_KEY, on ? '1' : '0')
+    } catch {
+      // Same as the bindings: a blocked store only costs persistence.
+    }
+    this.commit()
   }
 
   /** True when the built-in table already covers this event. */
   isBuiltIn(event: KeyIdentity): boolean {
-    return !event.usageIsReal && matchFingerprint(event.sensorId, event.adcBaseline) !== undefined
+    return (
+      !this.ignoreBuiltIn &&
+      !event.usageIsReal &&
+      matchFingerprint(event.sensorId, event.adcBaseline) !== undefined
+    )
   }
 
   bind(fingerprint: string, keyIndex: number): void {

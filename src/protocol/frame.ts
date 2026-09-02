@@ -69,12 +69,20 @@ export const COMMAND = {
   unknownA5: 0xa5,
   unknownA7: 0xa7,
   /**
-   * The driver picks 0xa9 or 0xa8 from a runtime flag, so they are a toggle
-   * pair. On hardware 0xa8 answers with a bare ack while 0xa9 answers with
-   * data, which fits 0xa9 = start / read and 0xa8 = stop.
+   * Analog test mode, confirmed on hardware.
+   *
+   * The driver picks one of these from a runtime flag (0x429f20), so they are a
+   * toggle pair. 0xa8 puts the board into the mode that streams analog key
+   * events; 0xa9 returns it to normal. The earlier guess had them the other way
+   * round, on the reasoning that 0xa9 answers with data — but the data was an
+   * analog event, not a reply.
+   *
+   * While in analog test mode the board stops acting as a keyboard: keys report
+   * travel but type nothing. That is what the stock driver's magnet-axis test
+   * needs, and it is why leaving the mode on is not harmless.
    */
-  readA9: 0xa9,
-  stopA8: 0xa8,
+  analogTestOn: 0xa8,
+  analogTestOff: 0xa9,
   unknownDD: 0xdd,
 } as const
 
@@ -146,6 +154,10 @@ export const READ_COMMANDS: readonly number[] = [0xa9]
  * configuration changing during a blind sweep: the lighting blob's first bytes
  * were overwritten. Excluding 0xa5 / 0xa7 / 0xdd was not enough, because the
  * rest of the family writes too.
+ *
+ * 0xa8 is deliberately not here. It writes nothing, but it stops the board from
+ * typing until 0xa9 follows, which is not something a sweep should do behind
+ * the user's back.
  */
 export const SAFE_COMMANDS: readonly number[] = [0x01, 0x02, 0xa9]
 
@@ -249,6 +261,18 @@ export function parseReply(payload: Uint8Array): Reply {
  * little-endian offset in a block transfer.
  */
 export const EVENT = {
+  /** Event kind — see EVENT_TYPE. Not a length, despite looking like one. */
+  type: 1,
+  /**
+   * HID modifier bitmask, and the answer to "how do you identify a modifier".
+   *
+   * Recovered from the stock driver's event resolver at 0x426050: it indexes a
+   * 128-byte table at 0x426110 with `payload[2] - 1`, and the only entries that
+   * are not the default sit at indices 0, 1, 3, 7, 15, 31, 63 and 127 — that is,
+   * at `payload[2]` of 1, 2, 4, 8, 16, 32, 64 and 128. Each returns one usage
+   * from 0xE0 to 0xE7, in the standard HID modifier order.
+   */
+  modifiers: 2,
   /** HID usage of the key — the same addressing the stock database uses. */
   usage: 3,
   /** Scaled sensor delta, BE16. Proportional to (baseline - live) by a per-key gain. */
@@ -260,10 +284,14 @@ export const EVENT = {
   /** 0x01 while pressing down, 0xff while releasing. */
   direction: 9,
   /**
-   * Per-key sensor descriptor (Esc 8/6, A 7/2, Space 8/8). NOT unique — P and
-   * "/" were observed sharing a value — so it identifies a key only together
-   * with `adcBaseline`. Probably a calibration curve or gain selector rather
-   * than an address.
+   * Per-key sensor descriptor (Esc 8/6, A 7/2, Space 8/8). NOT an address, on
+   * two counts: it is not unique — P and "/" were seen sharing a value — and it
+   * is not even stable. LCtrl, recorded at 0x0805, was observed reporting
+   * 0x0806 after a calibration pass.
+   *
+   * So it is a calibration output, most likely a curve or gain selector. Any
+   * identity built on it, `adcBaseline` included, is only valid until the next
+   * calibration. See docs/protocol.md §3.2.
    */
   sensorHi: 12,
   sensorLo: 13,
@@ -275,14 +303,42 @@ export const EVENT = {
   adcBaseline: 18,
 } as const
 
+/** `payload[1]`. The two event kinds the stock driver's resolver accepts. */
+export const EVENT_TYPE = {
+  /** A travel event for one key. */
+  key: 0x10,
+  /** Fn. It has no HID usage at all, so it gets its own kind. */
+  fn: 0xf0,
+} as const
+
+/** `payload[2]` for an Fn event, and the usage this project gives Fn. */
+export const FN_SELECTOR = 0xff
+export const FN_USAGE = 0xff
+
+/** Bit n of `payload[2]` is HID usage 0xE0 + n: LCtrl, LShift, LAlt, LGui, R…. */
+export const MODIFIER_BASE_USAGE = 0xe0
+
+/** Full travel, used when the board has not been calibrated and reports none. */
+export const DEFAULT_TRAVEL_COUNTS = 200
+
 export interface KeyEvent {
   /**
-   * HID usage of the key, or a placeholder. Modifiers report 0x00 and Fn
-   * reports 0x01 — they have no keycode-array usage, since HID carries
-   * modifiers in a bitmask instead. Use `sensorId` to tell those apart.
+   * HID usage of the key. Real for every key, including the modifiers and Fn:
+   * `payload[3]` carries it for ordinary keys, and for the eight that leave it
+   * at 0x00 / 0x01 the modifier bitmask in `payload[2]` supplies it instead.
    */
   usage: number
-  /** payload[12..13]. Stable per key but shared between some keys. */
+  /** `payload[1]`. */
+  type: number
+  /** `payload[2]` — the modifier bitmask, 0 or non-single-bit for other keys. */
+  modifierBits: number
+  /**
+   * False when the board reported no total stroke, which happens before it has
+   * been calibrated. Travel then falls back to the nominal 200 counts, so the
+   * depth shown is a guess rather than a measurement.
+   */
+  calibrated: boolean
+  /** payload[12..13]. A calibration output — see EVENT.sensorHi. */
   sensorId: number
   /**
    * Identity for a key the event does not name: the sensor descriptor plus the
@@ -292,6 +348,17 @@ export interface KeyEvent {
   fingerprint: string
   /** True when `usage` is a real HID usage rather than a 0x00 / 0x01 placeholder. */
   usageIsReal: boolean
+  /**
+   * False for an event that cannot name a key by any route: no usage, no
+   * modifier bit, and no resting ADC to fingerprint against.
+   *
+   * The board emits these — `0601:0` shows up steadily on a working keyboard
+   * with every key reporting normally. Whatever they are, they are not key
+   * travel, and treating them as an unbound sensor produced a warning that
+   * could never be acted on. Consumers that identify keys should skip them;
+   * the diagnostic tabs still show them, labelled.
+   */
+  identifiable: boolean
   /** Travel in 0.02 mm counts, 0 … travelCounts. */
   depthCounts: number
   depthMm: number
@@ -310,20 +377,56 @@ const be16 = (p: ArrayLike<number>, i: number) => ((p[i] ?? 0) << 8) | (p[i + 1]
 /** Counts are 0.02 mm, the same unit the actuation settings use. */
 const COUNT_MM = 0.02
 
-/** Decodes an analog key event. Returns null for anything that is not one. */
+/**
+ * HID usage for an event, from the two fields that carry it.
+ *
+ * `payload[3]` names ordinary keys. The seven modifiers leave it at 0x00 and Fn
+ * at 0x01, because HID has no keycode-array usage for them — and `payload[2]`
+ * carries the modifier bit instead. The stock driver reads it the same way
+ * (0x426050), except that it lets the bitmask win outright; here `payload[3]`
+ * wins whenever it holds a real usage, so a modifier held down during another
+ * key's event cannot rename that key.
+ */
+function usageOf(type: number, selector: number, usageByte: number): number {
+  if (usageByte > 0x01) return usageByte
+  if (type === EVENT_TYPE.fn || selector === FN_SELECTOR) return FN_USAGE
+  // A single set bit is a modifier; anything else leaves the usage as it came.
+  if (selector !== 0 && (selector & (selector - 1)) === 0) {
+    return MODIFIER_BASE_USAGE + Math.log2(selector)
+  }
+  return usageByte
+}
+
+/**
+ * Decodes an analog key event. Returns null for anything that is not one.
+ *
+ * The kind in `payload[1]` is what separates an event from a command reply —
+ * both start with 0xA0. Total stroke is deliberately *not* used for that: an
+ * uncalibrated board reports 0, and rejecting on it discarded every event until
+ * a calibration pass had run, which looked exactly like a dead stream.
+ */
 export function parseKeyEvent(payload: ArrayLike<number>): KeyEvent | null {
   if (payload[0] !== REPLY_DATA) return null
-  const travelCounts = be16(payload, EVENT.travel)
-  if (travelCounts === 0) return null
+  const type = payload[EVENT.type] ?? 0
+  if (type !== EVENT_TYPE.key && type !== EVENT_TYPE.fn) return null
+  const reported = be16(payload, EVENT.travel)
+  const travelCounts = reported === 0 ? DEFAULT_TRAVEL_COUNTS : reported
   const depthCounts = payload[EVENT.depth] ?? 0
-  const usage = payload[EVENT.usage] ?? 0
+  const selector = payload[EVENT.modifiers] ?? 0
+  const usage = usageOf(type, selector, payload[EVENT.usage] ?? 0)
   const sensorId = ((payload[EVENT.sensorHi] ?? 0) << 8) | (payload[EVENT.sensorLo] ?? 0)
   const adcBaseline = be16(payload, EVENT.adcBaseline)
   return {
     usage,
+    type,
+    modifierBits: selector,
+    calibrated: reported !== 0,
     sensorId,
     fingerprint: `${sensorId.toString(16).padStart(4, '0')}:${adcBaseline}`,
     usageIsReal: usage > 0x01,
+    // A key always has a stored resting ADC. Without one, and without a usage,
+    // there is nothing left to identify it by.
+    identifiable: usage > 0x01 || adcBaseline !== 0,
     depthCounts,
     depthMm: depthCounts * COUNT_MM,
     travelCounts,

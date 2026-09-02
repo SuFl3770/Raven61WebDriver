@@ -2,12 +2,9 @@ import { DEFAULT_TRAVEL_MM } from '../keyboard/raven61'
 import { MM_PER_COUNT, mmToCounts, quantizeMm } from '../protocol/encoding'
 import { configStore, useKeyConfigs } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
-import { ApplyBar } from '../ui/ApplyBar'
 import { KeyGrid } from '../ui/KeyGrid'
-import { NotDecoded, Panel } from '../ui/Panel'
+import { Panel } from '../ui/Panel'
 import { SelectionBar } from '../ui/SelectionBar'
-import { supports } from '../protocol/codec'
-import { useCodec } from '../state/link'
 
 /** 1.5mm is the board's factory default (global_key_actuation = 75). */
 const PRESETS = [
@@ -19,7 +16,6 @@ const PRESETS = [
 export function Actuation() {
   const configs = useKeyConfigs()
   const sel = useSelection()
-  const codec = useCodec()
   const first = configs[targetKeys(sel)[0] ?? 0]!
 
   // Targets are read at event time, not render time: a click and the slider
@@ -76,9 +72,6 @@ export function Actuation() {
         </div>
       </Panel>
 
-      <Panel title="적용">
-        {supports(codec, 'writeKeyConfigs') ? <ApplyBar /> : <NotDecoded what="액추에이션 쓰기" />}
-      </Panel>
     </>
   )
 }

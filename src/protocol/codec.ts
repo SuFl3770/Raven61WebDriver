@@ -29,8 +29,18 @@ export interface Raven61Codec {
   readKeyConfigs?(link: HidLink): Promise<KeyConfig[]>
   writeKeyConfigs?(link: HidLink, configs: readonly (KeyConfig | null)[]): Promise<void>
 
-  /** Streams analog travel. Resolves to an unsubscribe that stops the stream. */
-  startMonitor?(link: HidLink, onSample: (samples: KeySample[]) => void): Promise<() => Promise<void>>
+  /**
+   * Streams analog travel. Resolves to an unsubscribe that stops the stream.
+   *
+   * `arm: false` listens without enabling reporting at all. `keepAlive` repeats
+   * the enable packet, which is what the stock driver's calibration mode does —
+   * it suppresses typing and recalibrates, so it is never the default.
+   */
+  startMonitor?(
+    link: HidLink,
+    onSample: (samples: KeySample[]) => void,
+    opts?: { arm?: boolean; keepAlive?: boolean },
+  ): Promise<() => Promise<void>>
 
   readKeymap?(link: HidLink, layer: number): Promise<KeymapEntry[]>
   writeKeymap?(link: HidLink, layer: number, entries: readonly (KeymapEntry | null)[]): Promise<void>

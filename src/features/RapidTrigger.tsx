@@ -1,9 +1,6 @@
-import { supports } from '../protocol/codec'
 import { MM_PER_COUNT, quantizeMm } from '../protocol/encoding'
 import { configStore, useKeyConfigs } from '../state/config'
-import { useCodec } from '../state/link'
 import { selection, targetKeys, useSelection } from '../state/selection'
-import { ApplyBar } from '../ui/ApplyBar'
 import { KeyGrid } from '../ui/KeyGrid'
 import { NotDecoded, Notice, Panel } from '../ui/Panel'
 import { SelectionBar } from '../ui/SelectionBar'
@@ -11,7 +8,6 @@ import { SelectionBar } from '../ui/SelectionBar'
 export function RapidTrigger() {
   const configs = useKeyConfigs()
   const sel = useSelection()
-  const codec = useCodec()
   const lead = configs[targetKeys(sel)[0] ?? 0]!
   const first = lead.rapidTrigger
   const dz = lead.deadZone
@@ -157,9 +153,6 @@ export function RapidTrigger() {
         </div>
       </Panel>
 
-      <Panel title="적용">
-        {supports(codec, 'writeKeyConfigs') ? <ApplyBar /> : <NotDecoded what="래피드 트리거 쓰기" />}
-      </Panel>
     </>
   )
 }

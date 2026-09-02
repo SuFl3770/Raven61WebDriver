@@ -70,6 +70,16 @@ textarea { width: 100%; resize: vertical; }
 }
 .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 
+/* Tool navigation inside the debug tab. Sits in the content flow rather than
+   against the window edge, so it reads as a level below the main tabs. */
+.tabs.subtabs {
+  padding: 0;
+  margin-top: 6px;
+  background: none;
+  border-radius: 6px 6px 0 0;
+}
+.tabs.subtabs button { padding: 7px 12px; font-size: 12px; }
+
 .content { flex: 1; overflow: auto; padding: 16px; }
 
 .panel {
