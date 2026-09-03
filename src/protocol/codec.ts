@@ -1,5 +1,12 @@
 import type { HidLink } from '../hid/link'
-import type { DeviceInfo, KeyConfig, KeySample, KeymapEntry } from './types'
+import type {
+  DeviceInfo,
+  GlobalSettings,
+  KeyConfig,
+  KeyPerfSnapshot,
+  KeySample,
+  KeymapEntry,
+} from './types'
 
 /**
  * How much we trust a codec against real hardware. Surfaced in the UI so a
@@ -30,6 +37,20 @@ export interface Raven61Codec {
   writeKeyConfigs?(link: HidLink, configs: readonly (KeyConfig | null)[]): Promise<void>
 
   /**
+   * The same read, but keeping the raw block. Panels prefer this so they can
+   * show the bytes next to the decoded values — during reverse engineering a
+   * decoded view alone can look right while being indexed wrongly.
+   */
+  readKeyPerf?(link: HidLink): Promise<KeyPerfSnapshot>
+
+  /**
+   * Board-wide settings. Separate from the per-key ones because they are a
+   * separate block on the wire, and because one of the performance tab's
+   * switches — "always trigger when bottoming" — lives here rather than per key.
+   */
+  readGlobalSettings?(link: HidLink): Promise<GlobalSettings>
+
+  /**
    * Streams analog travel. Resolves to an unsubscribe that stops the stream.
    *
    * `arm: false` listens without enabling reporting at all. `keepAlive` repeats
@@ -53,6 +74,8 @@ export type Capability =
   | 'readDeviceInfo'
   | 'readKeyConfigs'
   | 'writeKeyConfigs'
+  | 'readKeyPerf'
+  | 'readGlobalSettings'
   | 'startMonitor'
   | 'readKeymap'
   | 'writeKeymap'

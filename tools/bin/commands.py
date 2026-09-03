@@ -1,11 +1,17 @@
 """
 Recovers the Raven61 command table from the stock driver binary.
 
-Every command goes through one send-and-wait-for-ACK helper. Each caller builds
-a 65-byte packet in a stack local and stores its header bytes as immediates, so
+Commands go through a send-and-wait-for-ACK helper. Each caller builds a
+65-byte packet in a stack local and stores its header bytes as immediates, so
 disassembling each caller and collecting the `mov byte [ebp-N], imm8` stores
 that land in that local reconstructs the command headers without ever running
 the program.
+
+There are TWO such helpers, and that matters: the first version of this script
+only knew about 0x45a940 and so reported writes only. Every read command hangs
+off 0x45ab50 — same framing, slightly different retry and checksum range — and
+missing it left the protocol spec with no way to get anything back off the
+board. See docs/protocol.md §1.1.
 """
 import re
 import struct
@@ -14,7 +20,11 @@ import sys
 from capstone import CS_ARCH_X86, CS_MODE_32, Cs
 from pe import PE
 
-SEND_PACKET = 0x45A940
+# Both send-and-wait helpers, and what each is used for.
+HELPERS = {
+    0x45A940: 'ack',    # write commands: send, read reply, check payload[0] == 0xAA
+    0x45AB50: 'query',  # read commands: same, and the reply carries data
+}
 PACKET_LEN = 0x41
 
 
@@ -49,7 +59,8 @@ def analyse(path):
     md.detail = True
     out = []
 
-    for site in callers(blob, base, SEND_PACKET):
+    sites = [(site, helper) for helper in HELPERS for site in callers(blob, base, helper)]
+    for site, helper in sites:
         start = func_start(blob, base, site)
         if start is None:
             continue
@@ -86,7 +97,8 @@ def analyse(path):
                 if 0 <= idx + n < PACKET_LEN:
                     fields[idx + n] = (num >> (8 * n)) & 0xFF
 
-        out.append({'site': site, 'func': start, 'buf': buf, 'fields': fields})
+        out.append({'site': site, 'func': start, 'buf': buf, 'fields': fields,
+                    'helper': helper, 'kind': HELPERS[helper]})
     return out
 
 
@@ -100,13 +112,28 @@ def main():
 
     known = [r for r in rows if 2 in r['fields']]
     print(f'# {len(rows)} call sites, {len(known)} with a constant command byte')
+    for helper, kind in HELPERS.items():
+        n = sum(1 for r in rows if r['helper'] == helper)
+        print(f'#   0x{helper:08x} ({kind}): {n}')
     print()
-    print(f"{'call site':<12}{'func':<12}{'magic':<9}{'cmd':<7}other constant payload bytes")
+    print(f"{'call site':<12}{'func':<12}{'via':<8}{'magic':<9}{'cmd':<7}"
+          'other constant payload bytes')
     for r in sorted(rows, key=lambda x: (x['fields'].get(2, 0xFFF), x['site'])):
         f = r['fields']
         rest = ', '.join(f'p[{i - 1}]=0x{v:02x}' for i, v in sorted(f.items()) if i > 2)
-        print(f'{hex(r["site"]):<12}{hex(r["func"]):<12}'
+        print(f'{hex(r["site"]):<12}{hex(r["func"]):<12}{r["kind"]:<8}'
               f'{fmt(f.get(1)):<9}{fmt(f.get(2)):<7}{rest}')
+
+    # A read command that answers with data is the interesting half, so call it
+    # out rather than leaving it to be spotted in the listing.
+    reads = sorted({f['fields'][2] for f in rows
+                    if f['kind'] == 'query' and 2 in f['fields']})
+    writes = sorted({f['fields'][2] for f in rows
+                     if f['kind'] == 'ack' and 2 in f['fields']})
+    print()
+    print('# read commands  (via the query helper): ' + ' '.join(f'0x{c:02x}' for c in reads))
+    print('# write commands (via the ack helper)  : ' + ' '.join(f'0x{c:02x}' for c in writes))
+    print('# NOTE 0xee (factory reset) is sent from 0x443540 and does not appear here.')
 
 
 if __name__ == '__main__':

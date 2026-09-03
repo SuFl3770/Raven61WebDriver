@@ -50,21 +50,50 @@ export const OFFSET = {
 export const CHECKSUM_RANGE = { start: OFFSET.data, end: PAYLOAD_LENGTH }
 
 /**
- * Commands observed at the 52 call sites of the driver's send-and-wait helper.
- * Only `begin`, `end` and `globalSettings` are identified with confidence; the
- * rest are recorded so the prober can try them deliberately rather than blindly.
+ * Commands the stock driver sends.
+ *
+ * The first pass over the binary only followed one send-and-wait helper
+ * (0x45a940) and so found only writes. There is a second helper at 0x45ab50,
+ * used for exactly the same framing, and **every read command hangs off it** —
+ * which is why the earlier table had no way to get anything back off the board.
+ *
+ * Reads and writes come in pairs, `read = write - 1` for most of them:
+ *
+ *   0x05 / 0x06   32-byte global settings
+ *   0x07 / 0x09   768-byte keymap blob (two layers' worth)
+ *   0x0a / 0x0b   384-byte keymap blob (one layer, 128 x 3)
+ *   0xa0 / 0xa1   1024-byte per-key performance blob (128 x 8)
+ *   0xde / 0xdd   384-byte per-key RGB blob (128 x 3)
  */
 export const COMMAND = {
   /** Opens every transaction in every command function. */
   begin: 0x01,
   /** Closes every transaction. Likely "apply" or "commit". */
   end: 0x02,
+  /** Reads the 32-byte global settings block that 0x06 writes back. */
+  readGlobalSettings: 0x05,
   /** Sent by the function that reads reporte_rate, tick_rate, dead_zone, disable_win… */
   globalSettings: 0x06,
-  unknown09: 0x09,
-  unknown0b: 0x0b,
+  /** Reads the wide (768-byte) keymap blob; 0x09 writes it. */
+  readKeymapWide: 0x07,
+  /** 512 bytes, 128 x 4, read with a caller-supplied base offset. Content unconfirmed. */
+  readUnknown08: 0x08,
+  writeKeymapWide: 0x09,
+  /** Reads one 384-byte keymap layer; 0x0b writes it. */
+  readKeymapLayer: 0x0a,
+  writeKeymapLayer: 0x0b,
   unknown0d: 0x0d,
-  unknownA1: 0xa1,
+  /**
+   * Reads the 1024-byte per-key performance blob — actuation, rapid trigger,
+   * dead zones and switch type for all 128 key slots. See keyPerf.ts.
+   *
+   * Shares its byte with REPLY_DATA, the marker on unsolicited analog events.
+   * Direction disambiguates: a reply to this command starts with 0xAA, an event
+   * starts with 0xA0, so `isReplyTo` never confuses the two.
+   */
+  readKeyPerf: 0xa0,
+  /** Writes the same blob back. Whole-blob replacement, not per-key. */
+  writeKeyPerf: 0xa1,
   unknownA3: 0xa3,
   unknownA5: 0xa5,
   unknownA7: 0xa7,
@@ -83,7 +112,21 @@ export const COMMAND = {
    */
   analogTestOn: 0xa8,
   analogTestOff: 0xa9,
-  unknownDD: 0xdd,
+  /** Writes the per-key RGB blob. */
+  writeLightRgb: 0xdd,
+  /** Reads it back. */
+  readLightRgb: 0xde,
+} as const
+
+/**
+ * Commands that must never end up in a sweep, kept out of COMMAND so they
+ * cannot reach KNOWN_COMMANDS and the prober by accident.
+ *
+ * 0xee is a factory reset. The stock driver sends it alone from job 0x0c
+ * (0x443540), sleeps 1 s then 5 s, and re-reads every blob afterwards.
+ */
+export const DANGEROUS_COMMANDS = {
+  factoryReset: 0xee,
 } as const
 
 export function checksum(payload: ArrayLike<number>): number {
@@ -143,8 +186,70 @@ export function buildBlock(
   return payload
 }
 
-/** The only command observed to answer with data rather than a bare ack. */
-export const READ_COMMANDS: readonly number[] = [0xa9]
+/**
+ * Splits a blob into the chunk sequence the stock driver uses: full 56-byte
+ * chunks with a shorter final one, at ascending offsets.
+ *
+ * Matches every read loop in the binary — 0xa0 becomes 18 x 56 + 16 = 1024,
+ * 0x07 becomes 13 x 56 + 40 = 768, 0x0a 6 x 56 + 48 = 384.
+ */
+export interface BlockChunk {
+  offset: number
+  length: number
+}
+
+export function chunkPlan(total: number, chunk: number = BLOCK_CHUNK): BlockChunk[] {
+  if (total < 0) throw new RangeError(`blob size ${total} is negative`)
+  const out: BlockChunk[] = []
+  for (let offset = 0; offset < total; offset += chunk) {
+    out.push({ offset, length: Math.min(chunk, total - offset) })
+  }
+  return out
+}
+
+/**
+ * Extracts the data a block-read reply carries.
+ *
+ * A reply is NOT the request layout: the read wrapper strips the leading report
+ * id, so the buffer starts at payload[0] = 0xAA. The header then repeats in the
+ * same slots as the request — command at [1], length at [4], offset at [5..6] —
+ * and the chunk sits at payload[8..63], exactly where a write would put it.
+ *
+ * The declared length is only trusted as far as the caller's expectation: the
+ * stock driver ignores it and copies into its own cursor, so a firmware that
+ * pads or rounds cannot shift the blob.
+ */
+export function blockReplyData(payload: ArrayLike<number>, length: number): Uint8Array {
+  const out = new Uint8Array(Math.min(length, BLOCK_CHUNK))
+  for (let i = 0; i < out.length; i++) out[i] = payload[BLOCK.data + i] ?? 0
+  return out
+}
+
+/** Offset and length the reply says it carries — useful for logging mismatches. */
+export function blockReplyHeader(payload: ArrayLike<number>): BlockChunk {
+  return {
+    offset: ((payload[BLOCK.offsetHi] ?? 0) << 8) | (payload[BLOCK.offsetLo] ?? 0),
+    length: payload[BLOCK.length] ?? 0,
+  }
+}
+
+/**
+ * Commands that answer with data rather than a bare ack.
+ *
+ * These go through the driver's second send-and-wait helper (0x45ab50) and are
+ * believed read-only: their request carries a length and an offset but no data.
+ * "Believed" because it has not been confirmed on hardware, so they are
+ * deliberately left out of SAFE_COMMANDS — the prober still flags them.
+ */
+export const READ_COMMANDS: readonly number[] = [
+  COMMAND.readGlobalSettings,
+  COMMAND.readKeymapWide,
+  COMMAND.readUnknown08,
+  COMMAND.readKeymapLayer,
+  COMMAND.readKeyPerf,
+  COMMAND.readLightRgb,
+  COMMAND.analogTestOff,
+]
 
 /**
  * Commands with no observed side effect, safe to send repeatedly.

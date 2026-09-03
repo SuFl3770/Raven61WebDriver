@@ -1,7 +1,8 @@
 import { RAVEN_PRODUCT_IDS, RAVEN_VENDOR_ID } from '../hid/filters'
 import type { HidLink } from '../hid/link'
+import { RAVEN61_KEYS } from '../keyboard/raven61'
 import type { Raven61Codec } from './codec'
-import type { KeySample } from './types'
+import type { GlobalSettings, KeyConfig, KeyPerfSnapshot, KeySample } from './types'
 import {
   ACK,
   COMMAND,
@@ -9,10 +10,16 @@ import {
   MAGIC,
   PAYLOAD_LENGTH,
   REPORT_ID,
+  blockReplyData,
+  buildBlock,
   buildPacket,
+  chunkPlan,
   isAck,
+  isReplyTo,
   parseKeyEvent,
 } from './frame'
+import { KEY_PERF, decodeKeyPerfRecord, isEmptySlot, toKeyConfig } from './keyPerf'
+import { KEYMAP, fallbackSlotMap, slotMapFromKeymap, type SlotMap } from './slotMap'
 
 /**
  * Framing is decoded; the per-command data layouts are not. This codec
@@ -21,11 +28,12 @@ import {
  */
 export const raven61Codec: Raven61Codec = {
   id: 'raven61-v1',
-  label: 'Raven61 (프레임 해독됨)',
+  label: 'Raven61 (읽기 해독됨)',
   confidence: 'partial',
   notes:
-    '패킷 프레임과 아날로그 키 이벤트는 해독되었습니다. 모니터는 동작하며, ' +
-    '설정 쓰기는 명령별 데이터 배치가 아직 미해독이라 비활성 상태입니다.',
+    '패킷 프레임, 아날로그 키 이벤트, 키별 성능 설정 읽기(0xa0)와 전역 설정 읽기(0x05)가 ' +
+    '해독되었습니다. 쓰기(0xa1)는 인코더까지 해독됐지만 하드웨어 검증 전이라 아직 연결하지 ' +
+    '않았습니다.',
 
   async probe(link: HidLink) {
     const d = link.device
@@ -33,6 +41,14 @@ export const raven61Codec: Raven61Codec = {
     // Identification only — a probe runs on every connect and must not write.
     return d.vendorId === RAVEN_VENDOR_ID
   },
+
+  readKeyPerf: readKeyPerfSnapshot,
+
+  async readKeyConfigs(link: HidLink): Promise<KeyConfig[]> {
+    return (await readKeyPerfSnapshot(link)).configs
+  },
+
+  readGlobalSettings,
 
   /**
    * Enables analog reporting and decodes what comes back.
@@ -241,6 +257,226 @@ export async function armAnalogStream(
   return release
 }
 
+/**
+ * Reads a firmware blob, one 56-byte chunk per packet.
+ *
+ * The stock driver's read loops are all this shape: build a block header with a
+ * length and an offset, send it through the second send-and-wait helper, and
+ * copy payload[8..63] of the reply into its own cursor. It never trusts the
+ * echoed offset, and neither does this — a firmware that pads or rounds the
+ * header cannot shift the blob.
+ *
+ * The reply match is on `isReplyTo`, not "the next input report". With the
+ * monitor running the board is streaming 0xA0 events, and 0xA0 is also the
+ * per-key read command — matching loosely would splice an event into the blob.
+ */
+export async function readBlock(
+  link: HidLink,
+  command: number,
+  totalBytes: number,
+  opts: { timeoutMs?: number; note?: string } = {},
+): Promise<Uint8Array> {
+  const out = new Uint8Array(totalBytes)
+  const plan = chunkPlan(totalBytes)
+  const label = opts.note ?? `cmd 0x${command.toString(16).padStart(2, '0')}`
+  for (const [i, chunk] of plan.entries()) {
+    const request = buildBlock(command, chunk.offset, undefined, { length: chunk.length })
+    let reply: Uint8Array
+    try {
+      const answer = await link.request(request, {
+        reportId: REPORT_ID,
+        timeoutMs: opts.timeoutMs ?? 300,
+        match: (_id, data) => isReplyTo(command, data),
+        note: `${label}: read ${chunk.length}B @ ${chunk.offset}`,
+      })
+      reply = answer.data
+    } catch (e) {
+      throw new Error(
+        `${label}: 청크 ${i + 1}/${plan.length} (오프셋 ${chunk.offset}) 응답 없음 — ` +
+          (e instanceof Error ? e.message : String(e)),
+      )
+    }
+    out.set(blockReplyData(reply, chunk.length), chunk.offset)
+  }
+  return out
+}
+
+/**
+ * The 1024-byte per-key performance blob, wrapped in the driver's transaction.
+ *
+ * The stock driver reads this on connect, on a profile switch and whenever the
+ * board pushes an unsolicited 0xA2 report — not on entering its performance
+ * tab, which only rewrites the global block. The values its tab shows were
+ * already read and cached, which is why they appear instantly.
+ */
+export async function readKeyPerfBlob(link: HidLink): Promise<Uint8Array> {
+  await transact(link, COMMAND.begin, { note: 'key perf: begin' })
+  try {
+    return await readBlock(link, COMMAND.readKeyPerf, KEY_PERF.blobSize, { note: 'key perf' })
+  } finally {
+    // Closes the transaction even on a failed chunk: leaving one open is how
+    // the next command ends up answering the wrong request.
+    await transact(link, COMMAND.end, { note: 'key perf: end' })
+  }
+}
+
+/**
+ * The keymap block the slot mapping comes from: 0x07, 768 bytes, 256 x 3.
+ *
+ * This is the block the stock driver caches at `this+0x8a4` and walks to build
+ * its slot maps (0x427ac0 reads it, 0x426344 consumes it). The 0x0a block is a
+ * different, shorter one — it reads back all zeros on this board, which is what
+ * an unassigned Fn layer looks like, and it sent the first attempt at this
+ * mapping down the fallback path.
+ */
+export async function readKeymapBlob(link: HidLink): Promise<Uint8Array> {
+  await transact(link, COMMAND.begin, { note: 'keymap: begin' })
+  try {
+    return await readBlock(link, COMMAND.readKeymapWide, KEYMAP.blobSize, { note: 'keymap' })
+  } finally {
+    await transact(link, COMMAND.end, { note: 'keymap: end' })
+  }
+}
+
+/**
+ * Asks the board which key each slot is.
+ *
+ * Falls back to the layout-order guess if the keymap read fails or resolves too
+ * few keys to be believable — a half-resolved map would put most keys in the
+ * right place and a few in the wrong one, which is the hardest kind of wrong to
+ * notice.
+ */
+export async function readSlotMap(link: HidLink): Promise<{ map: SlotMap; blob?: Uint8Array }> {
+  try {
+    const blob = await readKeymapBlob(link)
+    const map = slotMapFromKeymap(blob)
+    if (map.slotByKey.size >= RAVEN61_KEYS.length - 4) return { map, blob }
+    link.log.note(
+      `키맵에서 ${map.slotByKey.size}/${RAVEN61_KEYS.length}개 키만 확인되어 ` +
+        '슬롯 매핑을 추정값으로 대체합니다.',
+    )
+    return { map: fallbackSlotMap(), blob }
+  } catch (e) {
+    link.log.note(
+      `키맵 읽기 실패로 슬롯 매핑을 추정값으로 대체합니다: ` +
+        (e instanceof Error ? e.message : String(e)),
+    )
+    return { map: fallbackSlotMap() }
+  }
+}
+
+/**
+ * Reads the performance block and decodes it, keeping the bytes.
+ *
+ * Two reads: the keymap first, because it says which slot is which key, then
+ * the performance block itself. Indexing it from the layout file was wrong
+ * twice over — see keyPerf.ts and slotMap.ts.
+ */
+export async function readKeyPerfSnapshot(link: HidLink): Promise<KeyPerfSnapshot> {
+  const { map, blob: keymap } = await readSlotMap(link)
+  const blob = await readKeyPerfBlob(link)
+
+  const emptySlots: number[] = []
+  for (let slot = 0; slot < KEY_PERF.slots; slot++) {
+    if (isEmptySlot(blob, slot)) emptySlots.push(slot)
+  }
+
+  const configs = RAVEN61_KEYS.map((k) => {
+    const slot = map.slotByKey.get(k.index)
+    return toKeyConfig(decodeKeyPerfRecord(blob, slot ?? KEY_PERF.slots))
+  })
+
+  const missing = RAVEN61_KEYS.filter((k) => map.slotByKey.get(k.index) === undefined)
+  if (missing.length > 0) {
+    link.log.note(
+      `슬롯을 찾지 못한 키 ${missing.length}개: ${missing.map((k) => k.label).join(', ')}`,
+    )
+  }
+  const mappedEmpty = RAVEN61_KEYS.filter((k) => {
+    const slot = map.slotByKey.get(k.index)
+    return slot !== undefined && emptySlots.includes(slot)
+  })
+  if (mappedEmpty.length > 0) {
+    // A zeroed record decodes to "actuation 0.02 mm, rapid trigger off, switch
+    // type 0", which is plausible enough to pass for a real setting. Say so.
+    link.log.note(
+      `성능 블록에서 ${mappedEmpty.length}개 키 슬롯이 비어 있습니다: ` +
+        mappedEmpty
+          .map((k) => `${k.label}(슬롯 ${map.slotByKey.get(k.index)})`)
+          .join(', '),
+    )
+  }
+
+  return { blob, keymap, slotMap: map, configs, emptySlots }
+}
+
+/** Byte offsets inside the 0x05 / 0x06 payload. See GlobalSettings. */
+export const GLOBAL = {
+  /** Block length the stock driver asks for. */
+  length: 0x20,
+  rate: 12,
+  deadZone: 13,
+  gameLock: 14,
+  flags: 15,
+  sleep: 16,
+} as const
+
+/** Bits of `payload[15]`. */
+export const GLOBAL_FLAGS = {
+  tachyon: 0x01,
+  bottomOutTrigger: 0x02,
+  actuationCheck: 0x04,
+  magnetTest: 0x08,
+  debounceShift: 5,
+  debounceMask: 0x03,
+} as const
+
+export function decodeGlobalSettings(payload: Uint8Array): GlobalSettings {
+  const rate = payload[GLOBAL.rate] ?? 0
+  const lock = payload[GLOBAL.gameLock] ?? 0
+  const flags = payload[GLOBAL.flags] ?? 0
+  return {
+    raw: payload.slice(),
+    reportRate: rate & 0x0f,
+    tickRate: (rate >> 4) & 0x0f,
+    deadZone: payload[GLOBAL.deadZone] ?? 0,
+    disableWin: (lock & 0x01) !== 0,
+    disableAltTab: (lock & 0x02) !== 0,
+    disableAltF4: (lock & 0x04) !== 0,
+    tachyon: (flags & GLOBAL_FLAGS.tachyon) !== 0,
+    bottomOutTrigger: (flags & GLOBAL_FLAGS.bottomOutTrigger) !== 0,
+    actuationCheck: (flags & GLOBAL_FLAGS.actuationCheck) !== 0,
+    magnetTest: (flags & GLOBAL_FLAGS.magnetTest) !== 0,
+    debounceLevel: (flags >> GLOBAL_FLAGS.debounceShift) & GLOBAL_FLAGS.debounceMask,
+    sleepMinutes: payload[GLOBAL.sleep] ?? 0,
+  }
+}
+
+/**
+ * Reads the global settings block.
+ *
+ * Single chunk, so it does not go through `readBlock`: the fields we know are
+ * documented at payload offsets 12-16, and keeping the whole reply payload lets
+ * the panel show the raw bytes next to the decoded ones.
+ */
+export async function readGlobalSettings(link: HidLink): Promise<GlobalSettings> {
+  await transact(link, COMMAND.begin, { note: 'global settings: begin' })
+  try {
+    const request = buildBlock(COMMAND.readGlobalSettings, 0, undefined, {
+      length: GLOBAL.length,
+    })
+    const { data } = await link.request(request, {
+      reportId: REPORT_ID,
+      timeoutMs: 300,
+      match: (_id, d) => isReplyTo(COMMAND.readGlobalSettings, d),
+      note: 'read global settings',
+    })
+    return decodeGlobalSettings(data)
+  } finally {
+    await transact(link, COMMAND.end, { note: 'global settings: end' })
+  }
+}
+
 export function isKnownProduct(device: HIDDevice): boolean {
   return (
     device.vendorId === RAVEN_VENDOR_ID &&
@@ -280,6 +516,10 @@ export async function transact(
     const { data } = await link.request(request, {
       reportId: REPORT_ID,
       timeoutMs: opts.timeoutMs ?? 300,
+      // Match the command back, not just "the next input report": the board
+      // streams analog events unprompted once reporting has been enabled, and
+      // one of those arriving mid-transaction would be read as the reply.
+      match: (_id, data) => isReplyTo(command, data),
       note: opts.note ?? `cmd 0x${command.toString(16).padStart(2, '0')}`,
     })
     return { request, reply: data, ack: isAck(data) }
