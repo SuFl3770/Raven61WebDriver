@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { parseBytes, toHex } from '../hid/hex'
 import { TimeoutError } from '../hid/link'
+import { t as translate, useT } from '../i18n'
+import { T } from '../i18n/T'
 import {
   COMMAND,
   KNOWN_COMMANDS,
@@ -59,10 +61,12 @@ export function Prober() {
   const [rows, setRows] = useState<Probe[]>([])
   const [error, setError] = useState<string | null>(null)
   const cancelled = useRef(false)
+  const t = useT()
 
   const payloadFor = (value: number): Uint8Array => {
     if (mode === 'frame') return buildPacket(value, { magic: Number.parseInt(magic, 16) || MAGIC })
-    if (!template.includes(SWEEP_MARK)) throw new Error(`템플릿에 ${SWEEP_MARK} 자리표시자가 없습니다`)
+    if (!template.includes(SWEEP_MARK))
+      throw new Error(translate('prober.noPlaceholder', { mark: SWEEP_MARK }))
     return parseBytes(template.replaceAll(SWEEP_MARK, value.toString(16).padStart(2, '0')))
   }
 
@@ -73,7 +77,7 @@ export function Prober() {
     const lo = parseInt(from, 16)
     const hi = parseInt(to, 16)
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi || hi > 0xff) {
-      setError('스윕 범위가 올바르지 않습니다 (00–ff).')
+      setError(t('prober.badRange'))
       return
     }
     let values =
@@ -146,27 +150,23 @@ export function Prober() {
   const acked = rows.filter((r) => r.ack)
 
   return (
-    <Panel title="명령 프로버">
+    <Panel title={t('prober.title')}>
       <Notice kind="warn">
-        <strong>주의 — 미지의 명령을 보내는 작업입니다.</strong>
+        <strong>{t('prober.warning.title')}</strong>
         <div className="small" style={{ marginTop: 4 }}>
-          <span className="mono">0x01</span>(시작) 과 <span className="mono">0x02</span>(종료·적용)는 설정
-          트랜잭션을 여닫는 명령으로 보입니다. 그 사이의 명령이 무엇을 쓰는지는 아직 모르므로 설정 초기화나
-          플래시 쓰기가 일어날 수 있습니다. 이 보드는 펌웨어 업그레이드 후 <b>키 캘리브레이션이 필요</b>하다고
-          순정 드라이버가 안내합니다 — 캘리브레이션을 건드리는 명령도 존재한다는 뜻입니다. 먼저 순정
-          드라이버로 설정을 백업하세요.
+          <T k="prober.warning.body" />
         </div>
       </Notice>
 
       <div className="row" style={{ marginTop: 12 }}>
         <label className="small dim">
-          모드
+          {t('prober.mode')}
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value as Mode)}
             style={{ display: 'block', marginTop: 4 }}
           >
-            <option value="frame">Raven61 프레임 (체크섬 자동)</option>
+            <option value="frame">{t('prober.mode.frame')}</option>
             <option value="output">RAW OUTPUT → IN</option>
             <option value="feature">RAW FEATURE (set → get)</option>
           </select>
@@ -174,19 +174,19 @@ export function Prober() {
 
         {mode === 'frame' ? (
           <label className="small dim">
-            매직
+            {t('prober.magic')}
             <select
               value={magic}
               onChange={(e) => setMagic(e.target.value)}
               style={{ display: 'block', marginTop: 4 }}
             >
-              <option value={MAGIC.toString(16)}>0x55 (설정)</option>
-              <option value={MAGIC_FIRMWARE.toString(16)}>0x5f (펌웨어)</option>
+              <option value={MAGIC.toString(16)}>{t('prober.magic.config')}</option>
+              <option value={MAGIC_FIRMWARE.toString(16)}>{t('prober.magic.firmware')}</option>
             </select>
           </label>
         ) : (
           <label className="small dim" style={{ flex: '1 1 280px' }}>
-            템플릿 (<span className="mono">{SWEEP_MARK}</span> 위치를 스윕)
+            <T k="prober.template" params={{ mark: SWEEP_MARK }} />
             <input
               type="text"
               value={template}
@@ -206,7 +206,7 @@ export function Prober() {
           />
         </label>
         <label className="small dim">
-          시작
+          {t('prober.from')}
           <input
             type="text"
             value={from}
@@ -215,7 +215,7 @@ export function Prober() {
           />
         </label>
         <label className="small dim">
-          끝
+          {t('prober.to')}
           <input
             type="text"
             value={to}
@@ -225,7 +225,7 @@ export function Prober() {
         </label>
         {mode !== 'feature' && (
           <label className="small dim">
-            타임아웃(ms)
+            {t('prober.timeout')}
             <input
               type="text"
               value={timeoutMs}
@@ -235,7 +235,7 @@ export function Prober() {
           </label>
         )}
         <label className="small dim">
-          간격(ms)
+          {t('prober.interval')}
           <input
             type="text"
             value={delayMs}
@@ -248,20 +248,21 @@ export function Prober() {
       {mode === 'frame' && (
         <label className="small dim" style={{ display: 'block', marginTop: 10 }}>
           <input type="checkbox" checked={knownOnly} onChange={(e) => setKnownOnly(e.target.checked)} />{' '}
-          순정 드라이버가 실제로 보내는 {KNOWN_COMMANDS.length}개 명령만 시도 (권장)
+          {t('prober.knownOnly', { count: KNOWN_COMMANDS.length })}
         </label>
       )}
       {mode === 'frame' && (
         <label className="small dim" style={{ display: 'block', marginTop: 6 }}>
           <input type="checkbox" checked={skipRisky} onChange={(e) => setSkipRisky(e.target.checked)} />{' '}
-          안전이 확인된 명령만 보내기 ({[...SAFE].map((c) => `0x${c.toString(16).padStart(2, '0')}`).join(', ')}).
-          나머지는 블록 쓰기라서 빈 페이로드로 보내면 펌웨어 블롭의 앞부분에 0이 쓰일 수 있습니다.
+          {t('prober.safeOnly', {
+            commands: [...SAFE].map((c) => `0x${c.toString(16).padStart(2, '0')}`).join(', '),
+          })}
         </label>
       )}
       {mode !== 'feature' && (
         <label className="small dim" style={{ display: 'block', marginTop: 6 }}>
           <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />{' '}
-          각 명령을 0x01 … 0x02 트랜잭션으로 감싸기 (순정 드라이버와 동일한 순서)
+          {t('prober.wrap')}
         </label>
       )}
 
@@ -272,10 +273,10 @@ export function Prober() {
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
           />{' '}
-          위험을 이해했고 설정을 백업했습니다
+          {t('prober.acknowledge')}
         </label>
         <button className="primary" onClick={start} disabled={!connected || running || !acknowledged}>
-          스윕 시작
+          {t('prober.start')}
         </button>
         <button
           className="danger"
@@ -284,10 +285,14 @@ export function Prober() {
           }}
           disabled={!running}
         >
-          중지
+          {t('prober.stop')}
         </button>
         <span className="dim small">
-          {rows.length}회 시도 · 응답 {answered.length}건 · ACK {acked.length}건
+          {t('prober.stats', {
+            tried: rows.length,
+            answered: answered.length,
+            acked: acked.length,
+          })}
         </span>
       </div>
 
@@ -302,10 +307,10 @@ export function Prober() {
           <table>
             <thead>
               <tr>
-                <th style={{ width: 70 }}>명령</th>
-                <th style={{ width: 70 }}>응답</th>
+                <th style={{ width: 70 }}>{t('prober.col.command')}</th>
+                <th style={{ width: 70 }}>{t('prober.col.kind')}</th>
                 <th style={{ width: 55 }}>ms</th>
-                <th>응답</th>
+                <th>{t('prober.col.reply')}</th>
               </tr>
             </thead>
             <tbody>
@@ -319,7 +324,7 @@ export function Prober() {
                       {RISKY.has(r.value) && <span style={{ color: 'var(--err)' }}> ⚠</span>}
                     </td>
                     <td style={{ color: r.data ? 'var(--warn)' : r.ack ? 'var(--ok)' : 'var(--fg-dim)' }}>
-                      {r.data ? '데이터' : r.ack ? 'ACK' : '—'}
+                      {r.data ? t('prober.data') : r.ack ? 'ACK' : '—'}
                     </td>
                     <td className="mono dim">{r.ms ?? ''}</td>
                     <td className="mono small">
@@ -331,14 +336,13 @@ export function Prober() {
           </table>
           {answered.length === 0 && !running && (
             <div className="small dim" style={{ marginTop: 8 }}>
-              응답이 없습니다. 순정 드라이버가 실행 중이면 장치를 독점하고 있을 수 있으니 종료하고 다시
-              시도하세요. 그래도 없으면 Report ID 나 모드를 바꿔 보세요.
+              {t('prober.noAnswer')}
             </div>
           )}
           <div className="small dim" style={{ marginTop: 6 }}>
-            ★ = 순정 드라이버가 실제로 보내는 명령 (0x01 시작, 0x02 종료·적용, 0x
-            {COMMAND.globalSettings.toString(16)} 전역 설정) · ⚠ = 빈 페이로드로 보냈을 때 보드 상태가
-            바뀐 것이 확인된 명령
+            {t('prober.legend', {
+              globalSettings: `0x${COMMAND.globalSettings.toString(16)}`,
+            })}
           </div>
         </div>
       )}

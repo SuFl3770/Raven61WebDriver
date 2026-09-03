@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { useT } from '../i18n'
+import { T } from '../i18n/T'
 import { DEFAULT_TRAVEL_MM, KEY_COUNT } from '../keyboard/raven61'
 import { parseKeyEvent } from '../protocol/frame'
 import { MONITOR, armAnalogStream } from '../protocol/raven61'
@@ -28,6 +30,7 @@ const RENDER_MS = 120
 
 export function Calibration() {
   const { connected } = useConnection()
+  const t = useT()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [, forceRender] = useState(0)
@@ -86,17 +89,15 @@ export function Calibration() {
   const done = [...deepest.current].filter((mm) => mm >= FULL_TRAVEL_MM).length
 
   return (
-    <Panel title="바닥 자성값 캘리브레이션">
+    <Panel title={t('calibration.title')}>
       <Notice kind="warn">
         <span className="small">
-          캘리브레이션은 <b>전용 명령이 없습니다</b> — 아날로그 테스트 모드를 붙잡고 있는 것이
-          곧 캘리브레이션입니다. <span className="mono">0x{MONITOR.arm.toString(16)}</span> 를{' '}
-          {MONITOR.rearmMs} ms 마다 다시 보내 모드를 유지하고, 그 동안 키를 <b>끝까지</b> 누르면
-          그 키의 바닥 자성값이 다시 잡힙니다 (순정 드라이버 성능 탭과 같은 동작).
+          <T
+            k="calibration.how"
+            params={{ command: `0x${MONITOR.arm.toString(16)}`, rearmMs: MONITOR.rearmMs }}
+          />
           <div style={{ marginTop: 4 }}>
-            ⚠ <b>실행 중에는 이 키보드로 타이핑할 수 없습니다.</b> 정지하면 바로 돌아옵니다.
-            그리고 보정하면 액추에이션·래피드 트리거가 기준으로 삼는 바닥 위치가 움직입니다 —
-            필요할 때만 돌리세요.
+            <T k="calibration.warning" />
           </div>
         </span>
       </Notice>
@@ -113,18 +114,20 @@ export function Calibration() {
           onClick={() => void (running ? stop() : start())}
           disabled={!connected}
         >
-          {running ? '정지 (타이핑 복구)' : '캘리브레이션 시작'}
+          {running ? t('calibration.stop') : t('calibration.start')}
         </button>
         <span className="small">
-          바닥까지 도달 <b>{done}</b>/{KEY_COUNT}
+          <T k="calibration.progress" params={{ done, total: KEY_COUNT }} />
         </span>
-        <span className="small dim">{FULL_TRAVEL_MM.toFixed(2)} mm 이상 관측된 키를 셉니다</span>
+        <span className="small dim">
+          {t('calibration.progressHint', { mm: FULL_TRAVEL_MM.toFixed(2) })}
+        </span>
       </div>
 
       {running && (
         <>
           <div className="small dim" style={{ marginTop: 10, marginBottom: 8 }}>
-            채움은 이번 회차의 <b>최대 관측 깊이</b>입니다 — 비어 있는 키가 아직 안 누른 키입니다.
+            <T k="calibration.fillHint" />
           </div>
           <KeyGrid
             fill={(k) => (deepest.current[k.index] ?? 0) / DEFAULT_TRAVEL_MM}

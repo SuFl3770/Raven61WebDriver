@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useT } from '../i18n'
 import { supports } from '../protocol/codec'
 import { configStore, useDirtyKeys } from '../state/config'
 import { link, useCodec, useConnection } from '../state/link'
@@ -7,6 +8,7 @@ import { Notice } from './Panel'
 /** Read / write / commit controls shared by the actuation and rapid-trigger panels. */
 export function ApplyBar() {
   const codec = useCodec()
+  const t = useT()
   const { connected } = useConnection()
   const dirty = useDirtyKeys()
   const [busy, setBusy] = useState<string | null>(null)
@@ -38,7 +40,7 @@ export function ApplyBar() {
             configStore.load(configs)
           })}
         >
-          {busy === 'read' ? '읽는 중…' : '보드에서 읽기'}
+          {busy === 'read' ? t('apply.reading') : t('apply.read')}
         </button>
         <button
           className="primary"
@@ -51,18 +53,22 @@ export function ApplyBar() {
             configStore.markClean()
           })}
         >
-          {busy === 'write' ? '적용 중…' : `보드에 적용${dirty.length ? ` (${dirty.length})` : ''}`}
+          {busy === 'write'
+            ? t('apply.writing')
+            : dirty.length
+              ? t('apply.writeCount', { count: dirty.length })
+              : t('apply.write')}
         </button>
         {canCommit && (
           <button
             disabled={!connected || busy !== null}
             onClick={run('commit', () => codec.commit!(link))}
           >
-            {busy === 'commit' ? '저장 중…' : '플래시에 저장'}
+            {busy === 'commit' ? t('apply.committing') : t('apply.commit')}
           </button>
         )}
         {!canWrite && (
-          <span className="small dim">현재 코덱({codec.label})은 쓰기를 지원하지 않습니다.</span>
+          <span className="small dim">{t('apply.noWrite', { codec: t(codec.labelKey) })}</span>
         )}
       </div>
       {error && (

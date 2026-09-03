@@ -1,3 +1,4 @@
+import { useT } from '../i18n'
 import { LAYOUT_UNITS, RAVEN61_KEYS, type KeyDef } from '../keyboard/raven61'
 
 export interface KeyGridProps {
@@ -13,8 +14,9 @@ export interface KeyGridProps {
 const PAD = 0.06 // gap between caps, in keyboard units
 
 export function KeyGrid({ selected, onSelect, fill, sub, label }: KeyGridProps) {
+  const t = useT()
   return (
-    <div className="keygrid" role="group" aria-label="Raven61 키 배열">
+    <div className="keygrid" role="group" aria-label={t('keygrid.label')}>
       {RAVEN61_KEYS.map((k) => {
         const style = {
           left: `${((k.x + PAD) / LAYOUT_UNITS.width) * 100}%`,

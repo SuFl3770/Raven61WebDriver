@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffOffsets, toHex } from '../hid/hex'
 import type { TrafficEntry } from '../hid/log'
+import { useT } from '../i18n'
 import { Panel } from '../ui/Panel'
 import { link, useTraffic } from '../state/link'
 
@@ -15,6 +16,7 @@ function download(name: string, text: string): void {
 
 export function TrafficLogView() {
   const entries = useTraffic()
+  const t = useT()
   const [filter, setFilter] = useState('')
   const [follow, setFollow] = useState(true)
   const [a, setA] = useState<TrafficEntry | null>(null)
@@ -43,20 +45,25 @@ export function TrafficLogView() {
   const diff = a && b ? diffOffsets(a.data, b.data) : null
 
   return (
-    <Panel title="트래픽 로그">
+    <Panel title={t('log.title')}>
       <div className="row">
         <input
           type="text"
-          placeholder="필터: 16진 문자열, 방향, 메모"
+          placeholder={t('log.filter')}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           style={{ flex: '1 1 240px' }}
         />
         <label className="small dim">
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> 자동 스크롤
+          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />{' '}
+          {t('log.follow')}
         </label>
-        <button onClick={() => download('raven61-traffic.txt', link.log.toText())}>TXT 내보내기</button>
-        <button onClick={() => download('raven61-traffic.json', link.log.toJSON())}>JSON 내보내기</button>
+        <button onClick={() => download('raven61-traffic.txt', link.log.toText())}>
+          {t('log.exportTxt')}
+        </button>
+        <button onClick={() => download('raven61-traffic.json', link.log.toJSON())}>
+          {t('log.exportJson')}
+        </button>
         <button
           className="danger"
           onClick={() => {
@@ -65,12 +72,12 @@ export function TrafficLogView() {
             setB(null)
           }}
         >
-          비우기
+          {t('log.clear')}
         </button>
       </div>
 
       <div className="small dim" style={{ margin: '8px 0 6px' }}>
-        줄을 클릭하면 A/B로 표시되고 두 리포트의 바이트 차이를 보여줍니다. {entries.length}개 기록.
+        {t('log.hint', { count: entries.length })}
       </div>
 
       <div className="log" ref={boxRef}>
@@ -97,9 +104,10 @@ export function TrafficLogView() {
 
       {diff && (
         <pre className="dump" style={{ marginTop: 10 }}>
-          {`A #${a!.seq}  ${toHex(a!.data)}\nB #${b!.seq}  ${toHex(b!.data)}\n다른 바이트 오프셋: ${
-            diff.length ? diff.join(', ') : '(없음 — 동일)'
-          }`}
+          {`A #${a!.seq}  ${toHex(a!.data)}\nB #${b!.seq}  ${toHex(b!.data)}\n` +
+            t('log.diff', {
+              offsets: diff.length ? diff.join(', ') : t('log.diffNone'),
+            })}
         </pre>
       )}
     </Panel>

@@ -1,4 +1,5 @@
 import type { HidLink } from '../hid/link'
+import type { MessageKey } from '../i18n'
 import type {
   DeviceInfo,
   GlobalSettings,
@@ -23,10 +24,11 @@ export type Confidence = 'confirmed' | 'partial' | 'guess' | 'none'
  */
 export interface Raven61Codec {
   readonly id: string
-  readonly label: string
+  /** Message key for the codec's display name — see i18n/locales. */
+  readonly labelKey: MessageKey
   readonly confidence: Confidence
-  /** Human-readable notes rendered next to the connection status. */
-  readonly notes?: string
+  /** Message key for the notes rendered next to the connection status. */
+  readonly notesKey?: MessageKey
 
   /** Cheap, side-effect-free check that this codec matches the attached device. */
   probe(link: HidLink): Promise<boolean>

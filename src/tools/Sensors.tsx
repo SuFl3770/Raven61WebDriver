@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { BASELINE_TOLERANCE, KEY_FINGERPRINTS } from '../keyboard/fingerprints'
 import { DEFAULT_TRAVEL_MM, RAVEN61_KEYS, keyByIndex } from '../keyboard/raven61'
+import { t as translate, useT, type MessageKey } from '../i18n'
+import { T } from '../i18n/T'
 import { isEvent, parseKeyEvent } from '../protocol/frame'
 import { MONITOR, armAnalogStream } from '../protocol/raven61'
 import { sensorMap, useSensorMap } from '../state/sensorMap'
@@ -86,6 +88,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
   const [listenOnly, setListenOnly] = useState(false)
   const [armError, setArmError] = useState<string | null>(null)
   const [, forceRender] = useState(0)
+  const t = useT()
   const obs = useRef<Map<string, Observation>>(new Map())
   const undecoded = useRef(0)
   const t0 = useRef(0)
@@ -264,19 +267,17 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
 
   return (
     <>
-      <Panel title="실시간 키 깊이 · ADC">
+      <Panel title={t('sensors.title')}>
         <Notice>
           <span className="small">
-            보드가 올려보내는 것을 그대로 보여줍니다 — 실시간 키 깊이와 <b>원시 센서 숫자 전부</b>
-            (현재 ADC, 안 눌린 상태의 기준 ADC, 센서 델타, 센서값). 보드는 누르지 않은 키를 보고하지
-            않으므로, 격자가 채워지려면 키를 한 번씩 눌러야 합니다.
+            <T k="sensors.intro" />
           </span>
         </Notice>
         <div className="row" style={{ marginTop: 12 }}>
           <button className="primary" onClick={() => void toggle()} disabled={!connected}>
-            {listening ? '정지' : '시작'}
+            {listening ? t('sensors.stop') : t('sensors.start')}
           </button>
-          <button onClick={clear}>비우기</button>
+          <button onClick={clear}>{t('sensors.clear')}</button>
           <label className="small dim">
             <input
               type="checkbox"
@@ -284,18 +285,20 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
               disabled={listening}
               onChange={(e) => setListenOnly(e.target.checked)}
             />{' '}
-            <span className="mono">0x{MONITOR.arm.toString(16)}</span> 없이 수신만
+            <T k="sensors.listenOnly" params={{ arm: `0x${MONITOR.arm.toString(16)}` }} />
           </label>
           <span className="small dim">
-            포커스 #{focus} {focusKey?.label ?? ''} — 키를 클릭해 바꿉니다
+            {t('sensors.focus', { index: focus, key: focusKey?.label ?? '' })}
           </span>
           <span className="small dim">
-            키 {resolved.size}/{RAVEN61_KEYS.length}
-            {analysis && ` · 식별자 ${rows.length}`}
+            {t('sensors.keyCount', { seen: resolved.size, total: RAVEN61_KEYS.length })}
+            {analysis && ` · ${t('sensors.identities', { count: rows.length })}`}
             {analysis && undecoded.current > 0 && (
               <>
                 {' · '}
-                <span style={{ color: 'var(--warn)' }}>해석 실패 {undecoded.current}건</span>
+                <span style={{ color: 'var(--warn)' }}>
+                  {t('sensors.undecoded', { count: undecoded.current })}
+                </span>
               </>
             )}
           </span>
@@ -304,8 +307,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           <div style={{ marginTop: 10 }}>
             <Notice kind="warn">
               <span className="small">
-                <b>보정되지 않은 키가 있습니다.</b> 총 스트로크를 0 으로 보고하고 있어서 깊이는 공칭
-                4.00 mm 로 환산한 <b>추정치</b>입니다. 캘리브레이션을 한 번 돌리면 실측으로 바뀝니다.
+                <T k="sensors.uncalibrated" params={{ nominal: DEFAULT_TRAVEL_MM.toFixed(2) }} />
               </span>
             </Notice>
           </div>
@@ -314,10 +316,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           <div style={{ marginTop: 10 }}>
             <Notice kind="err">
               <span className="small">
-                <b>내장 식별표가 이 보드와 맞지 않습니다.</b> 표에 없는 센서값이 이름 없는 키에서
-                관측되었거나, 한 센서값 아래 키 수보다 많은 기준값이 관측되었습니다. 지금 상태에서는
-                수정자가 <b>다른 키로 잘못 해석될 수 있습니다</b> — <b>설정</b> 탭에서
-                <b> 내장 식별표 무시</b>를 켜고 <b>이벤트</b> 탭에서 직접 연결하세요.
+                <T k="sensors.staleTable" />
               </span>
             </Notice>
           </div>
@@ -326,9 +325,9 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           <div style={{ marginTop: 10 }}>
             <Notice kind="err">
               <span className="small">
-                스트림을 켜지 못했습니다: <span className="mono">{armError}</span>
+                {t('sensors.armFailed')} <span className="mono">{armError}</span>
                 <div style={{ marginTop: 4 }}>
-                  <b>장치</b> 탭에서 <b>권장</b> 표시가 붙은 인터페이스가 열려 있는지 확인하세요.
+                  <T k="sensors.armFailedHint" />
                 </div>
               </span>
             </Notice>
@@ -338,15 +337,19 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           <div style={{ marginTop: 10 }}>
             <Notice kind="warn">
               <span className="small">
-                아날로그 보고를 켰습니다 (<span className="mono">0x{MONITOR.arm.toString(16)}</span> →{' '}
-                <span className="mono">0x{MONITOR.disarm.toString(16)}</span>). 보고는 켜진 채 유지되고
-                테스트 모드는 빠져나왔으므로 타이핑은 그대로 동작하며 보정도 일어나지 않습니다.
+                <T
+                  k="sensors.armed"
+                  params={{
+                    arm: `0x${MONITOR.arm.toString(16)}`,
+                    disarm: `0x${MONITOR.disarm.toString(16)}`,
+                  }}
+                />
               </span>
             </Notice>
           </div>
         )}
         <div className="small dim" style={{ marginTop: 12, marginBottom: 8 }}>
-          채움은 <b>현재 깊이</b>, 아래 숫자는 <b>깊이 mm / 현재 ADC</b> 입니다.
+          <T k="sensors.gridLegend" />
         </div>
         <LiveGrid current={current} selected={sel} running={listening} />
       </Panel>
@@ -354,21 +357,21 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       <LiveTrace current={current} focus={focus} label={focusKey?.label ?? ''} running={listening} />
 
       {analysis && rows.length > 0 && (
-        <Panel title={`관측된 식별자 ${rows.length}개`}>
+        <Panel title={t('sensors.identitiesTitle', { count: rows.length })}>
           <table>
             <thead>
               <tr>
-                <th>키</th>
+                <th>{t('sensors.col.key')}</th>
                 <th style={{ width: 70 }}>usage</th>
-                <th style={{ width: 110 }}>수정자 비트</th>
-                <th style={{ width: 80 }}>센서값</th>
-                <th style={{ width: 110 }}>기준 ADC</th>
-                <th style={{ width: 80 }}>현재 ADC</th>
-                <th style={{ width: 110 }}>ADC 최소–최대</th>
-                <th style={{ width: 70 }}>델타</th>
-                <th style={{ width: 80 }}>최대 깊이</th>
-                <th style={{ width: 70 }}>관측</th>
-                <th style={{ width: 90 }}>센서값 형제</th>
+                <th style={{ width: 110 }}>{t('sensors.col.modifierBits')}</th>
+                <th style={{ width: 80 }}>{t('sensors.col.sensor')}</th>
+                <th style={{ width: 110 }}>{t('sensors.col.baseline')}</th>
+                <th style={{ width: 80 }}>{t('sensors.col.adc')}</th>
+                <th style={{ width: 110 }}>{t('sensors.col.adcRange')}</th>
+                <th style={{ width: 70 }}>{t('sensors.col.delta')}</th>
+                <th style={{ width: 80 }}>{t('sensors.col.maxDepth')}</th>
+                <th style={{ width: 70 }}>{t('sensors.col.samples')}</th>
+                <th style={{ width: 90 }}>{t('sensors.col.siblings')}</th>
               </tr>
             </thead>
             <tbody>
@@ -386,9 +389,9 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
                             <span className="mono">#{index}</span> {key.label}
                           </>
                         ) : r.identifiable ? (
-                          <span style={{ color: 'var(--warn)' }}>미해석</span>
+                          <span style={{ color: 'var(--warn)' }}>{t('sensors.unresolved')}</span>
                         ) : (
-                          <span className="dim">키 아님</span>
+                          <span className="dim">{t('sensors.notAKey')}</span>
                         )}
                       </td>
                       <td className="mono">{r.usageIsReal ? hex4(r.usage) : '—'}</td>
@@ -420,44 +423,43 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
             <div style={{ marginTop: 10 }}>
               <Notice kind="warn">
                 <span className="small">
-                  기준 ADC 가 <b>표류했습니다.</b> 기준 ADC 는 저장된 캘리브레이션 상수이므로, 한
-                  세션에서 값이 바뀌거나 한 센서값 아래 키 수보다 많은 값이 관측되면 그 사이에
-                  <b> 보정이 일어났다</b>는 뜻입니다. 아래 표류 패널에서 내장 식별표와의 차이를
-                  확인하세요.
+                  <T k="sensors.drifted" />
                 </span>
               </Notice>
             </div>
           )}
           {unresolved.length > 0 && (
             <div style={{ marginTop: 10 }} className="small dim">
-              미해석 {unresolved.length}개는 <b>이벤트</b> 탭에서 키에 연결할 수 있습니다.
+              <T k="sensors.unresolvedHint" params={{ count: unresolved.length }} />
             </div>
           )}
           {nonKey.length > 0 && (
             <div style={{ marginTop: 6 }} className="small dim">
-              <b>키 아님</b> {nonKey.length}개 — usage 도 수정자 비트도 기준 ADC 도 없는 리포트입니다
-              (<span className="mono">{nonKey.map((r) => `${hex4(r.sensorId)}:${r.lastBaseline}`).join(', ')}</span>).
-              정상 동작하는 보드에서도 계속 올라오므로 키 식별에서 제외합니다.
+              <T
+                k="sensors.notAKeyHint"
+                params={{
+                  count: nonKey.length,
+                  ids: nonKey.map((r) => `${hex4(r.sensorId)}:${r.lastBaseline}`).join(', '),
+                }}
+              />
             </div>
           )}
         </Panel>
       )}
 
       {analysis && candidates.length > 0 && (
-        <Panel title="키 주소 후보 — 표류하지 않는 바이트 찾기">
+        <Panel title={t('sensors.address.title')}>
           <div className="small dim" style={{ marginBottom: 8 }}>
-            usage 로 스스로 이름을 말하는 키 {candidates[0]!.groups}개를 <b>정답지</b>로 삼아, 바이트마다
-            두 가지를 봅니다: 한 키 안에서 <b>항상 같은 값</b>인가, 그리고 키마다 <b>서로 다른 값</b>인가.
-            둘을 모두 만족하는 바이트가 곧 캘리브레이션에 흔들리지 않는 키 주소입니다.
+            <T k="sensors.address.intro" params={{ groups: candidates[0]!.groups }} />
           </div>
           <table>
             <thead>
               <tr>
-                <th style={{ width: 100 }}>오프셋</th>
-                <th style={{ width: 100 }}>키 내 고정</th>
-                <th style={{ width: 110 }}>서로 다른 값</th>
-                <th style={{ width: 90 }}>평가</th>
-                <th>이미 아는 필드</th>
+                <th style={{ width: 100 }}>{t('sensors.address.col.offset')}</th>
+                <th style={{ width: 100 }}>{t('sensors.address.col.constant')}</th>
+                <th style={{ width: 110 }}>{t('sensors.address.col.distinct')}</th>
+                <th style={{ width: 90 }}>{t('sensors.address.col.verdict')}</th>
+                <th>{t('sensors.address.col.known')}</th>
               </tr>
             </thead>
             <tbody>
@@ -471,9 +473,15 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
                     {c.distinct}/{c.groups}
                   </td>
                   <td className="small" style={{ color: c.perfect ? 'var(--ok)' : 'var(--fg-dim)' }}>
-                    {c.perfect ? '주소 후보' : c.constantGroups < c.groups ? '변동' : '중복'}
+                    {c.perfect
+                      ? t('sensors.address.candidate')
+                      : c.constantGroups < c.groups
+                        ? t('sensors.address.varies')
+                        : t('sensors.address.duplicate')}
                   </td>
-                  <td className="small dim">{EVENT_FIELDS[c.offset] ?? '미해독'}</td>
+                  <td className="small dim">
+                    {EVENT_FIELDS[c.offset] ? t(EVENT_FIELDS[c.offset]!) : t('sensors.field.unknown')}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -482,16 +490,13 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
             {addresses.some((c) => !EVENT_FIELDS[c.offset]) ? (
               <Notice kind="info">
                 <span className="small">
-                  <b>미해독 바이트가 주소 조건을 만족합니다.</b> 이 값이 수정자 쪽에서도 서로 갈리면,
-                  지문 대신 이 바이트로 키를 식별할 수 있습니다 — 캘리브레이션과 무관하게.
+                  <T k="sensors.address.found" />
                 </span>
               </Notice>
             ) : (
               <Notice kind="warn">
                 <span className="small">
-                  주소 조건을 만족하는 <b>미해독 바이트가 없습니다.</b> 관측이 적어서일 수 있으니 각 키를
-                  여러 번, 깊이를 달리해 눌러 보세요. 그래도 없다면 이 이벤트에는 캘리브레이션에 안전한
-                  식별자가 없다는 뜻이고, 수정자는 <b>사용자 연결</b>에 의존해야 합니다.
+                  <T k="sensors.address.none" />
                 </span>
               </Notice>
             )}
@@ -499,12 +504,12 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           {unnamedRows.length > 0 && addresses.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <div className="small dim" style={{ marginBottom: 6 }}>
-                이름 없는 키(수정자·Fn)에서 그 후보 바이트가 실제로 갈리는지:
+                {t('sensors.address.unnamedCheck')}
               </div>
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 200 }}>식별자</th>
+                    <th style={{ width: 200 }}>{t('sensors.col.fingerprint')}</th>
                     {addresses.map((c) => (
                       <th key={c.offset} className="mono" style={{ width: 110 }}>
                         [{c.offset}]
@@ -533,21 +538,19 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       )}
 
       {analysis && drift.length > 0 && (
-        <Panel title="기준 ADC 표류 — 내장 식별표 대비">
+        <Panel title={t('sensors.drift.title')}>
           <div className="small dim" style={{ marginBottom: 8 }}>
-            <span className="mono">fingerprints.ts</span> 의 항목마다, 같은 센서값에서 관측된 기준 ADC
-            중 가장 가까운 값을 붙였습니다. 허용 오차는 ±{BASELINE_TOLERANCE} 이고, 그보다 벌어지면
-            그 키는 해석되지 않거나 다른 키로 해석됩니다.
+            <T k="sensors.drift.intro" params={{ tolerance: BASELINE_TOLERANCE }} />
           </div>
           <table>
             <thead>
               <tr>
-                <th>키</th>
-                <th style={{ width: 80 }}>센서값</th>
-                <th style={{ width: 90 }}>표의 값</th>
-                <th style={{ width: 90 }}>관측값</th>
-                <th style={{ width: 70 }}>차이</th>
-                <th>상태</th>
+                <th>{t('sensors.col.key')}</th>
+                <th style={{ width: 80 }}>{t('sensors.col.sensor')}</th>
+                <th style={{ width: 90 }}>{t('sensors.drift.col.expected')}</th>
+                <th style={{ width: 90 }}>{t('sensors.drift.col.observed')}</th>
+                <th style={{ width: 70 }}>{t('sensors.drift.col.delta')}</th>
+                <th>{t('sensors.drift.col.status')}</th>
               </tr>
             </thead>
             <tbody>
@@ -567,27 +570,24 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
                   >
                     {d.delta === null ? '—' : d.delta > 0 ? `+${d.delta}` : d.delta}
                   </td>
-                  <td className="small dim">{d.note}</td>
+                  <td className="small dim">{t(d.noteKey)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="row" style={{ marginTop: 10 }}>
             <button onClick={() => void navigator.clipboard?.writeText(toFingerprintSource(drift))}>
-              갱신된 식별표 소스로 복사
+              {t('sensors.drift.copySource')}
             </button>
             <span className="small dim">
-              관측된 기준 ADC 로 <span className="mono">KEY_FINGERPRINTS</span> 를 다시 씁니다 — 키
-              배정은 그대로 두고 숫자만 갱신합니다.
+              <T k="sensors.drift.copyHint" />
             </span>
           </div>
           {drift.some((d) => d.ambiguous) && (
             <div style={{ marginTop: 10 }}>
               <Notice kind="err">
                 <span className="small">
-                  <b>모호한 짝이 있습니다.</b> 같은 센서값 아래 두 키의 관측값이 서로 가까워서, 어느
-                  관측값이 어느 키인지 이 표만으로는 정할 수 없습니다. 그 키들은 <b>이벤트</b> 탭에서
-                  하나씩 눌러 직접 연결하세요 — 사용자 연결이 내장 표보다 우선합니다.
+                  <T k="sensors.drift.ambiguous" />
                 </span>
               </Notice>
             </div>
@@ -631,23 +631,23 @@ function sortIndex(r: Observation, resolved: ReadonlyMap<number, Observation>): 
 }
 
 /** Offsets already decoded, so a hit there is confirmation rather than news. */
-const EVENT_FIELDS: Record<number, string> = {
-  0: '0xa0 이벤트 표식',
-  1: '길이',
-  3: 'usage',
-  4: '센서 델타 (상위)',
-  5: '센서 델타 (하위)',
-  7: '깊이',
-  8: '미해독 — 깊이와 함께 움직임',
-  9: '방향',
-  12: '센서값 (상위)',
-  13: '센서값 (하위)',
-  14: '총 스트로크 (상위)',
-  15: '총 스트로크 (하위)',
-  16: '현재 ADC (상위)',
-  17: '현재 ADC (하위)',
-  18: '기준 ADC (상위)',
-  19: '기준 ADC (하위)',
+const EVENT_FIELDS: Record<number, MessageKey> = {
+  0: 'sensors.field.eventMark',
+  1: 'sensors.field.length',
+  3: 'sensors.field.usage',
+  4: 'sensors.field.deltaHigh',
+  5: 'sensors.field.deltaLow',
+  7: 'sensors.field.depth',
+  8: 'sensors.field.undecodedDepth',
+  9: 'sensors.field.direction',
+  12: 'sensors.field.sensorHigh',
+  13: 'sensors.field.sensorLow',
+  14: 'sensors.field.travelHigh',
+  15: 'sensors.field.travelLow',
+  16: 'sensors.field.adcHigh',
+  17: 'sensors.field.adcLow',
+  18: 'sensors.field.baselineHigh',
+  19: 'sensors.field.baselineLow',
 }
 
 interface ByteCandidate {
@@ -715,7 +715,8 @@ interface DriftRow {
   observed: number | null
   delta: number | null
   ambiguous: boolean
-  note: string
+  /** Message key for the status cell — resolved when the row is rendered. */
+  noteKey: MessageKey
 }
 
 /**
@@ -758,11 +759,11 @@ function driftReport(rows: readonly Observation[]): DriftRow[] {
       observed: best.b,
       delta,
       ambiguous: stolen,
-      note: stolen
-        ? '같은 센서값의 다른 키와 구별 불가'
+      noteKey: stolen
+        ? 'sensors.drift.note.ambiguous'
         : Math.abs(delta) > BASELINE_TOLERANCE
-          ? '허용 오차 초과 — 이 키는 해석되지 않습니다'
-          : '일치',
+          ? 'sensors.drift.note.outOfRange'
+          : 'sensors.drift.note.match',
     })
   }
   return out
@@ -774,7 +775,7 @@ function toFingerprintSource(drift: readonly DriftRow[]): string {
   const lines = KEY_FINGERPRINTS.map((f) => {
     const d = patched.get(`${f.sensorId}:${f.keyIndex}`)
     const value = d?.observed ?? f.adcBaseline
-    const flag = d?.ambiguous ? ' // ⚠ 모호 — 직접 확인 필요' : ''
+    const flag = d?.ambiguous ? ` // ⚠ ${translate('sensors.drift.sourceFlag')}` : ''
     return (
       `  { sensorId: 0x${f.sensorId.toString(16).padStart(4, '0')}, ` +
       `adcBaseline: ${value}, keyIndex: ${f.keyIndex}, label: '${f.label}' },${flag}`
@@ -838,6 +839,7 @@ function LiveTrace({
   label,
   running,
 }: LiveProps & { focus: number; label: string }) {
+  const t = useT()
   const canvas = useRef<HTMLCanvasElement>(null)
   const history = useRef<number[]>([])
 
@@ -856,17 +858,15 @@ function LiveTrace({
   const noise = row && row.depthMaxMm > row.depthMinMm ? row.depthMaxMm - row.depthMinMm : 0
 
   return (
-    <Panel title={`트레이스 — #${focus} ${label}`}>
+    <Panel title={t('sensors.trace.title', { index: focus, key: label })}>
       <canvas ref={canvas} width={880} height={160} style={{ width: '100%', maxWidth: 880 }} />
       <div className="row small dim" style={{ marginTop: 8 }}>
-        <span>현재 {(row?.depthMm ?? 0).toFixed(3)} mm</span>
-        <span>최소 {row ? row.depthMinMm.toFixed(3) : '—'}</span>
-        <span>최대 {row ? row.depthMaxMm.toFixed(3) : '—'}</span>
-        <span>현재 ADC {row?.adcLast ?? '—'}</span>
-        <span>기준 ADC {row?.lastBaseline ?? '—'}</span>
-        <span>
-          정지 시 흔들림 {noise.toFixed(3)} mm — 래피드 트리거 민감도는 이 값보다 커야 합니다
-        </span>
+        <span>{t('sensors.trace.current', { mm: (row?.depthMm ?? 0).toFixed(3) })}</span>
+        <span>{t('sensors.trace.min', { mm: row ? row.depthMinMm.toFixed(3) : '—' })}</span>
+        <span>{t('sensors.trace.max', { mm: row ? row.depthMaxMm.toFixed(3) : '—' })}</span>
+        <span>{t('sensors.trace.adc', { value: row?.adcLast ?? '—' })}</span>
+        <span>{t('sensors.trace.baseline', { value: row?.lastBaseline ?? '—' })}</span>
+        <span>{t('sensors.trace.noise', { mm: noise.toFixed(3) })}</span>
       </div>
     </Panel>
   )

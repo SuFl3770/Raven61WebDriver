@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffOffsets, toHex } from '../hid/hex'
+import { useT } from '../i18n'
+import { T } from '../i18n/T'
 import { RAVEN61_KEYS } from '../keyboard/raven61'
 import { isEvent, parseKeyEvent, type KeyEvent as AnalogEvent } from '../protocol/frame'
 import { MONITOR, armAnalogStream } from '../protocol/raven61'
@@ -28,6 +30,7 @@ const KEEP = 400
  */
 export function Events() {
   const { connected } = useConnection()
+  const t = useT()
   const [events, setEvents] = useState<Event[]>([])
   const [onlyEvents, setOnlyEvents] = useState(true)
   const [listening, setListening] = useState(false)
@@ -138,28 +141,24 @@ export function Events() {
 
   return (
     <>
-      <Panel title="이벤트 수신">
+      <Panel title={t('events.title')}>
         <Notice>
           <span className="small">
-            보드가 <b>요청 없이 올려보내는</b> 리포트를 듣습니다. 순정 드라이버는 이걸 전용 루프로
-            폴링하며, <span className="mono">0xa0</span> 로 시작하는 리포트를 이벤트로 처리합니다.
-            듣기만 할 때는 아무것도 전송하지 않습니다. 다만 보드는 <b>켜 줘야</b> 스트림을 흘리므로
-            (명세 §3.2), 아무것도 안 오면 아래 <b>스트림 켜기</b> 를 함께 켜세요. 보고를 켠 직후 테스트
-            모드를 빠져나오므로 <b>타이핑은 그대로 동작</b>하고 보정도 일어나지 않습니다.
+            <T k="events.intro" />
           </span>
         </Notice>
         <div className="row" style={{ marginTop: 12 }}>
           <button className="primary" onClick={() => setListening((v) => !v)} disabled={!connected}>
-            {listening ? '정지' : '수신 시작'}
+            {listening ? t('events.stop') : t('events.start')}
           </button>
-          <button onClick={() => setEvents([])}>비우기</button>
+          <button onClick={() => setEvents([])}>{t('events.clear')}</button>
           <label className="small dim">
             <input
               type="checkbox"
               checked={onlyEvents}
               onChange={(e) => setOnlyEvents(e.target.checked)}
             />{' '}
-            0xa0 이벤트만
+            {t('events.onlyEvents')}
           </label>
           <label className="small dim">
             <input
@@ -168,34 +167,43 @@ export function Events() {
               disabled={!connected}
               onChange={(e) => void setArmed(e.target.checked)}
             />{' '}
-            스트림 켜기 (<span className="mono">0x{MONITOR.arm.toString(16)}</span> →{' '}
-            <span className="mono">0x{MONITOR.disarm.toString(16)}</span>) — <b>켜는 동안 타이핑 안 됨</b>
+            <T
+              k="events.armStream"
+              params={{
+                arm: `0x${MONITOR.arm.toString(16)}`,
+                disarm: `0x${MONITOR.disarm.toString(16)}`,
+              }}
+            />
           </label>
-          <span className="small dim">{events.length}건 수신</span>
+          <span className="small dim">{t('events.received', { count: events.length })}</span>
         </div>
         {armError && (
           <div style={{ marginTop: 10 }}>
             <Notice kind="err">
               <span className="small">
-                스트림을 켜지 못했습니다: <span className="mono">{armError}</span>
+                {t('events.armFailed')} <span className="mono">{armError}</span>
               </span>
             </Notice>
           </div>
         )}
         {listening && events.length === 0 && (
           <div className="small dim" style={{ marginTop: 10 }}>
-            아직 아무것도 오지 않습니다. 키를 눌러 보고, 그래도 없으면 <b>스트림 켜기</b> 를 켜세요 —
-            보드는 켜 주지 않으면 아무것도 올려보내지 않습니다.
+            <T k="events.silent" />
           </div>
         )}
       </Panel>
 
       {events.length > 0 && (
-        <Panel title={`보고된 키 ${coverage.size}/${RAVEN61_KEYS.length}`}>
+        <Panel
+          title={t('events.reportedKeys', {
+            seen: coverage.size,
+            total: RAVEN61_KEYS.length,
+          })}
+        >
           <div className="small dim" style={{ marginBottom: 8 }}>
             {binding === null
-              ? '키를 하나씩 눌러 보세요. 회색으로 남는 키는 아직 센서 주소가 연결되지 않은 키입니다.'
-              : `연결할 키를 그리드에서 고르세요 (${binding}).`}
+              ? t('events.pressHint')
+              : t('events.bindHint', { fingerprint: binding })}
           </div>
           <KeyGrid
             fill={(k) => (coverage.has(k.index) ? 1 : 0)}
@@ -211,19 +219,16 @@ export function Events() {
             <div style={{ marginTop: 12 }}>
               <Notice kind="warn">
                 <div className="small">
-                  <b>이름을 밝히지 않는 키 {unbound.length}개.</b> 수정자 키와 Fn 은 HID 에서
-                  비트마스크로 보고되어 usage 가 없습니다 (0x00 / Fn 은 0x01). 아래에서 하나를 고른 뒤
-                  위 그리드에서 해당 키를 클릭하면 연결됩니다. 식별자는 센서값과 기준 ADC 의 조합입니다 —
-                  센서값만으로는 일부 키가 겹칩니다.
+                  <T k="events.unbound" params={{ count: unbound.length }} />
                 </div>
               </Notice>
               <table style={{ marginTop: 8 }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 130 }}>식별자</th>
+                    <th style={{ width: 130 }}>{t('events.col.fingerprint')}</th>
                     <th style={{ width: 70 }}>usage</th>
-                    <th style={{ width: 90 }}>센서값</th>
-                    <th style={{ width: 70 }}>샘플</th>
+                    <th style={{ width: 90 }}>{t('events.col.sensor')}</th>
+                    <th style={{ width: 70 }}>{t('events.col.samples')}</th>
                     <th />
                   </tr>
                 </thead>
@@ -241,7 +246,7 @@ export function Events() {
                             setBinding(binding === event.fingerprint ? null : event.fingerprint)
                           }
                         >
-                          {binding === event.fingerprint ? '취소' : '이 키 연결'}
+                          {binding === event.fingerprint ? t('events.cancel') : t('events.bind')}
                         </button>
                       </td>
                     </tr>
@@ -253,12 +258,12 @@ export function Events() {
 
           {bindings.size > 0 && (
             <div className="row" style={{ marginTop: 12 }}>
-              <span className="small dim">{bindings.size}개 키 연결됨 (브라우저에 저장)</span>
+              <span className="small dim">{t('events.bound', { count: bindings.size })}</span>
               <button onClick={() => navigator.clipboard?.writeText(sensorMap.toSource())}>
-                소스로 복사
+                {t('events.copySource')}
               </button>
               <button className="danger" onClick={() => sensorMap.clear()}>
-                연결 초기화
+                {t('events.resetBindings')}
               </button>
             </div>
           )}
@@ -266,30 +271,35 @@ export function Events() {
       )}
 
       {latest && (
-        <Panel title="최근 이벤트">
+        <Panel title={t('events.latest')}>
           <div className="small dim" style={{ marginBottom: 8 }}>
             {(() => {
               const ev = parseKeyEvent(latest.payload)
-              if (!ev) return '아날로그 키 이벤트 형식이 아닙니다'
+              if (!ev) return t('events.notAnalog')
               const index = sensorMap.resolve(ev)
               const key = index === undefined ? undefined : RAVEN61_KEYS[index]
-              return (
-                `센서 0x${ev.sensorId.toString(16).padStart(4, '0')}` +
-                ` · usage 0x${ev.usage.toString(16).padStart(2, '0')}` +
-                `${key ? ` (${key.label})` : ' (미연결)'}` +
-                ` · 깊이 ${ev.depthMm.toFixed(2)}/${ev.travelMm.toFixed(2)}mm` +
-                ` · ${ev.direction === 'down' ? '누르는 중' : '떼는 중'}` +
-                ` · ADC ${ev.adc}/${ev.adcBaseline}`
-              )
+              return t('events.latestLine', {
+                sensor: `0x${ev.sensorId.toString(16).padStart(4, '0')}`,
+                usage: `0x${ev.usage.toString(16).padStart(2, '0')}`,
+                key: key ? key.label : t('events.unresolved'),
+                depth: ev.depthMm.toFixed(2),
+                travel: ev.travelMm.toFixed(2),
+                direction:
+                  ev.direction === 'down' ? t('events.pressing') : t('events.releasing'),
+                adc: ev.adc,
+                baseline: ev.adcBaseline,
+              })
             })()}
           </div>
           {events.length > 1 && (
             <div className="small" style={{ marginBottom: 8 }}>
               {moving.size === 0 ? (
-                <span className="dim">{events.length}건 모두 동일 — 변하는 바이트가 없습니다.</span>
+                <span className="dim">{t('events.noMoving', { count: events.length })}</span>
               ) : (
                 <span style={{ color: 'var(--ok)' }}>
-                  변하는 오프셋: {[...moving].sort((a, b) => a - b).join(', ')}
+                  {t('events.movingOffsets', {
+                    offsets: [...moving].sort((a, b) => a - b).join(', '),
+                  })}
                 </span>
               )}
             </div>

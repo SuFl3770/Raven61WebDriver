@@ -1,3 +1,4 @@
+import { useT } from '../i18n'
 import { supports } from '../protocol/codec'
 import { useCodec } from '../state/link'
 import { ApplyBar } from '../ui/ApplyBar'
@@ -26,16 +27,17 @@ import { RapidTrigger } from './RapidTrigger'
  */
 export function InputPoint() {
   const codec = useCodec()
+  const t = useT()
   return (
     <>
       <PerfOverview />
       <Actuation />
       <RapidTrigger />
-      <Panel title="적용">
+      <Panel title={t('inputPoint.apply')}>
         {supports(codec, 'writeKeyConfigs') ? (
           <ApplyBar />
         ) : (
-          <NotDecoded what="액추에이션 · 래피드 트리거 쓰기" />
+          <NotDecoded what="inputPoint.writeWhat" />
         )}
       </Panel>
       <Calibration />

@@ -10,6 +10,8 @@
  * Units here are millimetres. The wire encoding is the codec's problem.
  */
 
+import { t } from '../i18n'
+
 /**
  * `key_mode` in the stock schema. 0 = off, 1 = rapid trigger, 2 = rapid trigger
  * with full-stroke quick trigger — see KEY_MODE_WIRE in keyPerf.ts. The model
@@ -65,7 +67,7 @@ export function switchTypeInfo(value: number | undefined): SwitchTypeInfo | unde
 /** Never invents a name: an out-of-range value is shown as the number it is. */
 export function switchTypeName(value: number | undefined): string {
   if (value === undefined) return '—'
-  return switchTypeInfo(value)?.name ?? `종류 ${value}`
+  return switchTypeInfo(value)?.name ?? t('protocol.switchType.unknown', { value })
 }
 
 export interface RapidTrigger {

@@ -1,0 +1,561 @@
+{
+  "app": {
+    "tab": {
+      "device": "Device",
+      "input": "Input point",
+      "sensors": "Sensors",
+      "keymap": "Keymap",
+      "settings": "Settings",
+      "debug": "Debug"
+    },
+    "connected": "Connected",
+    "disconnected": "Not connected",
+    "codec": "Codec {codec}",
+    "notConnected": "No device is connected. Connect one from the <b>Device</b> tab first."
+  },
+
+  "selection": {
+    "selectAll": "Select all",
+    "clear": "Clear selection",
+    "none": "Nothing selected — changes apply to every key",
+    "count_one": "{count} key selected",
+    "count_other": "{count} keys selected",
+    "hint": "Shift/Ctrl-click for multi-select"
+  },
+
+  "keygrid": {
+    "label": "Raven61 key layout"
+  },
+
+  "panel": {
+    "notDecoded": {
+      "title": "{what} — protocol not decoded",
+      "body": "This panel turns itself on as soon as a codec implements the command. Find the command with <b>Explorer → Console → Prober</b> first, then add a codec under <c>src/protocol/</c>."
+    }
+  },
+
+  "apply": {
+    "read": "Read from board",
+    "reading": "Reading…",
+    "write": "Apply to board",
+    "writeCount": "Apply to board ({count})",
+    "writing": "Applying…",
+    "commit": "Save to flash",
+    "committing": "Saving…",
+    "noWrite": "The active codec ({codec}) does not support writing."
+  },
+
+  "version": {
+    "channel": "Channel {channel}",
+    "branch": "Branch {branch}",
+    "commit": "Commit {commit}",
+    "date": "Commit date {date}",
+    "dirty": "Built with uncommitted changes"
+  },
+
+  "codec": {
+    "unknown": {
+      "label": "Not decoded (raw mode)",
+      "notes": "The protocol has not been decoded yet. Explorer, console, prober and the traffic log all still work."
+    },
+    "raven61": {
+      "label": "Raven61 (reads decoded)",
+      "notes": "Packet framing, analog key events, the per-key performance read (0xa0) and the global settings read (0x05) are decoded. The write (0xa1) is decoded down to the encoder but has not been verified against hardware, so it is not wired up yet."
+    }
+  },
+
+  "protocol": {
+    "switchType": {
+      "unknown": "Type {value}"
+    }
+  },
+
+  "raven61": {
+    "chunkTimeout": "{label}: no reply for chunk {index}/{total} (offset {offset}) — {reason}",
+    "slotMapPartial": "Only {found}/{total} keys were resolved from the keymap; falling back to the guessed slot mapping.",
+    "slotMapFailed": "Keymap read failed; falling back to the guessed slot mapping: {reason}",
+    "keysWithoutSlot": "{count} keys have no slot: {keys}",
+    "emptySlots": "{count} key slots are empty in the performance block: {keys}",
+    "emptySlotEntry": "{key} (slot {slot})"
+  },
+
+  "device": {
+    "title": "Device",
+    "unsupported": {
+      "title": "This browser does not support WebHID.",
+      "body": "Open it in desktop Chrome, Edge or Opera. The page must be served over HTTPS or from localhost."
+    },
+    "pick": "Choose device…",
+    "disconnect": "Disconnect",
+    "codec": "Codec: {codec}",
+    "filter": {
+      "raven": {
+        "label": "Raven family (VID 0x19F5)",
+        "hint": "The device ids the stock driver recognises. This is usually the one you want."
+      },
+      "all": {
+        "label": "All HID devices",
+        "hint": "For when nothing shows up above. Lists every HID device Chrome can reach."
+      },
+      "vendorPages": {
+        "label": "Vendor-defined pages",
+        "hint": "Only the usage pages commonly used as a configuration channel."
+      }
+    },
+    "wrongInterface": "The interface currently open does not look like the configuration channel. Open the one marked <b>recommended</b> in the list below, or no key travel will reach the monitor.",
+    "collections": "{total} collections · {vendor} vendor-defined",
+    "knownHint": "Interfaces you have already granted access to. One keyboard showing up as several is normal, and only one of them carries configuration and the monitor stream — the <b>recommended</b> one with the highest score.",
+    "table": {
+      "interface": "Interface",
+      "score": "Score",
+      "reasons": "Why"
+    },
+    "recommended": "← recommended",
+    "inUse": "In use",
+    "open": "Open",
+    "unnamed": "(unnamed)",
+    "reason": {
+      "ravenVid": "Raven VID",
+      "knownPid": "known PID",
+      "inReport": "{bytes}-byte IN",
+      "outReport": "{bytes}-byte OUT",
+      "vendorPage": "vendor page",
+      "keyboardInterface": "keyboard interface",
+      "consumerControl": "consumer control"
+    }
+  },
+
+  "inputPoint": {
+    "apply": "Apply",
+    "writeWhat": "actuation · rapid trigger write"
+  },
+
+  "actuation": {
+    "title": "Actuation point",
+    "counts": "mm = {counts} counts (in steps of {step} mm) · out of {travel} mm total travel",
+    "preset": {
+      "fast": "Fast {mm} mm",
+      "default": "Default {mm} mm",
+      "deep": "Deep {mm} mm"
+    }
+  },
+
+  "rt": {
+    "title": "Rapid trigger",
+    "enable": "Enable rapid trigger on the selected keys",
+    "sensitivity": "Sensitivity (mm)",
+    "pressSensitivity": "Press sensitivity (mm)",
+    "releaseSensitivity": "Release sensitivity (mm)",
+    "separate": "Separate press/release",
+    "continuous": "Continuous mode (works above the actuation point too)",
+    "noise": "The board's smallest step is {step} mm, and the factory default is 0.10 mm for both press and release. Going below that can let sensor noise through as real input, so check the resting jitter on the <b>Monitor</b> tab first."
+  },
+
+  "deadzone": {
+    "title": "Dead zone",
+    "hint": "The stretch at each end of the stroke that is ignored. Same as the stock driver's Top / Bottom dead zone.",
+    "enable": "Enable dead zone on the selected keys",
+    "top": "Top (mm)",
+    "bottom": "Bottom (mm)"
+  },
+
+  "advanced": {
+    "title": "Advanced keys (DKS · MT · TGL · RS · SOCD · OKS)",
+    "what": "advanced keys",
+    "note": "The stock driver stores up to 40 advanced keys per profile and tells the kinds apart by <c>t_magnetic_key_data.macro_type</c>. DKS keeps its four depth-stage actions in <c>t_key_item_data.trigger_state1..4</c>."
+  },
+
+  "calibration": {
+    "title": "Bottom-out calibration",
+    "how": "Calibration has <b>no command of its own</b> — holding the analog test mode open <i>is</i> the calibration. <c>{command}</c> is resent every {rearmMs} ms to keep the mode open, and every key pressed <b>all the way down</b> while it is held relearns its bottom-out magnet value (the same thing the stock driver's performance tab does).",
+    "warning": "⚠ <b>You cannot type on this keyboard while it runs.</b> Typing comes back the moment you stop. Recalibrating also moves the bottom that actuation and rapid trigger are measured from — only run it when you need it.",
+    "start": "Start calibration",
+    "stop": "Stop (restore typing)",
+    "progress": "Bottomed out <b>{done}</b>/{total}",
+    "progressHint": "counts keys seen at {mm} mm or deeper",
+    "fillHint": "The fill is the <b>deepest travel seen</b> this pass — an empty key is one you have not pressed yet."
+  },
+
+  "perf": {
+    "title": "Current board settings",
+    "what": "per-key performance read",
+    "needDevice": "Once a device is connected, all {keys} keys are read back from the board. Connect one from the <b>Device</b> tab first.",
+    "reading": "Reading…",
+    "reread": "Re-read from board",
+    "status": {
+      "ok": "as of {time} · 0xa0 · 1024 bytes · 128 slots",
+      "error": "Read failed",
+      "loading": "receiving 19 chunks of the 0xa0 block",
+      "idle": "not read yet"
+    },
+    "slotMap": {
+      "label": "Slot mapping",
+      "keymap": "from the board's keymap",
+      "guess": "guessed (keymap read failed)",
+      "count": "{resolved}/{total} keys"
+    },
+    "dirty_one": "{count} edited key — re-reading discards it",
+    "dirty_other": "{count} edited keys — re-reading discards them",
+    "gridShow": "Grid shows",
+    "metric": {
+      "actuation": "Actuation",
+      "rt": "Rapid trigger",
+      "switch": "Switch"
+    },
+    "on": "on",
+    "off": "off",
+    "rt": {
+      "full": "full stroke"
+    },
+    "allKeys": "all {count} keys",
+    "keyCount_one": "({count} key)",
+    "keyCount_other": "({count} keys)",
+    "bottomOut": "Trigger on bottom-out",
+    "bottomOutNote": "This one is a <b>global</b> setting rather than a per-key one (0x05 block, <c>payload[15]</c> bit 1).",
+    "sameByte": "Same byte: Tachyon {tachyon} · actuation_check {actuationCheck} · magnet test {magnetTest} · debounce {debounce}",
+    "uniform": "Every key has the same settings",
+    "groups": "{count} groups with differing settings",
+    "expandAll": "Expand every key ({rows} rows)",
+    "col": {
+      "key": "Key",
+      "actuation": "Actuation",
+      "rt": "Rapid trigger",
+      "sensitivity": "RT sensitivity (press / release)",
+      "deadzone": "Dead zone (top / bottom)",
+      "switch": "Switch fitted",
+      "travel": "Total travel"
+    },
+    "emptySlots": {
+      "title_one": "{count} slot is empty (all {bytes} bytes zero)",
+      "title_other": "{count} slots are empty (all {bytes} bytes zero)",
+      "note": "An all-zero record decodes as actuation {mm} mm · RT off · {switchName}. That is not a real setting — it is a <b>failed read</b>."
+    },
+    "hideRaw": "Hide raw block",
+    "showRaw": "Show raw block ({slots} slots)",
+    "copyDump": "Copy dump",
+    "nonEmpty": "{used} of {total} slots non-empty",
+    "footnote": "Values are in mm and the board's smallest step is {step} mm. The table shows what was read from the board as-is; edits made in the panels below do nothing until you <b>apply to board</b>."
+  },
+
+  "keymap": {
+    "title": "Keymap",
+    "readLayer": "Read layer",
+    "writeLayer": "Write layer",
+    "transparent": "▽ = transparent (falls through to the layer below).",
+    "pickHint": "Pick a key, then assign a code below.",
+    "picker": {
+      "title": "Choose a keycode",
+      "titleFor": "Choose a keycode — #{index} {key}",
+      "empty": "Select a key above first."
+    },
+    "apply": "Apply",
+    "writeWhat": "keymap write",
+    "writeNote": "The keymap command is usually long enough to be split across several reports. Change <b>one key</b> in the stock driver, save, and diff the captures: the byte that moved is that key's index — the most reliable way to work out the matrix order."
+  },
+
+  "keycode": {
+    "group": {
+      "letters": "Letters",
+      "digits": "Digits · symbols",
+      "function": "Function keys",
+      "editing": "Editing · navigation",
+      "modifiers": "Modifiers",
+      "special": "Special"
+    },
+    "none": "None",
+    "error": "Error"
+  },
+
+  "settings": {
+    "language": {
+      "title": "Language",
+      "hint": "Your choice is stored in this browser only."
+    },
+    "display": {
+      "title": "Display"
+    },
+    "debug": {
+      "label": "Debug mode",
+      "hint": "Shows the <b>Debug</b> tab — the live monitor at the top, then the analysis panels (observed identities · key address candidates · baseline ADC drift) and the tools (explorer · console · prober · events · log). They exist for decoding the protocol, so you do not normally need them."
+    },
+    "keyId": {
+      "title": "Key identification",
+      "label": "Ignore the built-in table — use my own bindings only",
+      "hint": "All 61 keys now name themselves in the event stream (modifiers through the HID modifier bitmask in <c>payload[2]</c>), so this table is only a fallback. It guesses a key from its sensor value and baseline ADC, both of which calibration changes — and a stale table <b>guesses wrong rather than not at all.</b> Turn it off when that happens."
+    },
+    "storage": {
+      "title": "What gets stored",
+      "hint": "The settings above and the sensor addresses you bind on the <b>Events</b> tab live in this browser's <c>localStorage</c> only. Nothing is written to the board, so opening this on another PC starts from the defaults."
+    }
+  },
+
+  "debug": {
+    "tools": "Analysis tools",
+    "tool": {
+      "explorer": {
+        "label": "Explorer",
+        "hint": "Report descriptor tree, with the usable report ids and their lengths"
+      },
+      "console": {
+        "label": "Console",
+        "hint": "Send commands as frames or blocks; repeat one and see which bytes move"
+      },
+      "prober": {
+        "label": "Prober",
+        "hint": "Sweep commands as real frames (checksum handled) and see what answers"
+      },
+      "events": {
+        "label": "Events",
+        "hint": "Listen to what the board sends unasked, and bind sensor addresses"
+      },
+      "log": {
+        "label": "Log",
+        "hint": "Every report in and out, A/B byte diff, TXT and JSON export"
+      }
+    }
+  },
+
+  "explorer": {
+    "title": "HID explorer",
+    "needDevice": "Connect a device first.",
+    "hint": "The report descriptor as the browser parsed it. Check the report ids you can send, and their exact lengths, here.",
+    "chromeNote": "Chrome deliberately does not expose the <b>keyboard top-level collections (0x01/0x06)</b> to WebHID. Their absence here is not a fault — configuration goes through the vendor-defined collection.",
+    "col": {
+      "bytes": "Bytes",
+      "items": "Items"
+    },
+    "configCandidate": "← config channel candidate"
+  },
+
+  "console": {
+    "title": "Report console",
+    "needDevice": "Connect a device first.",
+    "mode": "Mode",
+    "mode.frame": "Raven61 frame (checksum handled)",
+    "mode.output": "Send RAW OUTPUT",
+    "mode.featureSet": "RAW FEATURE write",
+    "mode.featureGet": "RAW FEATURE read",
+    "declaredIds": "Declared ids: {ids}",
+    "magic": "Magic",
+    "magic.config": "0x55 (config)",
+    "magic.firmware": "0x5f (firmware)",
+    "command": "Command",
+    "data": "Data",
+    "dataPlaceholder": "leave empty for all zeros",
+    "blockMode": "Block transfer format (length + offset header)",
+    "offset": "Offset",
+    "length": "Length (max {max})",
+    "wrap": "Wrap in a 0x01 … 0x02 transaction",
+    "repeat": "Repeat",
+    "interval": "Interval (ms)",
+    "timeout": "Timeout (ms)",
+    "preview": "Packet to send: {bytes}  ({described})",
+    "previewFailed": "Cannot build the packet: {reason}",
+    "payloadPlaceholder": "e.g. 55 a9 00 00   (you supply the checksum yourself)",
+    "send": "Send",
+    "sending": "Sending…",
+    "stop": "Stop",
+    "featureSent": "(feature report sent)",
+    "badCommand": "The command must be in the range 00–ff",
+    "replies_one": "{count} reply",
+    "replies_other": "{count} replies",
+    "reply": {
+      "ack": "ACK — command {command} was received, no data",
+      "data": "Data reply — declared length {length} bytes: {bytes}",
+      "unknown": "Unrecognised reply format"
+    },
+    "constant": "Every byte was identical across {count} repeats — these are constants, not live values.",
+    "moving": "Bytes that moved: {offsets} — those are the live ones."
+  },
+
+  "prober": {
+    "title": "Command prober",
+    "warning": {
+      "title": "Careful — this sends commands nobody has identified yet.",
+      "body": "<c>0x01</c> (begin) and <c>0x02</c> (end/commit) appear to open and close a settings transaction. What the commands in between write is still unknown, so a settings reset or a flash write is possible. The stock driver warns that this board <b>needs key calibration</b> after a firmware upgrade — meaning a command that touches calibration exists too. Back your settings up with the stock driver first."
+    },
+    "mode": "Mode",
+    "mode.frame": "Raven61 frame (checksum handled)",
+    "magic": "Magic",
+    "magic.config": "0x55 (config)",
+    "magic.firmware": "0x5f (firmware)",
+    "template": "Template (sweeps the <c>{mark}</c> position)",
+    "from": "From",
+    "to": "To",
+    "timeout": "Timeout (ms)",
+    "interval": "Interval (ms)",
+    "knownOnly": "Only try the {count} commands the stock driver actually sends (recommended)",
+    "safeOnly": "Send only the commands confirmed safe ({commands}). The rest are block writes, and sending one with an empty payload can zero the start of a firmware blob.",
+    "wrap": "Wrap each command in a 0x01 … 0x02 transaction (the stock driver's own order)",
+    "acknowledge": "I understand the risk and have backed my settings up",
+    "start": "Start sweep",
+    "stop": "Stop",
+    "stats": "{tried} tried · {answered} answered · {acked} ACKed",
+    "col": {
+      "command": "Command",
+      "kind": "Kind",
+      "reply": "Reply"
+    },
+    "data": "data",
+    "noAnswer": "Nothing answered. If the stock driver is running it may hold the device exclusively — close it and try again. If that changes nothing, try a different report id or mode.",
+    "legend": "★ = a command the stock driver actually sends (0x01 begin, 0x02 end/commit, {globalSettings} global settings) · ⚠ = a command observed to change board state when sent with an empty payload",
+    "noPlaceholder": "The template has no {mark} placeholder",
+    "badRange": "That sweep range is not valid (00–ff)."
+  },
+
+  "events": {
+    "title": "Event listener",
+    "intro": "Listens to the reports the board sends <b>without being asked</b>. The stock driver polls these in a loop of its own and treats every report starting with <c>0xa0</c> as an event. Listening alone sends nothing. The board only streams once it has been <b>armed</b> though (spec §3.2), so if nothing arrives, turn on <b>arm stream</b> below as well. Reporting is enabled and the test mode exited right after, so <b>typing keeps working</b> and nothing is recalibrated.",
+    "start": "Start listening",
+    "stop": "Stop",
+    "clear": "Clear",
+    "onlyEvents": "0xa0 events only",
+    "armStream": "Arm stream (<c>{arm}</c> → <c>{disarm}</c>) — <b>typing is disabled while arming</b>",
+    "received_one": "{count} report received",
+    "received_other": "{count} reports received",
+    "armFailed": "Could not arm the stream:",
+    "silent": "Nothing has arrived yet. Try pressing a key, and if that changes nothing turn on <b>arm stream</b> — the board sends nothing at all until it is armed.",
+    "reportedKeys": "Keys reported {seen}/{total}",
+    "pressHint": "Press the keys one at a time. Any key left grey has no sensor address bound to it yet.",
+    "bindHint": "Pick the key to bind from the grid ({fingerprint}).",
+    "unbound_one": "<b>{count} key does not name itself.</b> Modifiers and Fn are reported as a HID bitmask and so carry no usage (0x00, or 0x01 for Fn). Pick one below, then click the matching key in the grid above to bind it. The identity is the sensor value plus the baseline ADC — the sensor value alone collides for some keys.",
+    "unbound_other": "<b>{count} keys do not name themselves.</b> Modifiers and Fn are reported as a HID bitmask and so carry no usage (0x00, or 0x01 for Fn). Pick one below, then click the matching key in the grid above to bind it. The identity is the sensor value plus the baseline ADC — the sensor value alone collides for some keys.",
+    "col": {
+      "fingerprint": "Identity",
+      "sensor": "Sensor",
+      "samples": "Samples"
+    },
+    "cancel": "Cancel",
+    "bind": "Bind this key",
+    "bound_one": "{count} key bound (stored in this browser)",
+    "bound_other": "{count} keys bound (stored in this browser)",
+    "copySource": "Copy as source",
+    "resetBindings": "Reset bindings",
+    "latest": "Latest event",
+    "notAnalog": "Not in the analog key event format",
+    "latestLine": "sensor {sensor} · usage {usage} ({key}) · depth {depth}/{travel} mm · {direction} · ADC {adc}/{baseline}",
+    "unresolved": "unbound",
+    "pressing": "pressing",
+    "releasing": "releasing",
+    "noMoving": "All {count} were identical — no byte moved.",
+    "movingOffsets": "Offsets that moved: {offsets}"
+  },
+
+  "log": {
+    "title": "Traffic log",
+    "filter": "Filter: hex string, direction, note",
+    "follow": "Auto-scroll",
+    "exportTxt": "Export TXT",
+    "exportJson": "Export JSON",
+    "clear": "Clear",
+    "hint_one": "Click a line to mark it A/B and see the byte differences between the two reports. {count} entry.",
+    "hint_other": "Click a line to mark it A/B and see the byte differences between the two reports. {count} entries.",
+    "diff": "Bytes that differ, by offset: {offsets}",
+    "diffNone": "(none — identical)"
+  },
+
+  "sensors": {
+    "title": "Live key travel · ADC",
+    "intro": "Shows exactly what the board sends — live key travel and <b>every raw sensor number behind it</b> (current ADC, the resting baseline ADC, sensor delta, sensor value). The board does not report a key it is not being pressed, so the grid only fills in as you press each key once.",
+    "start": "Start",
+    "stop": "Stop",
+    "clear": "Clear",
+    "listenOnly": "listen only, without <c>{arm}</c>",
+    "focus": "Focus #{index} {key} — click a key to change it",
+    "keyCount": "keys {seen}/{total}",
+    "identities": "{count} identities",
+    "undecoded_one": "{count} report would not decode",
+    "undecoded_other": "{count} reports would not decode",
+    "uncalibrated": "<b>Some keys are not calibrated.</b> They report a total stroke of 0, so the travel shown is an <b>estimate</b> scaled against the nominal {nominal} mm. One calibration pass replaces it with the measured value.",
+    "staleTable": "<b>The built-in identity table does not match this board.</b> Either a sensor value missing from the table showed up on an unnamed key, or more baselines were seen under one sensor value than that value has keys. As it stands, a modifier <b>can resolve to the wrong key</b> — turn on <b>Ignore the built-in table</b> under <b>Settings</b> and bind them yourself on the <b>Events</b> tab.",
+    "armFailed": "Could not arm the stream:",
+    "armFailedHint": "Check that the interface marked <b>recommended</b> on the <b>Device</b> tab is the one that is open.",
+    "armed": "Analog reporting is on (<c>{arm}</c> → <c>{disarm}</c>). Reporting stays enabled while the test mode has been exited, so typing keeps working and nothing is recalibrated.",
+    "gridLegend": "The fill is the <b>current travel</b>; the number below it is <b>travel mm / current ADC</b>.",
+    "identitiesTitle_one": "{count} identity observed",
+    "identitiesTitle_other": "{count} identities observed",
+    "col": {
+      "key": "Key",
+      "modifierBits": "Modifier bits",
+      "sensor": "Sensor",
+      "baseline": "Baseline ADC",
+      "adc": "Current ADC",
+      "adcRange": "ADC min–max",
+      "delta": "Delta",
+      "maxDepth": "Max depth",
+      "samples": "Samples",
+      "siblings": "Sensor siblings",
+      "fingerprint": "Identity"
+    },
+    "unresolved": "unresolved",
+    "notAKey": "not a key",
+    "drifted": "The baseline ADC has <b>drifted.</b> A baseline is a stored calibration constant, so a value changing within one session — or more values under one sensor value than it has keys — means <b>a recalibration happened</b> in between. The drift panel below shows how far it is from the built-in table.",
+    "unresolvedHint_one": "{count} unresolved identity can be bound to a key on the <b>Events</b> tab.",
+    "unresolvedHint_other": "{count} unresolved identities can be bound to keys on the <b>Events</b> tab.",
+    "notAKeyHint": "<b>{count} not-a-key</b> reports — no usage, no modifier bits and no baseline ADC (<c>{ids}</c>). A healthy board keeps sending these, so they are left out of key identification.",
+    "address": {
+      "title": "Key address candidates — finding a byte that does not drift",
+      "intro": "Taking the {groups} keys that name themselves through a usage as <b>ground truth</b>, every byte is checked two ways: is it <b>always the same value</b> within one key, and does it <b>differ between keys</b>? A byte that does both is a key address that calibration cannot shake.",
+      "col": {
+        "offset": "Offset",
+        "constant": "Constant per key",
+        "distinct": "Distinct values",
+        "verdict": "Verdict",
+        "known": "Field already known"
+      },
+      "candidate": "address candidate",
+      "varies": "varies",
+      "duplicate": "collides",
+      "found": "<b>An undecoded byte meets the address criteria.</b> If it also differs across the modifiers, keys can be identified by this byte instead of by their fingerprint — regardless of calibration.",
+      "none": "<b>No undecoded byte meets the address criteria.</b> That may just be too few samples, so press each key several times at different depths. If none turns up, this event carries no calibration-safe identifier and modifiers have to rely on <b>your own bindings</b>.",
+      "unnamedCheck": "Whether the candidate bytes really do differ across the unnamed keys (modifiers · Fn):"
+    },
+    "field": {
+      "eventMark": "0xa0 event marker",
+      "length": "length",
+      "usage": "usage",
+      "deltaHigh": "sensor delta (high)",
+      "deltaLow": "sensor delta (low)",
+      "depth": "depth",
+      "undecodedDepth": "undecoded — moves with depth",
+      "direction": "direction",
+      "sensorHigh": "sensor value (high)",
+      "sensorLow": "sensor value (low)",
+      "travelHigh": "total travel (high)",
+      "travelLow": "total travel (low)",
+      "adcHigh": "current ADC (high)",
+      "adcLow": "current ADC (low)",
+      "baselineHigh": "baseline ADC (high)",
+      "baselineLow": "baseline ADC (low)",
+      "unknown": "undecoded"
+    },
+    "drift": {
+      "title": "Baseline ADC drift — against the built-in table",
+      "intro": "For each entry in <c>fingerprints.ts</c>, the closest baseline ADC observed under the same sensor value. The tolerance is ±{tolerance}; beyond that the key either fails to resolve or resolves to a different key.",
+      "col": {
+        "expected": "In table",
+        "observed": "Observed",
+        "delta": "Delta",
+        "status": "Status"
+      },
+      "note": {
+        "ambiguous": "indistinguishable from another key on the same sensor value",
+        "outOfRange": "outside tolerance — this key will not resolve",
+        "match": "match"
+      },
+      "copySource": "Copy the updated table as source",
+      "copyHint": "Rewrites <c>KEY_FINGERPRINTS</c> with the observed baseline ADCs — key assignments stay as they are, only the numbers change.",
+      "ambiguous": "<b>Some pairs are ambiguous.</b> Two keys under the same sensor value have observations close enough that this table alone cannot say which observation belongs to which key. Bind those keys yourself on the <b>Events</b> tab by pressing them one at a time — your own bindings win over the built-in table.",
+      "sourceFlag": "ambiguous — check by hand"
+    },
+    "trace": {
+      "title": "Trace — #{index} {key}",
+      "current": "now {mm} mm",
+      "min": "min {mm}",
+      "max": "max {mm}",
+      "adc": "current ADC {value}",
+      "baseline": "baseline ADC {value}",
+      "noise": "resting jitter {mm} mm — rapid trigger sensitivity must be larger than this"
+    }
+  }
+}

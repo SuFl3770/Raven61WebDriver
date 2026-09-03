@@ -1,3 +1,4 @@
+import { useT, type MessageKey } from '../i18n'
 import { DEFAULT_TRAVEL_MM } from '../keyboard/raven61'
 import { MM_PER_COUNT, mmToCounts, quantizeMm } from '../protocol/encoding'
 import { configStore, useKeyConfigs } from '../state/config'
@@ -7,15 +8,16 @@ import { Panel } from '../ui/Panel'
 import { SelectionBar } from '../ui/SelectionBar'
 
 /** 1.5mm is the board's factory default (global_key_actuation = 75). */
-const PRESETS = [
-  { label: '빠름 0.5mm', value: 0.5 },
-  { label: '기본 1.5mm', value: 1.5 },
-  { label: '깊음 2.5mm', value: 2.5 },
+const PRESETS: { labelKey: MessageKey; value: number }[] = [
+  { labelKey: 'actuation.preset.fast', value: 0.5 },
+  { labelKey: 'actuation.preset.default', value: 1.5 },
+  { labelKey: 'actuation.preset.deep', value: 2.5 },
 ]
 
 export function Actuation() {
   const configs = useKeyConfigs()
   const sel = useSelection()
+  const t = useT()
   const first = configs[targetKeys(sel)[0] ?? 0]!
 
   // Targets are read at event time, not render time: a click and the slider
@@ -30,7 +32,7 @@ export function Actuation() {
 
   return (
     <>
-      <Panel title="액추에이션 포인트">
+      <Panel title={t('actuation.title')}>
         <SelectionBar />
         <KeyGrid
           selected={sel}
@@ -59,14 +61,18 @@ export function Actuation() {
             style={{ width: 90 }}
           />
           <span className="dim small">
-            mm = {mmToCounts(first.actuationMm)} counts (0.02mm 단위) · 총 스트로크 {DEFAULT_TRAVEL_MM}mm 기준
+            {t('actuation.counts', {
+              counts: mmToCounts(first.actuationMm),
+              step: MM_PER_COUNT,
+              travel: DEFAULT_TRAVEL_MM,
+            })}
           </span>
         </div>
 
         <div className="row" style={{ marginTop: 10 }}>
           {PRESETS.map((p) => (
             <button key={p.value} onClick={() => setActuation(p.value)}>
-              {p.label}
+              {t(p.labelKey, { mm: p.value.toFixed(1) })}
             </button>
           ))}
         </div>

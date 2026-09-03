@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { t as translate, useT, type MessageKey } from '../i18n'
+import { T } from '../i18n/T'
 import { RAVEN61_KEYS, DEFAULT_TRAVEL_MM, type KeyDef } from '../keyboard/raven61'
 import { supports } from '../protocol/codec'
 import { MM_PER_COUNT, mmToCounts } from '../protocol/encoding'
@@ -30,10 +32,10 @@ type Status = 'idle' | 'loading' | 'ok' | 'error'
 
 /** Which value the key grid colours and labels. */
 const METRICS = [
-  { id: 'actuation', label: '동작 지점' },
-  { id: 'rt', label: '래피드 트리거' },
-  { id: 'switch', label: '스위치' },
-] as const
+  { id: 'actuation', labelKey: 'perf.metric.actuation' },
+  { id: 'rt', labelKey: 'perf.metric.rt' },
+  { id: 'switch', labelKey: 'perf.metric.switch' },
+] as const satisfies readonly { id: string; labelKey: MessageKey }[]
 type Metric = (typeof METRICS)[number]['id']
 
 /** Full travel depends on the switch fitted — see SWITCH_TYPES. */
@@ -43,8 +45,8 @@ function travelOf(config: KeyConfig): number {
 
 function rtLabel(config: KeyConfig): string {
   const rt = config.rapidTrigger
-  if (!rt.enabled) return '꺼짐'
-  return rt.continuous ? '전체 스트로크' : '켜짐'
+  if (!rt.enabled) return translate('perf.off')
+  return rt.continuous ? translate('perf.rt.full') : translate('perf.on')
 }
 
 function sensitivityLabel(config: KeyConfig): string {
@@ -57,7 +59,7 @@ function sensitivityLabel(config: KeyConfig): string {
 
 function deadZoneLabel(config: KeyConfig): string {
   const dz = config.deadZone
-  if (!dz.enabled) return '꺼짐'
+  if (!dz.enabled) return translate('perf.off')
   return `${dz.topMm.toFixed(2)} / ${dz.bottomMm.toFixed(2)}`
 }
 
@@ -100,7 +102,8 @@ function groupKeys(configs: readonly KeyConfig[]): Group[] {
 }
 
 function groupLabel(group: Group): string {
-  if (group.keys.length === RAVEN61_KEYS.length) return `전체 ${group.keys.length}키`
+  if (group.keys.length === RAVEN61_KEYS.length)
+    return translate('perf.allKeys', { count: group.keys.length })
   const shown = group.keys.slice(0, 10).map((k) => k.label)
   const rest = group.keys.length - shown.length
   return rest > 0 ? `${shown.join(', ')} +${rest}` : shown.join(', ')
@@ -168,6 +171,7 @@ export function PerfOverview() {
   const [metric, setMetric] = useState<Metric>('actuation')
   const [perKey, setPerKey] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
+  const t = useT()
   const tried = useRef(false)
 
   const canRead = supports(codec, 'readKeyConfigs')
@@ -218,12 +222,12 @@ export function PerfOverview() {
   // reporting that as "protocol not decoded" would blame the wrong thing.
   if (!canRead) {
     return (
-      <Panel title="보드 현재 설정">
+      <Panel title={t('perf.title')}>
         {connected ? (
-          <NotDecoded what="키별 성능 설정 읽기" />
+          <NotDecoded what="perf.what" />
         ) : (
           <Notice>
-            장치가 연결되면 보드에서 61키의 현재 설정을 읽어 옵니다. <b>장치</b> 탭에서 먼저 연결하세요.
+            <T k="perf.needDevice" params={{ keys: RAVEN61_KEYS.length }} />
           </Notice>
         )}
       </Panel>
@@ -240,37 +244,41 @@ export function PerfOverview() {
     : []
 
   return (
-    <Panel title="보드 현재 설정">
+    <Panel title={t('perf.title')}>
       <div className="row" style={{ marginBottom: 10 }}>
         <button disabled={!connected || status === 'loading'} onClick={() => void read()}>
-          {status === 'loading' ? '읽는 중…' : '보드에서 다시 읽기'}
+          {status === 'loading' ? t('perf.reading') : t('perf.reread')}
         </button>
         <span className="small dim">
           {!connected
-            ? '미연결'
+            ? t('app.disconnected')
             : status === 'ok' && readAt
-              ? `${readAt.toLocaleTimeString()} 기준 · 0xa0 · 1024바이트 · 128슬롯`
+              ? t('perf.status.ok', { time: readAt.toLocaleTimeString() })
               : status === 'error'
-                ? '읽기 실패'
+                ? t('perf.status.error')
                 : status === 'loading'
-                  ? '0xa0 블록 19청크 수신 중'
-                  : '아직 읽지 않았습니다'}
+                  ? t('perf.status.loading')
+                  : t('perf.status.idle')}
         </span>
         <span className="spacer" style={{ flex: 1 }} />
         {snapshot && (
           <span className="small dim">
-            슬롯 매핑{' '}
+            {t('perf.slotMap.label')}{' '}
             {snapshot.slotMap.source === 'keymap' ? (
-              <b style={{ color: 'var(--ok)' }}>보드 키맵 기준</b>
+              <b style={{ color: 'var(--ok)' }}>{t('perf.slotMap.keymap')}</b>
             ) : (
-              <b style={{ color: 'var(--warn)' }}>추정값 (키맵 읽기 실패)</b>
+              <b style={{ color: 'var(--warn)' }}>{t('perf.slotMap.guess')}</b>
             )}{' '}
-            · {snapshot.slotMap.slotByKey.size}/{RAVEN61_KEYS.length}키
+            ·{' '}
+            {t('perf.slotMap.count', {
+              resolved: snapshot.slotMap.slotByKey.size,
+              total: RAVEN61_KEYS.length,
+            })}
           </span>
         )}
         {dirty.length > 0 && (
           <span className="small" style={{ color: 'var(--warn)' }}>
-            편집한 키 {dirty.length}개 — 다시 읽으면 되돌아갑니다
+            {t('perf.dirty', { count: dirty.length })}
           </span>
         )}
       </div>
@@ -282,14 +290,14 @@ export function PerfOverview() {
       )}
 
       <div className="row" style={{ marginBottom: 8 }}>
-        <span className="small dim">그리드 표시</span>
+        <span className="small dim">{t('perf.gridShow')}</span>
         {METRICS.map((m) => (
           <button
             key={m.id}
             className={metric === m.id ? 'primary' : undefined}
             onClick={() => setMetric(m.id)}
           >
-            {m.label}
+            {t(m.labelKey)}
           </button>
         ))}
       </div>
@@ -315,23 +323,28 @@ export function PerfOverview() {
 
       <div className="row" style={{ marginTop: 14, alignItems: 'flex-start' }}>
         <div className="small dim" style={{ flex: '1 1 320px' }}>
-          <b style={{ color: 'var(--fg)' }}>바닥까지 입력시 트리거</b>{' '}
+          <b style={{ color: 'var(--fg)' }}>{t('perf.bottomOut')}</b>{' '}
           {global ? (
             <span className={global.bottomOutTrigger ? '' : 'dim'}>
-              {global.bottomOutTrigger ? '켜짐' : '꺼짐'}
+              {global.bottomOutTrigger ? t('perf.on') : t('perf.off')}
             </span>
           ) : (
             <span>—</span>
           )}
           <div style={{ marginTop: 4 }}>
-            이 항목만 키별이 아니라 <b>전역</b> 설정입니다 (0x05 블록{' '}
-            <span className="mono">payload[15]</span> bit 1).
+            <T k="perf.bottomOutNote" />
             {global && (
               <>
                 {' '}
-                같은 바이트: Tachyon {global.tachyon ? '켜짐' : '꺼짐'} · actuation_check{' '}
-                {global.actuationCheck ? '켜짐' : '꺼짐'} · 자석축 테스트{' '}
-                {global.magnetTest ? '켜짐' : '꺼짐'} · 디바운스 {global.debounceLevel}
+                <T
+                  k="perf.sameByte"
+                  params={{
+                    tachyon: global.tachyon ? t('perf.on') : t('perf.off'),
+                    actuationCheck: global.actuationCheck ? t('perf.on') : t('perf.off'),
+                    magnetTest: global.magnetTest ? t('perf.on') : t('perf.off'),
+                    debounce: global.debounceLevel,
+                  }}
+                />
               </>
             )}
           </div>
@@ -340,11 +353,11 @@ export function PerfOverview() {
 
       <div className="row" style={{ marginTop: 14 }}>
         <span className="small dim">
-          {uniform ? '모든 키가 같은 설정입니다' : `설정이 다른 그룹 ${groups.length}개`}
+          {uniform ? t('perf.uniform') : t('perf.groups', { count: groups.length })}
         </span>
         <label className="small">
           <input type="checkbox" checked={perKey} onChange={(e) => setPerKey(e.target.checked)} />{' '}
-          키별로 모두 펼치기 ({RAVEN61_KEYS.length}행)
+          {t('perf.expandAll', { rows: RAVEN61_KEYS.length })}
         </label>
       </div>
 
@@ -352,13 +365,13 @@ export function PerfOverview() {
         <table>
           <thead>
             <tr>
-              <th>키</th>
-              <th>동작 지점</th>
-              <th>래피드 트리거</th>
-              <th>RT 민감도 (누름 / 뗌)</th>
-              <th>데드존 (위 / 아래)</th>
-              <th>장착된 스위치</th>
-              <th>총 스트로크</th>
+              <th>{t('perf.col.key')}</th>
+              <th>{t('perf.col.actuation')}</th>
+              <th>{t('perf.col.rt')}</th>
+              <th>{t('perf.col.sensitivity')}</th>
+              <th>{t('perf.col.deadzone')}</th>
+              <th>{t('perf.col.switch')}</th>
+              <th>{t('perf.col.travel')}</th>
             </tr>
           </thead>
           <tbody>
@@ -384,12 +397,19 @@ export function PerfOverview() {
       {snapshot && emptyKeys.length > 0 && (
         <div style={{ marginTop: 12 }}>
           <Notice kind="warn">
-            <strong>슬롯 {emptyKeys.length}개가 비어 있습니다 (8바이트 전부 0)</strong>
+            <strong>
+              {t('perf.emptySlots.title', {
+                count: emptyKeys.length,
+                bytes: KEY_PERF.recordSize,
+              })}
+            </strong>
             <div className="small" style={{ marginTop: 4 }}>
               {emptyKeys.map((k) => `${k.label}(${k.index})`).join(', ')}
               <div style={{ marginTop: 4 }}>
-                전부 0인 레코드는 동작 지점 {MM_PER_COUNT.toFixed(2)}mm · RT 꺼짐 ·{' '}
-                {switchTypeName(0)} 으로 해독됩니다. 실제 설정이 아니라 <b>읽지 못한 것</b>입니다.
+                <T
+                  k="perf.emptySlots.note"
+                  params={{ mm: MM_PER_COUNT.toFixed(2), switchName: switchTypeName(0) }}
+                />
               </div>
             </div>
           </Notice>
@@ -400,17 +420,20 @@ export function PerfOverview() {
         <div style={{ marginTop: 12 }}>
           <div className="row">
             <button onClick={() => setShowRaw((v) => !v)}>
-              {showRaw ? '원본 블록 숨기기' : '원본 블록 보기 (128슬롯)'}
+              {showRaw ? t('perf.hideRaw') : t('perf.showRaw', { slots: KEY_PERF.slots })}
             </button>
             {showRaw && (
               <button
                 onClick={() => void navigator.clipboard?.writeText(dumpText(snapshot, global))}
               >
-                덤프 복사
+                {t('perf.copyDump')}
               </button>
             )}
             <span className="small dim">
-              비어 있지 않은 슬롯 {KEY_PERF.slots - snapshot.emptySlots.length}개 / {KEY_PERF.slots}
+              {t('perf.nonEmpty', {
+                used: KEY_PERF.slots - snapshot.emptySlots.length,
+                total: KEY_PERF.slots,
+              })}
             </span>
           </div>
           {showRaw && (
@@ -422,8 +445,7 @@ export function PerfOverview() {
       )}
 
       <div className="small dim" style={{ marginTop: 10 }}>
-        단위는 mm 이고 보드의 최소 단위는 {MM_PER_COUNT.toFixed(2)}mm 입니다. 표의 값은 그대로 보드에서 읽은
-        것이며, 아래 패널에서 편집한 값은 <b>보드에 적용</b>할 때까지 반영되지 않습니다.
+        <T k="perf.footnote" params={{ step: MM_PER_COUNT.toFixed(2) }} />
       </div>
     </Panel>
   )
@@ -436,7 +458,9 @@ function Row({ name, config, count }: { name: string; config: KeyConfig; count?:
     <tr>
       <td>
         {name}
-        {count !== undefined && count > 1 && <span className="dim small"> ({count}키)</span>}
+        {count !== undefined && count > 1 && (
+          <span className="dim small"> {translate('perf.keyCount', { count })}</span>
+        )}
       </td>
       <td className="mono">
         {config.actuationMm.toFixed(2)}

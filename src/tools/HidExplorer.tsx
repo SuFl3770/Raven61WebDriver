@@ -1,4 +1,6 @@
 import { isVendorPage } from '../hid/reportInfo'
+import { useT } from '../i18n'
+import { T } from '../i18n/T'
 import { Notice, Panel } from '../ui/Panel'
 import { useConnection } from '../state/link'
 
@@ -27,6 +29,7 @@ function reportBytes(r: HIDReportInfo): number {
 }
 
 function ReportTable({ title, reports }: { title: string; reports: readonly HIDReportInfo[] }) {
+  const t = useT()
   if (!reports.length) return null
   return (
     <div style={{ marginTop: 8 }}>
@@ -35,8 +38,8 @@ function ReportTable({ title, reports }: { title: string; reports: readonly HIDR
         <thead>
           <tr>
             <th style={{ width: 90 }}>Report ID</th>
-            <th style={{ width: 90 }}>바이트</th>
-            <th>항목</th>
+            <th style={{ width: 90 }}>{t('explorer.col.bytes')}</th>
+            <th>{t('explorer.col.items')}</th>
           </tr>
         </thead>
         <tbody>
@@ -58,6 +61,7 @@ function ReportTable({ title, reports }: { title: string; reports: readonly HIDR
 }
 
 function Collection({ c, depth }: { c: HIDCollectionInfo; depth: number }) {
+  const t = useT()
   const page = c.usagePage ?? 0
   const vendor = isVendorPage(page)
   return (
@@ -67,7 +71,11 @@ function Collection({ c, depth }: { c: HIDCollectionInfo; depth: number }) {
           {hex4(page)} / {hex4(c.usage ?? 0)}
         </span>
         <span className="small dim">{pageName(page)}</span>
-        {vendor && <span className="small" style={{ color: 'var(--accent)' }}>← 설정 채널 후보</span>}
+        {vendor && (
+          <span className="small" style={{ color: 'var(--accent)' }}>
+            {t('explorer.configCandidate')}
+          </span>
+        )}
       </div>
       <ReportTable title="Input" reports={c.inputReports ?? []} />
       <ReportTable title="Output" reports={c.outputReports ?? []} />
@@ -81,24 +89,24 @@ function Collection({ c, depth }: { c: HIDCollectionInfo; depth: number }) {
 
 export function HidExplorer() {
   const { device } = useConnection()
+  const t = useT()
 
   if (!device) {
     return (
-      <Panel title="HID 탐색기">
-        <Notice>장치를 먼저 연결하세요.</Notice>
+      <Panel title={t('explorer.title')}>
+        <Notice>{t('explorer.needDevice')}</Notice>
       </Panel>
     )
   }
 
   return (
-    <Panel title="HID 탐색기">
+    <Panel title={t('explorer.title')}>
       <div className="small dim" style={{ marginBottom: 4 }}>
-        브라우저가 파싱한 리포트 디스크립터입니다. 보낼 수 있는 리포트 ID와 정확한 길이를 여기서 확인하세요.
+        {t('explorer.hint')}
       </div>
       <Notice>
         <span className="small">
-          크롬은 보안상 <b>키보드 top-level 컬렉션(0x01/0x06)</b>을 WebHID에 노출하지 않습니다. 여기 보이지
-          않는다고 고장이 아니며, 설정 통신은 벤더 정의 컬렉션으로 이뤄집니다.
+          <T k="explorer.chromeNote" />
         </span>
       </Notice>
       <div style={{ marginTop: 12 }}>

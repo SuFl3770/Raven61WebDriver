@@ -1,3 +1,4 @@
+import { t, type MessageKey } from '../i18n'
 import { PAYLOAD_LENGTH } from '../protocol/frame'
 import { inputReports, isVendorPage, outputReports } from './reportInfo'
 
@@ -19,28 +20,28 @@ export const RAVEN_FAMILY = ['Raven61', 'Raven68', 'ABT68'] as const
 
 export interface FilterPreset {
   id: string
-  label: string
-  hint: string
+  labelKey: MessageKey
+  hintKey: MessageKey
   filters: HIDDeviceFilter[]
 }
 
 export const FILTER_PRESETS: FilterPreset[] = [
   {
     id: 'raven',
-    label: 'Raven 계열 (VID 0x19F5)',
-    hint: '순정 드라이버가 인식하는 장치 ID입니다. 보통 이걸 쓰면 됩니다.',
+    labelKey: 'device.filter.raven.label',
+    hintKey: 'device.filter.raven.hint',
     filters: [{ vendorId: RAVEN_VENDOR_ID }],
   },
   {
     id: 'all',
-    label: '모든 HID 장치',
-    hint: '위에서 아무것도 안 보일 때. 크롬이 접근 가능한 모든 HID 장치를 보여줍니다.',
+    labelKey: 'device.filter.all.label',
+    hintKey: 'device.filter.all.hint',
     filters: [],
   },
   {
     id: 'vendor-pages',
-    label: '벤더 정의 페이지',
-    hint: '설정 채널로 흔히 쓰이는 usage page 들만.',
+    labelKey: 'device.filter.vendorPages.label',
+    hintKey: 'device.filter.vendorPages.hint',
     filters: [{ usagePage: 0xff00 }, { usagePage: 0xff01 }, { usagePage: 0xff02 }],
   },
 ]
@@ -87,16 +88,21 @@ function collectionsOf(device: HIDDevice): HIDCollectionInfo[] {
  * size. The usage page only breaks ties, because vendors are inconsistent about
  * whether the configurator collection is vendor-defined.
  */
+/**
+ * Reasons are translated here rather than at the call site because they are
+ * de-duplicated as text; the panel re-renders on a language change, which
+ * re-runs this.
+ */
 export function rankDevice(device: HIDDevice): DeviceRank {
   const reasons: string[] = []
   let score = 0
 
   if (isRavenDevice(device)) {
     score += 100
-    reasons.push('Raven VID')
+    reasons.push(t('device.reason.ravenVid'))
     if ((RAVEN_PRODUCT_IDS as readonly number[]).includes(device.productId)) {
       score += 20
-      reasons.push('알려진 PID')
+      reasons.push(t('device.reason.knownPid'))
     }
   }
 
@@ -105,26 +111,26 @@ export function rankDevice(device: HIDDevice): DeviceRank {
 
   if (ins.some((r) => r.byteLength === PAYLOAD_LENGTH)) {
     score += 60
-    reasons.push(`${PAYLOAD_LENGTH}바이트 IN`)
+    reasons.push(t('device.reason.inReport', { bytes: PAYLOAD_LENGTH }))
   }
   if (outs.some((r) => r.byteLength === PAYLOAD_LENGTH)) {
     score += 60
-    reasons.push(`${PAYLOAD_LENGTH}바이트 OUT`)
+    reasons.push(t('device.reason.outReport', { bytes: PAYLOAD_LENGTH }))
   }
 
   for (const c of collectionsOf(device)) {
     const page = c.usagePage ?? 0
     if (isVendorPage(page)) {
       score += 20
-      reasons.push('벤더 페이지')
+      reasons.push(t('device.reason.vendorPage'))
     } else if (page === BOOT_KEYBOARD.page && (c.usage ?? 0) === BOOT_KEYBOARD.usage) {
       // The typing interface. It never carries the config channel, and writing
       // to it would only toggle lock LEDs.
       score -= 60
-      reasons.push('키보드 인터페이스')
+      reasons.push(t('device.reason.keyboardInterface'))
     } else if (page === CONSUMER_PAGE) {
       score -= 30
-      reasons.push('컨슈머 컨트롤')
+      reasons.push(t('device.reason.consumerControl'))
     }
   }
 
@@ -159,5 +165,5 @@ export function pickConfigInterface(devices: readonly HIDDevice[]): HIDDevice | 
 export function describeDevice(device: HIDDevice): string {
   const vid = device.vendorId.toString(16).padStart(4, '0')
   const pid = device.productId.toString(16).padStart(4, '0')
-  return `${device.productName || '(이름 없음)'} — ${vid}:${pid}`
+  return `${device.productName || t('device.unnamed')} — ${vid}:${pid}`
 }

@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { KEYCODE_GROUPS, keycodeLabel } from '../keyboard/keycodes'
+import { useT } from '../i18n'
+import { T } from '../i18n/T'
+import { KEYCODE_GROUPS, keycodeDefLabel, keycodeLabel } from '../keyboard/keycodes'
 import { KEY_COUNT, RAVEN61_KEYS } from '../keyboard/raven61'
 import { supports } from '../protocol/codec'
 import { LAYER_COUNT } from '../protocol/encoding'
@@ -22,6 +24,7 @@ function defaultLayer(layer: number): KeymapEntry[] {
 
 export function Keymap() {
   const codec = useCodec()
+  const t = useT()
   const { connected } = useConnection()
   const [layer, setLayer] = useState(0)
   const [layers, setLayers] = useState<KeymapEntry[][]>(() =>
@@ -58,7 +61,7 @@ export function Keymap() {
 
   return (
     <>
-      <Panel title="키맵">
+      <Panel title={t('keymap.title')}>
         <div className="row" style={{ marginBottom: 10 }}>
           {LAYER_NAMES.map((name, i) => (
             <button key={i} className={i === layer ? 'primary' : ''} onClick={() => setLayer(i)}>
@@ -77,14 +80,14 @@ export function Keymap() {
               })
             })}
           >
-            레이어 읽기
+            {t('keymap.readLayer')}
           </button>
           <button
             className="primary"
             disabled={!connected || !canWrite || busy}
             onClick={run(() => codec.writeKeymap!(link, layer, entries))}
           >
-            레이어 쓰기
+            {t('keymap.writeLayer')}
           </button>
         </div>
 
@@ -97,19 +100,25 @@ export function Keymap() {
           sub={(k) => (layer > 0 && (entries[k.index]?.code ?? 0) === 0 ? '▽' : undefined)}
         />
         <div className="small dim" style={{ marginTop: 8 }}>
-          {layer > 0 && '▽ = 투명(하위 레이어 통과). '}
-          키를 고른 뒤 아래에서 코드를 지정하세요.
+          {layer > 0 && `${t('keymap.transparent')} `}
+          {t('keymap.pickHint')}
         </div>
       </Panel>
 
-      <Panel title={selected === null ? '키코드 선택' : `키코드 선택 — #${selected} ${RAVEN61_KEYS[selected]!.label}`}>
+      <Panel
+        title={
+          selected === null
+            ? t('keymap.picker.title')
+            : t('keymap.picker.titleFor', { index: selected, key: RAVEN61_KEYS[selected]!.label })
+        }
+      >
         {selected === null ? (
-          <div className="small dim">위에서 키를 먼저 선택하세요.</div>
+          <div className="small dim">{t('keymap.picker.empty')}</div>
         ) : (
           KEYCODE_GROUPS.map((g) => (
-            <div key={g.name} style={{ marginBottom: 12 }}>
+            <div key={g.nameKey} style={{ marginBottom: 12 }}>
               <div className="small dim" style={{ marginBottom: 4 }}>
-                {g.name}
+                {t(g.nameKey)}
               </div>
               <div className="row" style={{ gap: 4 }}>
                 {g.codes.map((c) => (
@@ -119,7 +128,7 @@ export function Keymap() {
                     style={{ padding: '3px 8px', fontSize: 12 }}
                     onClick={() => assign(c.code)}
                   >
-                    {c.label}
+                    {keycodeDefLabel(c)}
                   </button>
                 ))}
               </div>
@@ -129,12 +138,10 @@ export function Keymap() {
       </Panel>
 
       {!canWrite && (
-        <Panel title="적용">
-          <NotDecoded what="키맵 쓰기" />
+        <Panel title={t('keymap.apply')}>
+          <NotDecoded what="keymap.writeWhat" />
           <div className="small dim" style={{ marginTop: 8 }}>
-            키맵 명령은 대개 길이가 길어 여러 리포트로 쪼개져 전송됩니다. 순정 드라이버에서 <b>한 키만</b>{' '}
-            바꿔 저장한 뒤 캡처를 비교하면, 바뀐 바이트 위치가 곧 그 키의 인덱스입니다 — 매트릭스 순서를
-            역산하는 가장 확실한 방법입니다.
+            <T k="keymap.writeNote" />
           </div>
         </Panel>
       )}

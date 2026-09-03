@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useT, type MessageKey } from '../i18n'
 import { Events } from './Events'
 import { HidExplorer } from './HidExplorer'
 import { Prober } from './Prober'
@@ -20,66 +21,67 @@ import { TrafficLogView } from './TrafficLogView'
  */
 interface Tool {
   id: string
-  label: string
-  hint: string
+  labelKey: MessageKey
+  hintKey: MessageKey
   render: () => ReactNode
 }
 
 const TOOLS: Tool[] = [
   {
     id: 'explorer',
-    label: '탐색기',
-    hint: '리포트 디스크립터 트리, 사용 가능한 리포트 ID와 길이',
+    labelKey: 'debug.tool.explorer.label',
+    hintKey: 'debug.tool.explorer.hint',
     render: () => <HidExplorer />,
   },
   {
     id: 'console',
-    label: '콘솔',
-    hint: '프레임·블록 형식으로 명령 송신, 반복 전송 후 변하는 바이트 표시',
+    labelKey: 'debug.tool.console.label',
+    hintKey: 'debug.tool.console.hint',
     render: () => <ReportConsole />,
   },
   {
     id: 'prober',
-    label: '프로버',
-    hint: '실제 프레임(체크섬 자동)으로 명령을 스윕하고 응답 확인',
+    labelKey: 'debug.tool.prober.label',
+    hintKey: 'debug.tool.prober.hint',
     render: () => <Prober />,
   },
   {
     id: 'events',
-    label: '이벤트',
-    hint: '보드가 올려보내는 리포트 수신 + 센서 주소 연결',
+    labelKey: 'debug.tool.events.label',
+    hintKey: 'debug.tool.events.hint',
     render: () => <Events />,
   },
   {
     id: 'log',
-    label: '로그',
-    hint: '모든 송수신 기록, A/B 바이트 diff, TXT·JSON 내보내기',
+    labelKey: 'debug.tool.log.label',
+    hintKey: 'debug.tool.log.hint',
     render: () => <TrafficLogView />,
   },
 ]
 
 export function Debug() {
   const [active, setActive] = useState(TOOLS[0]!.id)
-  const tool = TOOLS.find((t) => t.id === active) ?? TOOLS[0]!
+  const t = useT()
+  const tool = TOOLS.find((tl) => tl.id === active) ?? TOOLS[0]!
 
   return (
     <>
       <Sensors analysis />
 
-      <nav className="tabs subtabs" role="tablist" aria-label="분석 도구">
-        {TOOLS.map((t) => (
+      <nav className="tabs subtabs" role="tablist" aria-label={t('debug.tools')}>
+        {TOOLS.map((tl) => (
           <button
-            key={t.id}
+            key={tl.id}
             role="tab"
-            aria-selected={t.id === active}
-            onClick={() => setActive(t.id)}
+            aria-selected={tl.id === active}
+            onClick={() => setActive(tl.id)}
           >
-            {t.label}
+            {t(tl.labelKey)}
           </button>
         ))}
       </nav>
       <div className="small dim" style={{ padding: '6px 2px 10px' }}>
-        {tool.hint}
+        {t(tool.hintKey)}
       </div>
 
       {tool.render()}

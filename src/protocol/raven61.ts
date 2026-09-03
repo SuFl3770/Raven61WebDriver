@@ -1,5 +1,6 @@
 import { RAVEN_PRODUCT_IDS, RAVEN_VENDOR_ID } from '../hid/filters'
 import type { HidLink } from '../hid/link'
+import { t } from '../i18n'
 import { RAVEN61_KEYS } from '../keyboard/raven61'
 import type { Raven61Codec } from './codec'
 import type { GlobalSettings, KeyConfig, KeyPerfSnapshot, KeySample } from './types'
@@ -28,12 +29,9 @@ import { KEYMAP, fallbackSlotMap, slotMapFromKeymap, type SlotMap } from './slot
  */
 export const raven61Codec: Raven61Codec = {
   id: 'raven61-v1',
-  label: 'Raven61 (읽기 해독됨)',
+  labelKey: 'codec.raven61.label',
   confidence: 'partial',
-  notes:
-    '패킷 프레임, 아날로그 키 이벤트, 키별 성능 설정 읽기(0xa0)와 전역 설정 읽기(0x05)가 ' +
-    '해독되었습니다. 쓰기(0xa1)는 인코더까지 해독됐지만 하드웨어 검증 전이라 아직 연결하지 ' +
-    '않았습니다.',
+  notesKey: 'codec.raven61.notes',
 
   async probe(link: HidLink) {
     const d = link.device
@@ -292,8 +290,13 @@ export async function readBlock(
       reply = answer.data
     } catch (e) {
       throw new Error(
-        `${label}: 청크 ${i + 1}/${plan.length} (오프셋 ${chunk.offset}) 응답 없음 — ` +
-          (e instanceof Error ? e.message : String(e)),
+        t('raven61.chunkTimeout', {
+          label,
+          index: i + 1,
+          total: plan.length,
+          offset: chunk.offset,
+          reason: e instanceof Error ? e.message : String(e),
+        }),
       )
     }
     out.set(blockReplyData(reply, chunk.length), chunk.offset)
@@ -352,14 +355,12 @@ export async function readSlotMap(link: HidLink): Promise<{ map: SlotMap; blob?:
     const map = slotMapFromKeymap(blob)
     if (map.slotByKey.size >= RAVEN61_KEYS.length - 4) return { map, blob }
     link.log.note(
-      `키맵에서 ${map.slotByKey.size}/${RAVEN61_KEYS.length}개 키만 확인되어 ` +
-        '슬롯 매핑을 추정값으로 대체합니다.',
+      t('raven61.slotMapPartial', { found: map.slotByKey.size, total: RAVEN61_KEYS.length }),
     )
     return { map: fallbackSlotMap(), blob }
   } catch (e) {
     link.log.note(
-      `키맵 읽기 실패로 슬롯 매핑을 추정값으로 대체합니다: ` +
-        (e instanceof Error ? e.message : String(e)),
+      t('raven61.slotMapFailed', { reason: e instanceof Error ? e.message : String(e) }),
     )
     return { map: fallbackSlotMap() }
   }
@@ -389,7 +390,10 @@ export async function readKeyPerfSnapshot(link: HidLink): Promise<KeyPerfSnapsho
   const missing = RAVEN61_KEYS.filter((k) => map.slotByKey.get(k.index) === undefined)
   if (missing.length > 0) {
     link.log.note(
-      `슬롯을 찾지 못한 키 ${missing.length}개: ${missing.map((k) => k.label).join(', ')}`,
+      t('raven61.keysWithoutSlot', {
+        count: missing.length,
+        keys: missing.map((k) => k.label).join(', '),
+      }),
     )
   }
   const mappedEmpty = RAVEN61_KEYS.filter((k) => {
@@ -400,10 +404,12 @@ export async function readKeyPerfSnapshot(link: HidLink): Promise<KeyPerfSnapsho
     // A zeroed record decodes to "actuation 0.02 mm, rapid trigger off, switch
     // type 0", which is plausible enough to pass for a real setting. Say so.
     link.log.note(
-      `성능 블록에서 ${mappedEmpty.length}개 키 슬롯이 비어 있습니다: ` +
-        mappedEmpty
-          .map((k) => `${k.label}(슬롯 ${map.slotByKey.get(k.index)})`)
+      t('raven61.emptySlots', {
+        count: mappedEmpty.length,
+        keys: mappedEmpty
+          .map((k) => t('raven61.emptySlotEntry', { key: k.label, slot: map.slotByKey.get(k.index)! }))
           .join(', '),
+      }),
     )
   }
 

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { diffOffsets, hexDump, parseBytes, toHex } from '../hid/hex'
+import { useT } from '../i18n'
 import {
   BLOCK_CHUNK,
   COMMAND,
@@ -51,6 +52,7 @@ export function ReportConsole() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const cancelled = useRef(false)
+  const t = useT()
 
   const candidates = mode === 'feature-set' || mode === 'feature-get' ? specs.feature : specs.output
 
@@ -68,7 +70,7 @@ export function ReportConsole() {
       }
       if (mode === 'feature-set') {
         await link.setFeature(parseBytes(payload), id, 'console')
-        setResult('(feature 리포트 전송됨)')
+        setResult(t('console.featureSent'))
         return
       }
       if (mode === 'output') {
@@ -83,7 +85,7 @@ export function ReportConsole() {
 
       // Framed mode.
       const cmd = Number.parseInt(command, 16)
-      if (!Number.isFinite(cmd) || cmd < 0 || cmd > 0xff) throw new Error('명령은 00–ff 범위여야 합니다')
+      if (!Number.isFinite(cmd) || cmd < 0 || cmd > 0xff) throw new Error(t('console.badCommand'))
       const body = data.trim() ? parseBytes(data) : undefined
       const m = Number.parseInt(magic, 16) || MAGIC
       const makePacket = () =>
@@ -132,8 +134,8 @@ export function ReportConsole() {
 
   if (!device) {
     return (
-      <Panel title="리포트 콘솔">
-        <Notice>장치를 먼저 연결하세요.</Notice>
+      <Panel title={t('console.title')}>
+        <Notice>{t('console.needDevice')}</Notice>
       </Panel>
     )
   }
@@ -148,19 +150,19 @@ export function ReportConsole() {
 
   return (
     <>
-      <Panel title="리포트 콘솔">
+      <Panel title={t('console.title')}>
         <div className="row">
           <label className="small dim">
-            모드
+            {t('console.mode')}
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value as Mode)}
               style={{ display: 'block', marginTop: 4 }}
             >
-              <option value="frame">Raven61 프레임 (체크섬 자동)</option>
-              <option value="output">RAW OUTPUT 전송</option>
-              <option value="feature-set">RAW FEATURE 쓰기</option>
-              <option value="feature-get">RAW FEATURE 읽기</option>
+              <option value="frame">{t('console.mode.frame')}</option>
+              <option value="output">{t('console.mode.output')}</option>
+              <option value="feature-set">{t('console.mode.featureSet')}</option>
+              <option value="feature-get">{t('console.mode.featureGet')}</option>
             </select>
           </label>
           <label className="small dim">
@@ -174,7 +176,9 @@ export function ReportConsole() {
           </label>
           {candidates.length > 0 && (
             <span className="small dim" style={{ alignSelf: 'end' }}>
-              선언된 ID: {candidates.map((s) => `${s.reportId}(${s.byteLength}B)`).join(', ')}
+              {t('console.declaredIds', {
+                ids: candidates.map((c) => `${c.reportId}(${c.byteLength}B)`).join(', '),
+              })}
             </span>
           )}
         </div>
@@ -183,18 +187,18 @@ export function ReportConsole() {
           <>
             <div className="row" style={{ marginTop: 10 }}>
               <label className="small dim">
-                매직
+                {t('console.magic')}
                 <select
                   value={magic}
                   onChange={(e) => setMagic(e.target.value)}
                   style={{ display: 'block', marginTop: 4 }}
                 >
-                  <option value={MAGIC.toString(16)}>0x55 (설정)</option>
-                  <option value={MAGIC_FIRMWARE.toString(16)}>0x5f (펌웨어)</option>
+                  <option value={MAGIC.toString(16)}>{t('console.magic.config')}</option>
+                  <option value={MAGIC_FIRMWARE.toString(16)}>{t('console.magic.firmware')}</option>
                 </select>
               </label>
               <label className="small dim">
-                명령
+                {t('console.command')}
                 <input
                   type="text"
                   value={command}
@@ -203,12 +207,12 @@ export function ReportConsole() {
                 />
               </label>
               <label className="small dim" style={{ flex: '1 1 200px' }}>
-                데이터
+                {t('console.data')}
                 <input
                   type="text"
                   value={data}
                   onChange={(e) => setData(e.target.value)}
-                  placeholder="비워 두면 전부 0"
+                  placeholder={t('console.dataPlaceholder')}
                   style={{ width: '100%', marginTop: 4 }}
                 />
               </label>
@@ -217,12 +221,12 @@ export function ReportConsole() {
             <div className="row" style={{ marginTop: 10 }}>
               <label className="small dim">
                 <input type="checkbox" checked={block} onChange={(e) => setBlock(e.target.checked)} />{' '}
-                블록 전송 형식 (길이 + 오프셋 헤더)
+                {t('console.blockMode')}
               </label>
               {block && (
                 <>
                   <label className="small dim">
-                    오프셋
+                    {t('console.offset')}
                     <input
                       type="text"
                       value={offset}
@@ -231,7 +235,7 @@ export function ReportConsole() {
                     />
                   </label>
                   <label className="small dim">
-                    길이 (최대 {BLOCK_CHUNK})
+                    {t('console.length', { max: BLOCK_CHUNK })}
                     <input
                       type="text"
                       value={length}
@@ -245,10 +249,10 @@ export function ReportConsole() {
             <div className="row" style={{ marginTop: 10 }}>
               <label className="small dim">
                 <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />{' '}
-                0x01 … 0x02 트랜잭션으로 감싸기
+                {t('console.wrap')}
               </label>
               <label className="small dim">
-                반복
+                {t('console.repeat')}
                 <input
                   type="text"
                   value={repeat}
@@ -257,7 +261,7 @@ export function ReportConsole() {
                 />
               </label>
               <label className="small dim">
-                간격(ms)
+                {t('console.interval')}
                 <input
                   type="text"
                   value={intervalMs}
@@ -266,7 +270,7 @@ export function ReportConsole() {
                 />
               </label>
               <label className="small dim">
-                타임아웃(ms)
+                {t('console.timeout')}
                 <input
                   type="text"
                   value={timeoutMs}
@@ -284,9 +288,14 @@ export function ReportConsole() {
                   const p = block
                     ? buildBlock(cmd, Number(offset) || 0, body, { magic: m, length: Number(length) || 0 })
                     : buildPacket(cmd, { magic: m, data: body })
-                  return `보낼 패킷: ${toHex(p.slice(0, 12))} …  (${describePacket(p)})`
+                  return t('console.preview', {
+                    bytes: `${toHex(p.slice(0, 12))} …`,
+                    described: describePacket(p),
+                  })
                 } catch (e) {
-                  return `패킷을 만들 수 없습니다: ${e instanceof Error ? e.message : String(e)}`
+                  return t('console.previewFailed', {
+                    reason: e instanceof Error ? e.message : String(e),
+                  })
                 }
               })()}
             </div>
@@ -296,7 +305,7 @@ export function ReportConsole() {
             <textarea
               rows={3}
               style={{ marginTop: 10 }}
-              placeholder="예: 55 a9 00 00   (체크섬은 직접 맞춰야 합니다)"
+              placeholder={t('console.payloadPlaceholder')}
               value={payload}
               onChange={(e) => setPayload(e.target.value)}
             />
@@ -305,7 +314,7 @@ export function ReportConsole() {
 
         <div className="row" style={{ marginTop: 12 }}>
           <button className="primary" onClick={send} disabled={!connected || busy}>
-            {busy ? '전송 중…' : '전송'}
+            {busy ? t('console.sending') : t('console.send')}
           </button>
           <button
             className="danger"
@@ -314,7 +323,7 @@ export function ReportConsole() {
             }}
             disabled={!busy}
           >
-            중지
+            {t('console.stop')}
           </button>
         </div>
 
@@ -331,14 +340,21 @@ export function ReportConsole() {
       </Panel>
 
       {shots.length > 0 && (
-        <Panel title={`응답 ${shots.length}건`}>
+        <Panel title={t('console.replies', { count: shots.length })}>
           {(() => {
             const r = parseReply(shots[0]!.reply)
             return (
               <div className="small dim" style={{ marginBottom: 8 }}>
-                {r.kind === 'ack' && `ACK — 명령 0x${(r.command ?? 0).toString(16).padStart(2, '0')} 수신 확인만, 데이터 없음`}
-                {r.kind === 'data' && `데이터 응답 — 선언 길이 ${r.length}바이트: ${toHex(r.data ?? [])}`}
-                {r.kind === 'unknown' && '알 수 없는 응답 형식'}
+                {r.kind === 'ack' &&
+                  t('console.reply.ack', {
+                    command: `0x${(r.command ?? 0).toString(16).padStart(2, '0')}`,
+                  })}
+                {r.kind === 'data' &&
+                  t('console.reply.data', {
+                    length: r.length ?? 0,
+                    bytes: toHex(r.data ?? []),
+                  })}
+                {r.kind === 'unknown' && t('console.reply.unknown')}
               </div>
             )
           })()}
@@ -347,11 +363,13 @@ export function ReportConsole() {
             <div className="small" style={{ marginBottom: 8 }}>
               {moving.size === 0 ? (
                 <span className="dim">
-                  반복 {shots.length}회 동안 모든 바이트가 동일 — 살아 있는 값이 아니라 상수입니다.
+                  {t('console.constant', { count: shots.length })}
                 </span>
               ) : (
                 <span style={{ color: 'var(--ok)' }}>
-                  변하는 바이트 오프셋: {[...moving].sort((a, b) => a - b).join(', ')} — 실시간 값입니다.
+                  {t('console.moving', {
+                    offsets: [...moving].sort((a, b) => a - b).join(', '),
+                  })}
                 </span>
               )}
             </div>

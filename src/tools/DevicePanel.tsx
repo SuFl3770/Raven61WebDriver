@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { FILTER_PRESETS, describeDevice, pickConfigInterface, rankDevice } from '../hid/filters'
 import { HidLink } from '../hid/link'
 import { isVendorPage } from '../hid/reportInfo'
+import { useT } from '../i18n'
+import { T } from '../i18n/T'
 import { Notice, Panel } from '../ui/Panel'
 import { link, refreshCodec, useCodec, useConnection } from '../state/link'
 
 export function DevicePanel() {
   const { device, connected } = useConnection()
   const codec = useCodec()
+  const t = useT()
   const [presetId, setPresetId] = useState(FILTER_PRESETS[0]!.id)
   const [known, setKnown] = useState<HIDDevice[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -19,11 +22,11 @@ export function DevicePanel() {
 
   if (!HidLink.supported()) {
     return (
-      <Panel title="장치">
+      <Panel title={t('device.title')}>
         <Notice kind="err">
-          <strong>이 브라우저는 WebHID를 지원하지 않습니다.</strong>
+          <strong>{t('device.unsupported.title')}</strong>
           <div className="small" style={{ marginTop: 4 }}>
-            Chrome, Edge 또는 Opera 데스크톱 버전에서 열어 주세요. HTTPS 또는 localhost 여야 합니다.
+            {t('device.unsupported.body')}
           </div>
         </Notice>
       </Panel>
@@ -50,29 +53,29 @@ export function DevicePanel() {
   const wrongInterface = connected && recommended !== null && device !== recommended
 
   return (
-    <Panel title="장치">
+    <Panel title={t('device.title')}>
       <div className="row">
         <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
           {FILTER_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.label}
+              {t(p.labelKey)}
             </option>
           ))}
         </select>
         <button className="primary" onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
-          장치 선택…
+          {t('device.pick')}
         </button>
         <button onClick={run(() => link.close())} disabled={!connected}>
-          연결 해제
+          {t('device.disconnect')}
         </button>
         <span className="badge">
           <span className={`dot ${connected ? 'on' : 'off'}`} />
-          {connected ? '연결됨' : '미연결'}
+          {connected ? t('app.connected') : t('app.disconnected')}
         </span>
-        <span className="dim small">코덱: {codec.label}</span>
+        <span className="dim small">{t('device.codec', { codec: t(codec.labelKey) })}</span>
       </div>
       <div className="small dim" style={{ marginTop: 6 }}>
-        {preset.hint}
+        {t(preset.hintKey)}
       </div>
 
       {error && (
@@ -84,8 +87,7 @@ export function DevicePanel() {
       {wrongInterface && (
         <div style={{ marginTop: 10 }}>
           <Notice kind="warn">
-            지금 열린 인터페이스는 설정 채널이 아닌 것으로 보입니다. 아래 목록에서 <b>권장</b> 표시가 붙은
-            것을 열어야 모니터에 키 깊이가 들어옵니다.
+            <T k="device.wrongInterface" />
           </Notice>
         </div>
       )}
@@ -94,8 +96,10 @@ export function DevicePanel() {
         <div style={{ marginTop: 12 }} className="small">
           <div className="mono">{describeDevice(device)}</div>
           <div className="dim">
-            컬렉션 {device.collections.length}개 · 벤더 정의{' '}
-            {device.collections.filter((c) => isVendorPage(c.usagePage ?? 0)).length}개
+            {t('device.collections', {
+              total: device.collections.length,
+              vendor: device.collections.filter((c) => isVendorPage(c.usagePage ?? 0)).length,
+            })}
           </div>
         </div>
       )}
@@ -103,15 +107,14 @@ export function DevicePanel() {
       {known.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div className="small dim" style={{ marginBottom: 6 }}>
-            이미 권한을 허용한 인터페이스. 키보드 하나가 여러 개로 나뉘어 보이는 것이 정상이며,
-            설정·모니터가 흐르는 것은 그중 하나뿐입니다 — 점수가 가장 높은 <b>권장</b> 인터페이스입니다.
+            <T k="device.knownHint" />
           </div>
           <table>
             <thead>
               <tr>
-                <th>인터페이스</th>
-                <th style={{ width: 70 }}>점수</th>
-                <th>근거</th>
+                <th>{t('device.table.interface')}</th>
+                <th style={{ width: 70 }}>{t('device.table.score')}</th>
+                <th>{t('device.table.reasons')}</th>
                 <th style={{ width: 110 }} />
               </tr>
             </thead>
@@ -121,7 +124,7 @@ export function DevicePanel() {
                   <td className="mono">
                     {describeDevice(d)}
                     {d === recommended && (
-                      <span className="small" style={{ color: 'var(--accent)' }}> ← 권장</span>
+                      <span className="small" style={{ color: 'var(--accent)' }}> {t('device.recommended')}</span>
                     )}
                   </td>
                   <td>{rank.score}</td>
@@ -134,7 +137,7 @@ export function DevicePanel() {
                       })}
                       disabled={d === device && connected}
                     >
-                      {d === device && connected ? '사용 중' : '열기'}
+                      {d === device && connected ? t('device.inUse') : t('device.open')}
                     </button>
                   </td>
                 </tr>
