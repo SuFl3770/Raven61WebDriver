@@ -1,32 +1,30 @@
 /**
  * The per-key performance blob: command 0xa0 reads it, 0xa1 writes it.
  *
- * 1024 bytes, 8 per key slot, indexed by the key's **position in the layout
- * XML's key list** — which is this project's `KeyDef.index`, not `keyIndex` and
- * not the HID usage.
+ * 1024 bytes, 8 per slot, 128 slots. **The index is a hardware slot number, not
+ * a key index of any kind** — see slotMap.ts, which reads the slot assignment
+ * off the board because it cannot be computed. Two cuts of this file got that
+ * wrong before the board settled it:
  *
- * The first version of this file used `keyIndex` and produced garbage: keys
- * whose `keyIndex` is 64 or above (the bottom two rows, Backspace, Enter) read
- * back as all zeros, and everything else showed another key's record. Two
- * findings settled it:
+ * - `keyIndex` from the layout XML. The stock driver's parser reads `key_index`
+ *   and `light_index` and **throws both away** (0x42e9d8, 0x42ea1e: the atoi
+ *   result is overwritten, never stored), and those attribute names are
+ *   referenced from exactly one place in the whole binary. Keys whose
+ *   `keyIndex` is 64 or above read back as zeros and the rest showed another
+ *   key's record.
+ * - Layout order, this project's `KeyDef.index`. Closer — 61 records do live in
+ *   slots 0..63 — but a hardware dump has holes at 12, 20 and 53, so the space
+ *   is 64 wide with three unused channels and the assignment is board wiring.
  *
- * - The stock driver's layout parser reads `key_index` and `light_index` from
- *   the XML and **throws both away** (0x42e9d8, 0x42ea1e: the atoi result is
- *   overwritten, never stored). Those two attribute names are referenced from
- *   exactly one place in the whole binary, so nothing else uses them either.
- *   `keyIndex` being the firmware address was an assumption, and a wrong one.
- * - On hardware, every slot at or above 61 came back zero, which is what a
- *   compact 0..60 assignment over a 61-key board looks like. Indexing by
- *   `keyIndex` predicts data up to slot 109; indexing by the XML's `row_col`
- *   (row * 16 + col) predicts data at 64-77. Both were empty.
- *
- * Established by reading the stock driver's decoder (0x427120) against its
- * encoder (0x42c390); the two are exact inverses, which is what makes the
- * layout below more than a guess. The 11 fields it decodes into line up
- * one-to-one with the columns of `t_key_perf_data`, and the factory-default
- * constants the binary carries at 0x582100 / 0x5820e0 read back as
- * `switch_type 3, key_mode 1, actuation 75, rt 5/5, dead zones 0` — the same
- * values the stock database holds.
+ * The record layout itself was established by reading the stock driver's
+ * decoder (0x427120) against its encoder (0x42c390); the two are exact
+ * inverses, which is what makes it more than a guess. The 11 fields it decodes
+ * into line up one-to-one with the columns of `t_key_perf_data`, and the
+ * factory-default constants the binary carries at 0x582100 / 0x5820e0 read back
+ * as `switch_type 3, key_mode 1, actuation 75, rt 5/5, dead zones 0` — the same
+ * values the stock database holds. Confirmed against hardware afterwards: the
+ * stock driver's own screen showed 2.60 / 1.04 / 1.24 mm for the values decoded
+ * here.
  *
  *   rec[0]  bits 0-4  switch_type      (decoder masks with 0x1f)
  *           bits 5-7  device flags     (encoder ORs 0xa0 on some firmware)
@@ -50,7 +48,9 @@
 import { countsToMm, mmToCounts } from './encoding'
 import type { KeyConfig, KeyMode } from './types'
 
-/** 128 slots of 8 bytes. Key indices reach 109, so 128 covers the board. */
+/**
+ * 128 slots of 8 bytes. The board uses 64 of them; the block is 128 wide.
+ */
 export const KEY_PERF = {
   recordSize: 8,
   slots: 128,
@@ -138,7 +138,8 @@ export function decodeKeyPerfRecord(blob: ArrayLike<number>, slot: number): KeyP
  */
 export function encodeKeyPerfRecord(rec: KeyPerfRecord): Uint8Array {
   const out = new Uint8Array(KEY_PERF.recordSize)
-  const actuation = (Math.max(1, rec.actuationCounts) - 1) & NINE_BITS
+  const L = KEY_PERF_LIMITS
+  const actuation = clamp(rec.actuationCounts, L.actuationMin, L.actuationMax) - 1
   if (rec.rtUnset) {
     out[0] = (rec.switchType & FIVE_BITS) | (rec.switchFlags & 0xff & ~FIVE_BITS)
     out[1] = rec.keyMode & 0xff
@@ -148,8 +149,8 @@ export function encodeKeyPerfRecord(rec: KeyPerfRecord): Uint8Array {
     out.fill(0xff, 4)
     return out
   }
-  const press = (Math.max(1, rec.rtPressCounts) - 1) & NINE_BITS
-  const release = (Math.max(1, rec.rtReleaseCounts) - 1) & NINE_BITS
+  const press = clamp(rec.rtPressCounts, L.rtMin, L.rtMax) - 1
+  const release = clamp(rec.rtReleaseCounts, L.rtMin, L.rtMax) - 1
 
   out[0] = (rec.switchType & FIVE_BITS) | (rec.switchFlags & 0xff & ~FIVE_BITS)
   out[1] = rec.keyMode & 0xff
@@ -161,18 +162,47 @@ export function encodeKeyPerfRecord(rec: KeyPerfRecord): Uint8Array {
   out[7] = (release >> 8) & 0xff
 
   if (rec.deadzoneState) {
-    if (rec.pressDeadzoneCounts > 0) {
-      out[5] = ((rec.pressDeadzoneCounts & FIVE_BITS) << 1) | (out[5] & 1)
-    }
-    if (rec.releaseDeadzoneCounts > 0) {
-      out[7] = ((rec.releaseDeadzoneCounts & FIVE_BITS) << 1) | (out[7] & 1)
-    }
+    // Saturate, never mask: see KEY_PERF_LIMITS.
+    const top = clamp(rec.pressDeadzoneCounts, L.deadZoneMin, L.deadZoneMax)
+    const bottom = clamp(rec.releaseDeadzoneCounts, L.deadZoneMin, L.deadZoneMax)
+    if (top > 0) out[5] = (top << 1) | (out[5] & 1)
+    if (bottom > 0) out[7] = (bottom << 1) | (out[7] & 1)
   }
   return out
 }
 
+/**
+ * What each field can actually hold, and where the bound comes from.
+ *
+ * These are not style choices: writing past them does not fail, it **wraps**.
+ * A 1.00 mm dead zone is 50 counts, and `50 & 0x1f` is 18 — the board would
+ * quietly get 0.36 mm. So the encoder saturates instead of masking, and the UI
+ * bounds its inputs to the same numbers.
+ */
+export const KEY_PERF_LIMITS = {
+  /**
+   * Rapid-trigger sensitivity, in counts. Minimum 1 is confirmed twice over:
+   * the stock encoder clamps it (`cmp dword [edi+0x18], 1` at 0x42c576) and so
+   * do the stock UI's own spin handlers (0x43ccd3 for the shared control,
+   * 0x43d093 for the press control) — both force 1 when the user goes below it.
+   * The maximum is the field: 9 bits.
+   */
+  rtMin: 1,
+  rtMax: NINE_BITS + 1,
+  /** Dead zones are 5 bits. 31 counts = 0.62 mm. */
+  deadZoneMin: 0,
+  deadZoneMax: FIVE_BITS,
+  /** Actuation is the same 9-bit field as the sensitivities. */
+  actuationMin: 1,
+  actuationMax: NINE_BITS + 1,
+} as const
+
 /** Largest dead zone the 5-bit field can hold: 31 counts, 0.62 mm. */
-export const MAX_DEADZONE_COUNTS = FIVE_BITS
+export const MAX_DEADZONE_COUNTS = KEY_PERF_LIMITS.deadZoneMax
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v
+}
 
 /** Turns a wire record into the millimetre model the UI edits. */
 export function toKeyConfig(rec: KeyPerfRecord): KeyConfig {
@@ -184,9 +214,6 @@ export function toKeyConfig(rec: KeyPerfRecord): KeyConfig {
       enabled: rec.keyMode !== KEY_MODE_WIRE.off,
       pressMm: countsToMm(rec.rtPressCounts),
       releaseMm: countsToMm(rec.rtReleaseCounts),
-      // UI-only. Showing the two values as one would hide a board that has them
-      // set differently, so it follows the data rather than defaulting.
-      separate: rec.rtPressCounts !== rec.rtReleaseCounts,
       continuous: rec.keyMode === KEY_MODE_WIRE.fullStroke,
     },
     deadZone: {
@@ -201,11 +228,20 @@ export function toKeyConfig(rec: KeyPerfRecord): KeyConfig {
 }
 
 /**
- * And back. `switchFlags` defaults to 0 rather than to the 0xa0 the stock
- * driver sometimes sets — writing bits whose meaning is unknown, without having
- * read them off this board first, is not something to do blind.
+ * And back, with `current` supplying the fields the model does not carry.
+ *
+ * `switchType` and `switchFlags` are hardware properties: which magnetic switch
+ * is fitted, and three bits whose meaning is unknown (the stock encoder ORs
+ * 0xa0 into them on some firmware). This app has no UI that sets either, and a
+ * `KeyConfig` built from factory defaults has neither — so without `current`,
+ * writing one would announce switch type 0 and clear those bits on every key it
+ * touched. Passing the record the board just returned makes a write preserve
+ * what it did not set, which is the only defensible behaviour for bytes we do
+ * not understand.
+ *
+ * Same reasoning for `rtUnset`: the 0xff marker belongs to the board.
  */
-export function fromKeyConfig(config: KeyConfig): KeyPerfRecord {
+export function fromKeyConfig(config: KeyConfig, current?: KeyPerfRecord): KeyPerfRecord {
   const rt = config.rapidTrigger
   const keyMode = !rt.enabled
     ? KEY_MODE_WIRE.off
@@ -213,16 +249,16 @@ export function fromKeyConfig(config: KeyConfig): KeyPerfRecord {
       ? KEY_MODE_WIRE.fullStroke
       : KEY_MODE_WIRE.rapidTrigger
   return {
-    switchType: config.switchType ?? 0,
-    switchFlags: config.switchFlags ?? 0,
+    switchType: config.switchType ?? current?.switchType ?? 0,
+    switchFlags: config.switchFlags ?? current?.switchFlags ?? 0,
     keyMode,
     actuationCounts: mmToCounts(config.actuationMm),
     rtPressCounts: mmToCounts(rt.pressMm),
-    rtReleaseCounts: mmToCounts(rt.separate ? rt.releaseMm : rt.pressMm),
+    rtReleaseCounts: mmToCounts(rt.releaseMm),
     pressDeadzoneCounts: mmToCounts(config.deadZone.topMm),
     releaseDeadzoneCounts: mmToCounts(config.deadZone.bottomMm),
     deadzoneState: config.deadZone.enabled,
-    rtUnset: config.rtUnset === true && !rt.enabled && !config.deadZone.enabled,
+    rtUnset: (config.rtUnset ?? current?.rtUnset) === true && !rt.enabled && !config.deadZone.enabled,
   }
 }
 
@@ -237,4 +273,45 @@ export function isEmptySlot(blob: ArrayLike<number>, slot: number): boolean {
     if ((blob[at + i] ?? 0) !== 0) return false
   }
   return true
+}
+
+/**
+ * Splices one record into a copy of the blob, leaving every other byte alone.
+ *
+ * A write is always read-modify-write here, and this is why. The stock driver
+ * zeroes its 1024-byte staging buffer (`memset` at 0x42c44b) and fills only the
+ * slots its own key collection knows about, so slots it does not model — 126,
+ * 127, and the three unused channels — go back as zeros. Patching a blob the
+ * board just handed us cannot lose anything we do not understand yet.
+ */
+export function patchSlot(blob: Uint8Array, slot: number, rec: KeyPerfRecord): Uint8Array {
+  if (slot < 0 || slot >= KEY_PERF.slots) throw new RangeError(`slot ${slot} is out of range`)
+  const out = blob.slice()
+  out.set(encodeKeyPerfRecord(rec), slot * KEY_PERF.recordSize)
+  return out
+}
+
+/** Slots whose 8 bytes differ between two blobs. */
+export function changedSlots(before: ArrayLike<number>, after: ArrayLike<number>): number[] {
+  const out: number[] = []
+  for (let slot = 0; slot < KEY_PERF.slots; slot++) {
+    const at = slot * KEY_PERF.recordSize
+    for (let i = 0; i < KEY_PERF.recordSize; i++) {
+      if ((before[at + i] ?? 0) !== (after[at + i] ?? 0)) {
+        out.push(slot)
+        break
+      }
+    }
+  }
+  return out
+}
+
+/** One record as hex, for reporting a slot that did not read back as written. */
+export function recordHex(blob: ArrayLike<number>, slot: number): string {
+  const at = slot * KEY_PERF.recordSize
+  const bytes: string[] = []
+  for (let i = 0; i < KEY_PERF.recordSize; i++) {
+    bytes.push((blob[at + i] ?? 0).toString(16).padStart(2, '0'))
+  }
+  return bytes.join(' ')
 }

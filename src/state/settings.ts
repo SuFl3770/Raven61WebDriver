@@ -1,20 +1,38 @@
 import { useSyncExternalStore } from 'react'
+import { DEFAULT_ACCENT } from './accent'
 
 /**
  * App preferences, kept out of the protocol layer and persisted per browser.
  *
  * `debug` decides whether the reverse-engineering panels are shown. They earned
  * their place while the protocol was being decoded, but for someone who just
- * wants to see key travel they are noise — so they are off by default and the
- * settings tab turns them back on.
+ * wants to see key travel they are noise — so they are off by default, and the
+ * only way back to them is five quick taps of Shift (state/debugGesture.ts).
+ * There is no checkbox: a control everyone can see for something almost nobody
+ * should touch was the wrong trade.
+ *
+ * Being persisted matters more for `debug` than it looks. The gesture is
+ * deliberately obscure, so someone who found it once should not have to find it
+ * again after a reload — and equally, someone who turned it off should not have
+ * the lab reappear on them.
+ *
+ * `accent` is the point colour, as one of the hex values state/accent.ts
+ * offers. Stored as the colour rather than as an index or a name so that
+ * reordering or renaming the list cannot repaint someone's app behind them.
+ *
+ * How big the interface is drawn is deliberately *not* here. It follows the
+ * window on its own — see `html { font-size }` in styles.css — and a control
+ * for it would be a second answer to a question already answered, with the
+ * browser's own zoom as a third.
  */
 export interface Settings {
   debug: boolean
+  accent: string
 }
 
 const STORAGE_KEY = 'raven61.settings.v1'
 
-const DEFAULTS: Settings = { debug: false }
+const DEFAULTS: Settings = { debug: false, accent: DEFAULT_ACCENT }
 
 class SettingsStore {
   private value: Settings = DEFAULTS
@@ -23,7 +41,7 @@ class SettingsStore {
   constructor() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) this.value = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) }
+      if (raw) this.value = known(JSON.parse(raw) as Partial<Settings>)
     } catch {
       // A corrupt or unavailable store just means defaults.
     }
@@ -47,6 +65,23 @@ class SettingsStore {
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
+  }
+}
+
+/**
+ * Projected onto the fields this version knows about rather than spread over
+ * the defaults. Stored settings are only JSON and may be from an older build,
+ * a newer one, or a text editor; a key that is no longer a setting should be
+ * dropped on the way in instead of being carried around and written back
+ * forever.
+ */
+function known(value: Partial<Settings>): Settings {
+  return {
+    debug: Boolean(value.debug ?? DEFAULTS.debug),
+    // Only the shape is checked here; whether the colour is still one this
+    // version offers is state/accent.ts's call, and it decides that every time
+    // it applies rather than once at load.
+    accent: typeof value.accent === 'string' ? value.accent : DEFAULTS.accent,
   }
 }
 

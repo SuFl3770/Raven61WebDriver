@@ -125,7 +125,7 @@ export function Keymap() {
                   <button
                     key={c.code}
                     className={entries[selected]?.code === c.code ? 'primary' : ''}
-                    style={{ padding: '3px 8px', fontSize: 12 }}
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.8125rem' }}
                     onClick={() => assign(c.code)}
                   >
                     {keycodeDefLabel(c)}

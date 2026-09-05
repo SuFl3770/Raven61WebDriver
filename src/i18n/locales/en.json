@@ -1,26 +1,47 @@
 {
   "app": {
     "tab": {
-      "device": "Device",
+      "overview": "Overview",
+      "keymap": "Key mapping",
       "input": "Input point",
-      "sensors": "Sensors",
-      "keymap": "Keymap",
+      "advanced": "Advanced keys",
+      "light": "Lighting",
+      "macro": "Macro",
+      "sensors": "Test",
       "settings": "Settings",
-      "debug": "Debug"
+      "debug": "Debug",
+      "interface": "Interface"
     },
+    "language": "Language",
     "connected": "Connected",
     "disconnected": "Not connected",
-    "codec": "Codec {codec}",
-    "notConnected": "No device is connected. Connect one from the <b>Device</b> tab first."
+    "codec": "Codec {codec}"
+  },
+
+  "viewport": {
+    "tooSmall": {
+      "title": "This window is too small",
+      "body": "Placeholder — write this text yourself (viewport.tooSmall.body in locales/*.json).",
+      "size": "Now {width} × {height} · needs {minWidth} × {minHeight} or more",
+      "dismiss": "Carry on anyway"
+    }
+  },
+
+  "connect": {
+    "title": "Connect your device",
+    "body": "",
+    "connecting": "Connecting…",
+    "remembered": "Reconnect {device}",
+    "requirements": "Works in desktop Chrome, Edge and Opera, served over HTTPS or from localhost."
   },
 
   "selection": {
     "selectAll": "Select all",
     "clear": "Clear selection",
-    "none": "Nothing selected — changes apply to every key",
+    "none": "Nothing selected — pick keys to change their settings",
     "count_one": "{count} key selected",
     "count_other": "{count} keys selected",
-    "hint": "Shift/Ctrl-click for multi-select"
+    "hint": "Click to toggle · drag across to select several"
   },
 
   "keygrid": {
@@ -35,13 +56,22 @@
   },
 
   "apply": {
-    "read": "Read from board",
     "reading": "Reading…",
-    "write": "Apply to board",
-    "writeCount": "Apply to board ({count})",
     "writing": "Applying…",
-    "commit": "Save to flash",
-    "committing": "Saving…",
+    "mismatch": "{count} slots read back differently from what was written — the values below are what the board actually holds.",
+    "retry": "Try again",
+    "mismatch_one": "1 slot read back differently from what was written — the value below is what the board actually holds.",
+    "mismatch_other": "{count} slots read back differently from what was written — the values below are what the board actually holds.",
+    "pending": "Applying shortly…",
+    "failed": "Not applied — the board does not have this",
+    "readOnly": "Read-only",
+    "appliedAt": "Applied at {time} and read back to confirm",
+    "applied_one": "{count} key applied",
+    "applied_other": "{count} keys applied",
+    "upToDate": "Matches the board",
+    "write": "Apply to board",
+    "revertEdits": "Discard edits",
+    "noChange": "The board already held this value, so nothing was sent.",
     "noWrite": "The active codec ({codec}) does not support writing."
   },
 
@@ -59,8 +89,8 @@
       "notes": "The protocol has not been decoded yet. Explorer, console, prober and the traffic log all still work."
     },
     "raven61": {
-      "label": "Raven61 (reads decoded)",
-      "notes": "Packet framing, analog key events, the per-key performance read (0xa0) and the global settings read (0x05) are decoded. The write (0xa1) is decoded down to the encoder but has not been verified against hardware, so it is not wired up yet."
+      "label": "Raven61 (performance block read/write)",
+      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), and the global settings read (0x05) are decoded. Writes are read-modify-write and are read back afterwards to compare the bytes. The keymap, lighting and advanced keys are not decoded."
     }
   },
 
@@ -71,16 +101,93 @@
   },
 
   "raven61": {
+    "modeNoAck": "The board did not acknowledge {command}; carrying on without waiting — {reason}",
     "chunkTimeout": "{label}: no reply for chunk {index}/{total} (offset {offset}) — {reason}",
     "slotMapPartial": "Only {found}/{total} keys were resolved from the keymap; falling back to the guessed slot mapping.",
     "slotMapFailed": "Keymap read failed; falling back to the guessed slot mapping: {reason}",
     "keysWithoutSlot": "{count} keys have no slot: {keys}",
     "emptySlots": "{count} key slots are empty in the performance block: {keys}",
-    "emptySlotEntry": "{key} (slot {slot})"
+    "emptySlotEntry": "{key} (slot {slot})",
+    "blobSize": "The performance blob is {size} bytes; it must be {expected}.",
+    "chunkNak": "The board did not acknowledge chunk {index}/{total} (offset {offset}).",
+    "writeUnmapped": "{count} keys have no slot and were not written: {keys}",
+    "writeMismatch": "{count} slots read back differently from what was written: {detail}",
+    "writeNeedsKeymap": "The write was aborted because the slot mapping did not come from the board. When the keymap read fails the guessed mapping is used, and that mapping does not match the real board — settings would land on the wrong keys. Try reading again.",
+    "globalNak": "The board did not acknowledge the global settings write.",
+    "writeUnmapped_one": "1 key has no slot and was not written: {keys}",
+    "writeUnmapped_other": "{count} keys have no slot and were not written: {keys}",
+    "writeMismatch_one": "1 slot read back differently from what was written: {detail}",
+    "writeMismatch_other": "{count} slots read back differently from what was written: {detail}",
+    "firmwareEmpty": "The board answered 0x03 with nothing. This firmware appears not to report its build.",
+    "resetNak": "The board did not acknowledge the factory reset. It appears not to have started."
+  },
+
+  "reset": {
+    "title": "Factory reset",
+    "what": "the factory reset (0xee)",
+    "hint": "Puts the board back to how it left the factory. Actuation, rapid trigger, dead zones, the keymap, lighting, the polling rate and the debounce level are all <b>overwritten with the defaults baked into the firmware.</b> There is no undo.",
+    "start": "Factory reset…",
+    "startNote": "One press turns this into a confirmation. The same button has to be pressed again to reset.",
+    "cancel": "Cancel",
+    "confirm": {
+      "title": "This resets the board, and it cannot be undone",
+      "body": "<b>Every setting on the board</b> goes: per-key actuation, rapid trigger and dead zones, the keymap, lighting, and the polling rate and debounce level with them. Neither this app nor the stock driver keeps a backup.",
+      "kept": "<b>Key calibration survives.</b> The firmware's reset routine was read, and it never writes the calibration table at flash <c>0x20300</c> — what the board learned about each switch stays.",
+      "go": "Press again to reset the board",
+      "wait": "Wait {seconds}s, then press again"
+    },
+    "stage": {
+      "sending": "Sending the reset…",
+      "waiting": "The board is erasing flash…",
+      "reading": "Reading the result back…",
+      "note": "The same {seconds} seconds the stock driver waits, then the global block is read back. Do not unplug the board while this runs."
+    },
+    "done": {
+      "ok": "Reset done — what came back matches the firmware's own defaults.",
+      "different": "The board came back with values that differ from this firmware's defaults table.",
+      "unread": "The command was delivered, but the result could not be read.",
+      "unreadNote": "The board may still be writing flash, or re-enumerating on USB. <b>This does not mean it failed.</b> Give it a moment and read again from <b>Board settings</b>.",
+      "reread": "The per-key settings were cleared. Read from the board again on the <b>Input point</b> tab to pick up the new values."
+    }
+  },
+
+  "firmware": {
+    "title": "Keyboard firmware",
+    "what": "reading the firmware build (0x03)",
+    "device": "Device",
+    "ids": "VID : PID",
+    "build": "Build",
+    "built": "Compiled",
+    "hint": "The firmware has <b>no version number.</b> What <c>0x03</c> answers with is the build's own name and the date and time the compiler stamped into it, so that is exactly what is shown here. Two builds made on the same day are indistinguishable, but the value does change across a firmware update, which makes it good for telling what is on the board right now. The stock driver never sends this command — it was found in the firmware's own dispatch table, and the handler (0x667c) only writes to the reply buffer, so sending it changes nothing on the board."
+  },
+
+  "board": {
+    "title": "Board settings",
+    "what": "reading global settings (0x05)",
+    "hint": "The polling rate and the debounce level are the two board-wide settings this keyboard has. Both live in the <c>0x05</c> block — the rate in the low nibble of <c>payload[12]</c>, debounce in bits 5-6 of <c>payload[15]</c> — and everything else sharing that block (lighting, the game-mode locks, the sleep timeout) is written back exactly as it was read.",
+    "applied": "Read the global block back after applying, and it matches.",
+    "mismatch": "Read back differently from what was written: {detail}",
+    "raw": "payload[12] = {rate} (tick_rate {tick}) · payload[15] = {flags}",
+    "rate": {
+      "label": "Polling rate",
+      "hz": "{hz} Hz",
+      "unknown": "unknown value {value}",
+      "warn": "Changing the polling rate can make the board re-enumerate on USB. If it does, the browser loses this connection and you will have to connect again.",
+      "writeLost": "the polling-rate change may have re-opened the device. Connect again and check the value.",
+      "note": "What the four values mean comes from the stock driver's own list; it has not been confirmed against hardware."
+    },
+    "debounce": {
+      "label": "Debounce",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "unknown": "unknown value {value}",
+      "hint": "The names are the stock driver's own. <b>Neither the driver nor the firmware says what they are in milliseconds,</b> so this shows the name and the raw value rather than inventing a figure."
+    }
   },
 
   "device": {
-    "title": "Device",
+    "title": "Device interface",
     "unsupported": {
       "title": "This browser does not support WebHID.",
       "body": "Open it in desktop Chrome, Edge or Opera. The page must be served over HTTPS or from localhost."
@@ -126,8 +233,36 @@
   },
 
   "inputPoint": {
-    "apply": "Apply",
-    "writeWhat": "actuation · rapid trigger write"
+    "section": {
+      "overview": "Overview",
+      "overviewHint": "What the board actually holds. Read on entering this tab.",
+      "trigger": "Trigger point",
+      "triggerHint": "Actuation sets the trigger depth within the stroke. Full travel comes from the Switch section.",
+      "rt": "Rapid trigger",
+      "rtHint": "Press and release sensitivity, bottom-out trigger, dead zones, advanced keys.",
+      "switch": "Switch",
+      "switchHint": "Which switch each key has fitted. It sets full travel, so the millimetres in the sections above are read against it.",
+      "deadzone": "Dead zone",
+      "deadzoneHint": "Travel at the top and bottom the board ignores. Shares a wire byte with rapid trigger but is a separate setting."
+    },
+    "sections": "Input point sections"
+  },
+
+  "switch": {
+    "title": "Switch",
+    "unread": "Not read from the board yet. The values below are this app's defaults, not what the hardware holds.",
+    "intro": "The board stores the switch type <b>per key</b> (low 5 bits of <c>rec[0]</c>). That value sets the key's <b>full travel</b>, and the millimetre values for actuation and rapid trigger are read against it — so <b>getting this wrong misreads every other setting.</b> Match it to the switch actually fitted.",
+    "select": "Switch type",
+    "target": "{count} key(s) targeted",
+    "board": "board",
+    "pending": "pending",
+    "mixed": "mixed",
+    "travel": "{travel} mm travel",
+    "flagsNote": "The top 3 bits of <c>rec[0]</c> (purpose unknown) are written back exactly as read — only the type changes.",
+    "deeper": "{count} key(s) are set deeper than this switch can travel. Fix them in the <b>Actuation</b> panel.",
+    "unknownValue": "The board holds value {value}, which is not in the table. Picking from the list overwrites it.",
+    "phantom": "In the driver's table but not a switch that exists, so it cannot be picked: {names}. A board already holding that value <b>keeps it</b>; this app will not write it.",
+    "phantomOnBoard": "The board holds a switch type that does not exist ({name}). Picking another type overwrites it, but that changes full travel and with it how actuation and rapid trigger millimetres are read."
   },
 
   "actuation": {
@@ -137,18 +272,35 @@
       "fast": "Fast {mm} mm",
       "default": "Default {mm} mm",
       "deep": "Deep {mm} mm"
-    }
+    },
+    "board": "Board",
+    "pending": "Pending",
+    "target": "{count} keys targeted",
+    "mixed": "mixed",
+    "travelNote": "The maximum is the total travel of the switch fitted to the selected keys ({travel} mm).",
+    "unread": "The board has not been read yet. Read it in \"Current board settings\" above, then adjust.",
+    "deeperThanTravel": "{count} keys have an actuation point deeper than their switch travel.",
+    "target_one": "1 key targeted",
+    "target_other": "{count} keys targeted",
+    "deeperThanTravel_one": "1 key has an actuation point deeper than its switch travel.",
+    "deeperThanTravel_other": "{count} keys have an actuation point deeper than their switch travel."
   },
 
   "rt": {
     "title": "Rapid trigger",
     "enable": "Enable rapid trigger on the selected keys",
-    "sensitivity": "Sensitivity (mm)",
     "pressSensitivity": "Press sensitivity (mm)",
     "releaseSensitivity": "Release sensitivity (mm)",
-    "separate": "Separate press/release",
     "continuous": "Continuous mode (works above the actuation point too)",
-    "noise": "The board's smallest step is {step} mm, and the factory default is 0.10 mm for both press and release. Going below that can let sensor noise through as real input, so check the resting jitter on the <b>Monitor</b> tab first."
+    "noise": "The board's smallest step is {step} mm, and the factory default is 0.10 mm for both press and release. Going below that can let sensor noise through as real input, so check the resting jitter on the <b>Monitor</b> tab first.",
+    "full": "FULL",
+    "counts": "press {press} / release {release} counts (field max {max})",
+    "belowFactory": "{count} keys have a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
+    "noRoom": "{count} keys have no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity.",
+    "belowFactory_one": "1 key has a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
+    "belowFactory_other": "{count} keys have a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
+    "noRoom_one": "1 key has no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity.",
+    "noRoom_other": "{count} keys have no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity."
   },
 
   "deadzone": {
@@ -156,7 +308,8 @@
     "hint": "The stretch at each end of the stroke that is ignored. Same as the stock driver's Top / Bottom dead zone.",
     "enable": "Enable dead zone on the selected keys",
     "top": "Top (mm)",
-    "bottom": "Bottom (mm)"
+    "bottom": "Bottom (mm)",
+    "limit": "The field is 5 bits, so {mm} mm ({counts} counts) is the maximum. Past that the value wraps."
   },
 
   "advanced": {
@@ -167,13 +320,47 @@
 
   "calibration": {
     "title": "Bottom-out calibration",
-    "how": "Calibration has <b>no command of its own</b> — holding the analog test mode open <i>is</i> the calibration. <c>{command}</c> is resent every {rearmMs} ms to keep the mode open, and every key pressed <b>all the way down</b> while it is held relearns its bottom-out magnet value (the same thing the stock driver's performance tab does).",
-    "warning": "⚠ <b>You cannot type on this keyboard while it runs.</b> Typing comes back the moment you stop. Recalibrating also moves the bottom that actuation and rapid trigger are measured from — only run it when you need it.",
     "start": "Start calibration",
     "stop": "Stop (restore typing)",
     "progress": "Bottomed out <b>{done}</b>/{total}",
-    "progressHint": "counts keys seen at {mm} mm or deeper",
-    "fillHint": "The fill is the <b>deepest travel seen</b> this pass — an empty key is one you have not pressed yet."
+    "enter": "Calibration",
+    "exit": "Leave calibration",
+    "enterHint": "Enters calibration at once — the grid switches to progress and typing stops while it runs.",
+    "gridLegend": "Calibration progress — the border is the board’s LED, the number is the key’s <b>calibration scale</b>, the fill is how deep it went.",
+    "guide": "",
+    "restart": "Start again",
+    "blocked": "Tab switching and disconnecting are locked while calibration runs — leaving the mode is what lets the board type again.",
+    "health": {
+      "uncalibrated": "Never calibrated (scale still at the 0.62 floor)",
+      "weak": "Barely calibrated — press it all the way down",
+      "ok": "Calibrated",
+      "unknown": "Nothing known yet"
+    },
+    "copyDump": "Copy the numbers (per-key scale and firmware state)",
+    "ledMirror": "Keys the board is lighting right now: <b>{lit}</b>.",
+    "tableFailed": "Could not read the board’s stored calibration table (command 0xaa). The pass still works, but keys nobody has pressed yet will have nothing to show.",
+    "ledDisagree": "<b>{count}</b> of them, listed below.",
+    "ledDisagree_one": "One, listed below.",
+    "ledDisagree_other": "<b>{count}</b> of them, listed below.",
+    "ledDisagreeNote": "LED colours are the firmware’s own palette: red {red}, amber {amber}. Dark on an uncalibrated key means the firmware latched \"calibrated\" too early; lit on a calibrated key means its state byte never left the value it shipped with.",
+    "led": {
+      "red": "Red",
+      "amber": "Amber",
+      "off": "Dark"
+    },
+    "col": {
+      "key": "Key",
+      "led": "Board LED",
+      "scale": "Scale",
+      "verdict": "Verdict"
+    },
+    "ledState": {
+      "red": "<b>Red</b> — the board has <b>never</b> committed a scale for this key (state 0x00)",
+      "amber": "<b>Amber</b> — committed <b>once</b> (state 0x01). One more full press",
+      "green": "<b>Green</b> — the board calls this key <b>done</b>. On the keyboard itself the override simply stops and the lighting effect shows through"
+    },
+    "gridNote": "The border is <b>the board’s own LED</b>, so the screen and the keyboard on the desk always agree. What that colour counts is <b>how many times the scale was committed</b>, not how good it is: a fresh firmware shows every key red however well calibrated, and two shallow presses turn one green. The number on the cap is the honest one — a <b>scale</b> of 0.62 means the key has never been calibrated.",
+    "ledDisagreeTitle": "Keys where the board’s LED and the scale disagree (debug mode only)"
   },
 
   "perf": {
@@ -196,11 +383,11 @@
     },
     "dirty_one": "{count} edited key — re-reading discards it",
     "dirty_other": "{count} edited keys — re-reading discards them",
-    "gridShow": "Grid shows",
     "metric": {
       "actuation": "Actuation",
       "rt": "Rapid trigger",
-      "switch": "Switch"
+      "switch": "Switch",
+      "deadzone": "Dead zone"
     },
     "on": "on",
     "off": "off",
@@ -266,30 +453,47 @@
     "error": "Error"
   },
 
-  "settings": {
-    "language": {
-      "title": "Language",
-      "hint": "Your choice is stored in this browser only."
-    },
-    "display": {
-      "title": "Display"
-    },
+  "overview": {
+    "title": "Overview",
+    "todo": "This tab is a placeholder — the feature has not been built yet."
+  },
+
+  "macro": {
+    "title": "Macro",
+    "todo": "This tab is a placeholder — the feature has not been built yet."
+  },
+
+  "light": {
+    "title": "Lighting",
+    "todo": "This tab is a placeholder — the feature has not been built yet."
+  },
+
+  "gesture": {
     "debug": {
-      "label": "Debug mode",
-      "hint": "Shows the <b>Debug</b> tab — the live monitor at the top, then the analysis panels (observed identities · key address candidates · baseline ADC drift) and the tools (explorer · console · prober · events · log). They exist for decoding the protocol, so you do not normally need them."
+      "on": "Debug mode on",
+      "off": "Debug mode off",
+      "hint": "Shift {presses} times to change it back"
+    }
+  },
+
+  "settings": {
+    "storage": {
+      "title": "What gets stored",
+      "hint": "The language picked in the top bar, whether debug mode is on, and the sensor addresses you bind on the <b>Events</b> tab live in this browser's <c>localStorage</c> only — they survive closing the browser, and none of them reaches the board. <b>Board settings</b> above are the other way round: they live on the keyboard, so they are the same whichever PC you open this on."
     },
+    "accent": {
+      "title": "Accent colour",
+      "swatch": "Accent colour {color}"
+    }
+  },
+
+  "debug": {
+    "gestureOff": "<b>Tap Shift {presses} times quickly</b> to make this tab go away again. These are tools for decoding the protocol, so you do not normally need them.",
     "keyId": {
       "title": "Key identification",
       "label": "Ignore the built-in table — use my own bindings only",
       "hint": "All 61 keys now name themselves in the event stream (modifiers through the HID modifier bitmask in <c>payload[2]</c>), so this table is only a fallback. It guesses a key from its sensor value and baseline ADC, both of which calibration changes — and a stale table <b>guesses wrong rather than not at all.</b> Turn it off when that happens."
     },
-    "storage": {
-      "title": "What gets stored",
-      "hint": "The settings above and the sensor addresses you bind on the <b>Events</b> tab live in this browser's <c>localStorage</c> only. Nothing is written to the board, so opening this on another PC starts from the defaults."
-    }
-  },
-
-  "debug": {
     "tools": "Analysis tools",
     "tool": {
       "explorer": {
@@ -467,7 +671,7 @@
     "undecoded_one": "{count} report would not decode",
     "undecoded_other": "{count} reports would not decode",
     "uncalibrated": "<b>Some keys are not calibrated.</b> They report a total stroke of 0, so the travel shown is an <b>estimate</b> scaled against the nominal {nominal} mm. One calibration pass replaces it with the measured value.",
-    "staleTable": "<b>The built-in identity table does not match this board.</b> Either a sensor value missing from the table showed up on an unnamed key, or more baselines were seen under one sensor value than that value has keys. As it stands, a modifier <b>can resolve to the wrong key</b> — turn on <b>Ignore the built-in table</b> under <b>Settings</b> and bind them yourself on the <b>Events</b> tab.",
+    "staleTable": "<b>The built-in table does not describe this board.</b> A key that needs fingerprint identification reported a sensor value the table has never heard of, or one sensor value showed more baselines than it has keys. A modifier <b>can resolve to the wrong key</b> in this state — the <b>Sensor values</b> panel in debug mode shows which value is at fault. Turn on <b>Ignore the built-in table</b> in <b>Settings</b> and bind the keys by hand in the <b>Events</b> tab.",
     "armFailed": "Could not arm the stream:",
     "armFailedHint": "Check that the interface marked <b>recommended</b> on the <b>Device</b> tab is the one that is open.",
     "armed": "Analog reporting is on (<c>{arm}</c> → <c>{disarm}</c>). Reporting stays enabled while the test mode has been exited, so typing keeps working and nothing is recalibrated.",
@@ -527,7 +731,9 @@
       "adcLow": "current ADC (low)",
       "baselineHigh": "baseline ADC (high)",
       "baselineLow": "baseline ADC (low)",
-      "unknown": "undecoded"
+      "unknown": "undecoded",
+      "calState": "Calibration state (the LED colour)",
+      "scaleUnits": "Calibration scale, units digit"
     },
     "drift": {
       "title": "Baseline ADC drift — against the built-in table",
@@ -556,6 +762,42 @@
       "adc": "current ADC {value}",
       "baseline": "baseline ADC {value}",
       "noise": "resting jitter {mm} mm — rapid trigger sensitivity must be larger than this"
+    },
+    "sensorTable": {
+      "title": "Sensor values vs the built-in table",
+      "intro": "Every sensor value observed (<c>payload[12..13]</c>), with whether the built-in table knows it. A value missing from the table is <b>not a problem for a key identified by its usage or modifier bit</b> — the table is only the fallback for when both of those fail.",
+      "col": {
+        "sensor": "Sensor value",
+        "baselines": "Baselines seen",
+        "keys": "Resolved key",
+        "path": "Identified by",
+        "table": "Table entries",
+        "status": "Status"
+      },
+      "path": {
+        "usage": "usage",
+        "modifier": "modifier bit",
+        "fingerprint": "fingerprint",
+        "none": "not a key"
+      },
+      "notInTable": "not in table",
+      "status": {
+        "ok": "fine",
+        "harmless": "missing, harmless",
+        "warn": "fallback needed, missing",
+        "nonKey": "not a key event"
+      }
     }
+  },
+
+  "bottomOut": {
+    "title": "Always trigger on bottom-out (global)",
+    "what": "global settings write (0x06)",
+    "enable": "Always trigger when the key bottoms out",
+    "hint": "The <b>only</b> rapid-trigger setting that is not per key. It sits in the 32-byte global block at <c>payload[15]</c> bit 1, so it has its own read and write (<c>0x05</c> / <c>0x06</c>). That block also holds settings belonging to other screens — polling rate, dead zone, game lock, sleep timeout — so the block is read, this one bit is flipped, and it is written back. Same as the stock driver does.",
+    "applied": "Applied, and the global block was read back to confirm.",
+    "noChange": "The board already held this value, so nothing was sent.",
+    "mismatch": "The byte read back differently from what was written: {detail}",
+    "raw": "payload[15] = {byte} · Tachyon {tachyon} · actuation_check {actuationCheck} · magnet test {magnetTest} · debounce {debounce}"
   }
 }

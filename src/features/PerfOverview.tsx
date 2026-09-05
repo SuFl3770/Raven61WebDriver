@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { t as translate, useT, type MessageKey } from '../i18n'
+import { useCallback, useState } from 'react'
+import { t as translate, useT } from '../i18n'
 import { T } from '../i18n/T'
 import { RAVEN61_KEYS, DEFAULT_TRAVEL_MM, type KeyDef } from '../keyboard/raven61'
 import { supports } from '../protocol/codec'
@@ -13,30 +13,22 @@ import {
 } from '../protocol/types'
 import { KEY_PERF, decodeKeyPerfRecord } from '../protocol/keyPerf'
 import { KEYMAP } from '../protocol/slotMap'
-import { configStore, useDirtyKeys, useKeyConfigs } from '../state/config'
-import { selection, useSelection } from '../state/selection'
+import { configStore, useDirtyKeys, useKeyConfigs, useLastRead } from '../state/config'
+import { globalStore, useGlobalSettings } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
-import { KeyGrid } from '../ui/KeyGrid'
 import { NotDecoded, Notice, Panel } from '../ui/Panel'
 
 /**
  * What the board currently has, for every key.
  *
- * The stock driver reads this blob on connect rather than on entering its
- * performance tab, then renders from its own cache — which is why its values
- * appear instantly. There is no cache here, so the read happens on entry, once
- * per mount.
+ * It does not read on mount. Opening a section reads the board (see
+ * InputPoint), and this panel is one of those sections — reading here as well
+ * would send the same two blocks twice on every visit. The raw block is the one
+ * thing the shared read does not keep, so the button stays: it is what fetches
+ * the bytes for the dump, not a general refresh.
  */
 
 type Status = 'idle' | 'loading' | 'ok' | 'error'
-
-/** Which value the key grid colours and labels. */
-const METRICS = [
-  { id: 'actuation', labelKey: 'perf.metric.actuation' },
-  { id: 'rt', labelKey: 'perf.metric.rt' },
-  { id: 'switch', labelKey: 'perf.metric.switch' },
-] as const satisfies readonly { id: string; labelKey: MessageKey }[]
-type Metric = (typeof METRICS)[number]['id']
 
 /** Full travel depends on the switch fitted — see SWITCH_TYPES. */
 function travelOf(config: KeyConfig): number {
@@ -162,17 +154,16 @@ export function PerfOverview() {
   const { connected } = useConnection()
   const configs = useKeyConfigs()
   const dirty = useDirtyKeys()
-  const sel = useSelection()
+  // The store timestamps its own loads, so "when was the board read" has one
+  // source — including after a write, which loads the verify read's values.
+  const readAt = useLastRead()
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [readAt, setReadAt] = useState<Date | null>(null)
-  const [global, setGlobal] = useState<GlobalSettings | null>(null)
+  const global = useGlobalSettings()
   const [snapshot, setSnapshot] = useState<KeyPerfSnapshot | null>(null)
-  const [metric, setMetric] = useState<Metric>('actuation')
   const [perKey, setPerKey] = useState(false)
   const [showRaw, setShowRaw] = useState(false)
   const t = useT()
-  const tried = useRef(false)
 
   const canRead = supports(codec, 'readKeyConfigs')
   const canReadRaw = supports(codec, 'readKeyPerf')
@@ -196,27 +187,17 @@ export function PerfOverview() {
       // without it — a failure there must not throw away the per-key values.
       if (canReadGlobal) {
         try {
-          setGlobal(await codec.readGlobalSettings!(link))
+          globalStore.load(await codec.readGlobalSettings!(link))
         } catch {
-          setGlobal(null)
+          globalStore.clear()
         }
       }
-      setReadAt(new Date())
       setStatus('ok')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')
     }
   }, [codec, canReadRaw, canReadGlobal])
-
-  useEffect(() => {
-    if (!connected || !canRead || tried.current) return
-    // Never on entry with unsaved edits: loading replaces the working copy, and
-    // silently discarding the user's edits is worse than showing stale values.
-    if (dirty.length > 0) return
-    tried.current = true
-    void read()
-  }, [connected, canRead, dirty.length, read])
 
   // Disconnected means the fallback codec is active, which implements nothing —
   // reporting that as "protocol not decoded" would blame the wrong thing.
@@ -289,37 +270,6 @@ export function PerfOverview() {
         </div>
       )}
 
-      <div className="row" style={{ marginBottom: 8 }}>
-        <span className="small dim">{t('perf.gridShow')}</span>
-        {METRICS.map((m) => (
-          <button
-            key={m.id}
-            className={metric === m.id ? 'primary' : undefined}
-            onClick={() => setMetric(m.id)}
-          >
-            {t(m.labelKey)}
-          </button>
-        ))}
-      </div>
-
-      <KeyGrid
-        selected={sel}
-        onSelect={(i, additive) => selection.toggle(i, additive)}
-        sub={(k) => {
-          const c = configs[k.index]
-          if (!c) return undefined
-          if (metric === 'actuation') return c.actuationMm.toFixed(2)
-          if (metric === 'rt') return c.rapidTrigger.enabled ? (c.rapidTrigger.continuous ? 'FULL' : 'RT') : undefined
-          return c.switchType === undefined ? undefined : `S${c.switchType}`
-        }}
-        fill={(k) => {
-          const c = configs[k.index]
-          if (!c) return 0
-          if (metric === 'actuation') return c.actuationMm / travelOf(c)
-          if (metric === 'rt') return c.rapidTrigger.enabled ? 1 : 0
-          return c.switchType === undefined ? 0 : 0.35
-        }}
-      />
 
       <div className="row" style={{ marginTop: 14, alignItems: 'flex-start' }}>
         <div className="small dim" style={{ flex: '1 1 320px' }}>

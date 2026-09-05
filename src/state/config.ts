@@ -12,7 +12,6 @@ export function defaultKeyConfig(): KeyConfig {
       enabled: false,
       pressMm: countsToMm(FACTORY_DEFAULTS.rapidTriggerPress),
       releaseMm: countsToMm(FACTORY_DEFAULTS.rapidTriggerRelease),
-      separate: false,
       continuous: false,
     },
     deadZone: {
@@ -29,6 +28,21 @@ export function defaultKeyConfig(): KeyConfig {
  */
 class ConfigStore {
   private configs: KeyConfig[] = Array.from({ length: KEY_COUNT }, defaultKeyConfig)
+  /**
+   * What the board had at the last read. Kept so an edit can be shown as a
+   * change from the hardware rather than as a bare number, and so it can be
+   * dropped again without a re-read.
+   */
+  private baseline: readonly KeyConfig[] = Array.from({ length: KEY_COUNT }, defaultKeyConfig)
+  /**
+   * When the board was last read, or null if it never was.
+   *
+   * This gates writing. Until a read happens the set holds factory defaults,
+   * and those carry no switch type — writing them would announce switch type 0
+   * for every key touched. The codec guards that too (see fromKeyConfig), but
+   * an app that writes values it never read is wrong regardless.
+   */
+  private readAt: Date | null = null
   private dirty = new Set<number>()
   /** Cached snapshot: useSyncExternalStore requires a stable identity between mutations. */
   private dirtyList: readonly number[] = []
@@ -47,6 +61,16 @@ class ConfigStore {
     return this.dirtyList
   }
 
+  /** The last values read from the board, whether or not they have been edited. */
+  base(): readonly KeyConfig[] {
+    return this.baseline
+  }
+
+  /** When the board was last read. Null until it has been. */
+  lastRead(): Date | null {
+    return this.readAt
+  }
+
   update(indices: Iterable<number>, patch: (c: KeyConfig) => KeyConfig): void {
     const next = this.configs.slice()
     for (const i of indices) {
@@ -63,12 +87,55 @@ class ConfigStore {
   load(configs: readonly KeyConfig[]): void {
     this.configs = configs.slice(0, KEY_COUNT)
     while (this.configs.length < KEY_COUNT) this.configs.push(defaultKeyConfig())
+    // A read is the only thing that moves the baseline: it is the one moment
+    // this app knows what the hardware holds.
+    this.baseline = this.configs.slice()
+    this.readAt = new Date()
     this.dirty.clear()
     this.emit()
   }
 
-  markClean(): void {
+  /** Throws away edits to `indices`, restoring the last values read. */
+  revert(indices: Iterable<number>): void {
+    const next = this.configs.slice()
+    for (const i of indices) {
+      const base = this.baseline[i]
+      if (!base) continue
+      next[i] = base
+      this.dirty.delete(i)
+    }
+    this.configs = next
+    this.emit()
+  }
+
+  /**
+   * Back to "nothing has been read".
+   *
+   * Not the same as loading factory defaults, and the difference is the point:
+   * after a factory reset this app does not know what the board holds, and the
+   * set it was holding is now a description of a board that no longer exists.
+   * Clearing `readAt` disarms the write path too — see the note on it — so the
+   * next write has to follow a real read.
+   */
+  clear(): void {
+    this.configs = Array.from({ length: KEY_COUNT }, defaultKeyConfig)
+    this.baseline = this.configs.slice()
+    this.readAt = null
     this.dirty.clear()
+    this.emit()
+  }
+
+  /**
+   * Marks keys as written. With no argument, all of them.
+   *
+   * The argument matters once writing happens on its own: a write takes a few
+   * hundred milliseconds, and anything the user changes while it is in flight
+   * must stay dirty so the next write picks it up. Clearing the whole set on
+   * completion would drop those edits on the floor.
+   */
+  markClean(indices?: Iterable<number>): void {
+    if (indices === undefined) this.dirty.clear()
+    else for (const i of indices) this.dirty.delete(i)
     this.emit()
   }
 
@@ -89,6 +156,20 @@ export function useKeyConfigs(): readonly KeyConfig[] {
   return useSyncExternalStore(
     (fn) => configStore.subscribe(fn),
     () => configStore.all(),
+  )
+}
+
+export function useBaseline(): readonly KeyConfig[] {
+  return useSyncExternalStore(
+    (fn) => configStore.subscribe(fn),
+    () => configStore.base(),
+  )
+}
+
+export function useLastRead(): Date | null {
+  return useSyncExternalStore(
+    (fn) => configStore.subscribe(fn),
+    () => configStore.lastRead(),
   )
 }
 

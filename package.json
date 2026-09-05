@@ -8,10 +8,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b",
-    "pcap": "node tools/pcap/extract.mjs"
+    "typecheck": "tsc -b && tsc -p tsconfig.check.json",
+    "pcap": "node tools/pcap/extract.mjs",
+    "check": "node tools/check/run.mjs"
   },
   "dependencies": {
+    "@tabler/icons-react": "^3.46.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -21,6 +23,7 @@
     "@types/react-dom": "^19.2.0",
     "@types/w3c-web-hid": "^1.0.6",
     "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.25.0",
     "typescript": "~5.7.3",
     "vite": "^6.3.5"
   }

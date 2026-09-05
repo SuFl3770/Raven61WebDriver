@@ -70,6 +70,30 @@ export const COMMAND = {
   begin: 0x01,
   /** Closes every transaction. Likely "apply" or "commit". */
   end: 0x02,
+  /**
+   * Reads the firmware's own build identity — the only thing on the board that
+   * answers "which firmware is this".
+   *
+   * The stock driver never sends it, so the first pass over the binary did not
+   * find it. It came out of the firmware: the dispatch table at 0x157b0 sends
+   * 0x03 to 0x667c, which copies three NUL-terminated strings out of flash into
+   * the reply and joins them with commas —
+   *
+   *   0x15658  `HALL_HS_USB_KB`   the build's own name
+   *   0x15668  `Nov 13 2024`      the compiler's __DATE__
+   *   0x15674  `11:05:59`         the compiler's __TIME__
+   *
+   * then writes the total length to `payload[4]`, so the reply is shaped like
+   * any other block read: length at BLOCK.length, bytes from BLOCK.data.
+   *
+   * There is no version *number* anywhere in it. The build date is the whole of
+   * what the board can say about itself, which is why this app shows exactly
+   * that and does not dress it up as a version.
+   *
+   * The handler only ever stores into the reply buffer — no flash write, no
+   * state — so unlike the rest of the table this one is safe to send.
+   */
+  readFirmware: 0x03,
   /** Reads the 32-byte global settings block that 0x06 writes back. */
   readGlobalSettings: 0x05,
   /** Sent by the function that reads reporte_rate, tick_rate, dead_zone, disable_win… */
@@ -112,6 +136,18 @@ export const COMMAND = {
    */
   analogTestOn: 0xa8,
   analogTestOff: 0xa9,
+  /**
+   * Reads the board's calibration table — 64 records of 8 bytes, the ones the
+   * firmware lights the key LEDs from. See protocol/calibration.ts.
+   *
+   * The stock driver never sends this, which is why the first pass over the
+   * binary did not find it. It came out of the firmware instead: the handler at
+   * 0x711c is a plain block read of flash 0x20300, the address the boot path at
+   * 0xa5aa loads the calibration table from. Nothing else is reachable through
+   * it — the base is a constant in the handler — so it cannot write and cannot
+   * read anything but that one blob.
+   */
+  readCalibration: 0xaa,
   /** Writes the per-key RGB blob. */
   writeLightRgb: 0xdd,
   /** Reads it back. */
@@ -240,8 +276,12 @@ export function blockReplyHeader(payload: ArrayLike<number>): BlockChunk {
  * believed read-only: their request carries a length and an offset but no data.
  * "Believed" because it has not been confirmed on hardware, so they are
  * deliberately left out of SAFE_COMMANDS — the prober still flags them.
+ *
+ * The exceptions are 0x03 and 0xaa, whose handlers were read in the firmware
+ * rather than inferred from the driver. Those two are in SAFE_COMMANDS.
  */
 export const READ_COMMANDS: readonly number[] = [
+  COMMAND.readFirmware,
   COMMAND.readGlobalSettings,
   COMMAND.readKeymapWide,
   COMMAND.readUnknown08,
@@ -249,6 +289,7 @@ export const READ_COMMANDS: readonly number[] = [
   COMMAND.readKeyPerf,
   COMMAND.readLightRgb,
   COMMAND.analogTestOff,
+  COMMAND.readCalibration,
 ]
 
 /**
@@ -263,8 +304,18 @@ export const READ_COMMANDS: readonly number[] = [
  * 0xa8 is deliberately not here. It writes nothing, but it stops the board from
  * typing until 0xa9 follows, which is not something a sweep should do behind
  * the user's back.
+ *
+ * 0xaa and 0x03 are here on stronger grounds than the rest: both handlers were
+ * read in the firmware (0x711c, 0x667c) and only copy bytes out of flash into
+ * the reply. There is no path through either that writes.
+ *
+ * ⚠ 0xa9 is *not* as harmless as its name suggests, and it is here anyway. As
+ * well as leaving the test mode it sets the flag at gp-0x72a, which the main
+ * loop turns into a flash write of the whole calibration table (0x14810). That
+ * is what the mode is for — a calibration pass that was not saved would be
+ * pointless — but it does mean 0xa9 commits whatever the pass learned.
  */
-export const SAFE_COMMANDS: readonly number[] = [0x01, 0x02, 0xa9]
+export const SAFE_COMMANDS: readonly number[] = [0x01, 0x02, 0x03, 0xa9, 0xaa]
 
 /** All command bytes the driver is known to send, in ascending order. */
 export const KNOWN_COMMANDS: readonly number[] = Object.values(COMMAND).sort((a, b) => a - b)
@@ -380,8 +431,16 @@ export const EVENT = {
   modifiers: 2,
   /** HID usage of the key — the same addressing the stock database uses. */
   usage: 3,
-  /** Scaled sensor delta, BE16. Proportional to (baseline - live) by a per-key gain. */
-  sensorDelta: 4,
+  /**
+   * Linearised travel, BE16, 0 … 800 — the firmware calls the same quantity
+   * into being as `delta / scale` and clamps it at 800 (0xe7ac).
+   *
+   * "Proportional to (baseline − live) by a per-key gain" was the right shape
+   * with the factor upside down: the gain measured on hardware (Esc 1.151, A
+   * 1.371, Space 1.135) is 1 / `calScale`. This is the quantity the depth in
+   * `depth` is derived from, through a per-switch-type lookup table.
+   */
+  travelRaw: 4,
   /** Travel, in the same 0.02 mm counts as the actuation settings. 0 = rest. */
   depth: 7,
   /** Unclear: tracks `depth` on a shallow press, diverges near the bottom. */
@@ -389,18 +448,40 @@ export const EVENT = {
   /** 0x01 while pressing down, 0xff while releasing. */
   direction: 9,
   /**
-   * Per-key sensor descriptor (Esc 8/6, A 7/2, Space 8/8). NOT an address, on
-   * two counts: it is not unique — P and "/" were seen sharing a value — and it
-   * is not even stable. LCtrl, recorded at 0x0805, was observed reporting
-   * 0x0806 after a calibration pass.
+   * The firmware's own calibration verdict for this key — the byte it lights
+   * the key LED from. See protocol/calibration.ts for the state machine.
    *
-   * So it is a calibration output, most likely a curve or gain selector. Any
-   * identity built on it, `adcBaseline` included, is only valid until the next
-   * calibration. See docs/protocol.md §3.2.
+   * Read out of the firmware's event builder at 0xdec2, which copies it
+   * straight from the calibration record. The stock driver's debug format
+   * string calls this field `check_count`, which is where the earlier name came
+   * from; the firmware never counts anything into it.
    */
-  sensorHi: 12,
-  sensorLo: 13,
-  /** Full travel in counts, BE16. Always 200 = 4.00 mm. */
+  calState: 10,
+  /**
+   * `calScale` as three decimal digits: units, tenths, hundredths.
+   *
+   * The firmware builds them at 0xdeda by truncating the float and multiplying
+   * the remainder by ten, twice. The stock driver reassembles them with a
+   * `"%d%d%d"` format, which is why its UI shows a bare integer — 62 for a key
+   * still at the shipped 0.62.
+   *
+   * This is what the earlier "per-key sensor descriptor" was: Esc 8/6 is
+   * scale 0.86, A 7/2 is 0.72, Space 8/8 is 0.88. It explained itself — two
+   * keys can share a value because two keys can have the same scale, and LCtrl
+   * moving from 0x0805 to 0x0806 after a pass was its scale improving from
+   * 0.85 to 0.86, which is exactly what a pass is supposed to do.
+   */
+  scaleUnits: 11,
+  scaleTenths: 12,
+  scaleHundredths: 13,
+  /**
+   * Full travel in counts, BE16.
+   *
+   * Not always 200: the firmware reads it from the stroke table at 0x15e08
+   * indexed by the key's switch type (0xdd62), so it is 200 for the 4.00 mm
+   * switches and 167 / 170 / 175 / 190 for the shorter ones. Every key on the
+   * boards sampled so far happened to be a 4.00 mm type.
+   */
   travel: 14,
   /** Live ADC reading, BE16. Falls as the key goes down. */
   adc: 16,
@@ -438,13 +519,42 @@ export interface KeyEvent {
   /** `payload[2]` — the modifier bitmask, 0 or non-single-bit for other keys. */
   modifierBits: number
   /**
-   * False when the board reported no total stroke, which happens before it has
-   * been calibrated. Travel then falls back to the nominal 200 counts, so the
-   * depth shown is a guess rather than a measurement.
+   * False when the board reported no total stroke at all, so travel falls back
+   * to the nominal 200 counts and the depth shown is a guess.
+   *
+   * The name is now known to be wrong, and it is kept only because the
+   * fallback it drives is still right. The firmware fills payload[14..15] from
+   * the switch-stroke table indexed by the key's switch type (0xdd62), and the
+   * only entry that is 0 is type 7 — which the config validator should never
+   * let through, since it forces anything above 6 back to 1 (0xe288). So a zero
+   * here means the board is reporting a switch type it should not have, not
+   * that the key is uncalibrated. For calibration, read `calState` and
+   * `calScale`, or the table via COMMAND.readCalibration.
    */
   calibrated: boolean
-  /** payload[12..13]. A calibration output — see EVENT.sensorHi. */
+  /**
+   * payload[12..13] — the tenths and hundredths digits of `calScale`, kept as
+   * one number because that is what identifies a key that reports no usage.
+   *
+   * Not an address, and now we know why it drifts: it is two digits of a
+   * calibrated value, so it moves whenever the calibration improves. Anything
+   * built on it, `fingerprint` included, is valid until the next pass and no
+   * longer. See EVENT.scaleUnits.
+   */
   sensorId: number
+  /**
+   * The firmware's calibration verdict for this key: 0 and 1 are the states it
+   * lights the LED red and amber for, 0xFF means calibrated. See
+   * protocol/calibration.ts.
+   */
+  calState: number
+  /**
+   * ADC counts the sensor moves per 1/800 of full travel, as the board has
+   * learned it. Reassembled from payload[11..13], so it carries two decimals.
+   *
+   * This is the number a calibration pass is actually changing.
+   */
+  calScale: number
   /**
    * Identity for a key the event does not name: the sensor descriptor plus the
    * resting ADC baseline, which differs per key. Only meaningful when
@@ -473,7 +583,11 @@ export interface KeyEvent {
   direction: 'down' | 'up'
   adc: number
   adcBaseline: number
-  sensorDelta: number
+  /**
+   * Linearised travel, 0 … 800, before the switch-type curve turns it into
+   * `depthCounts`. Equals `(adcBaseline - adc) / calScale`, clamped.
+   */
+  travelRaw: number
   pressed: boolean
 }
 
@@ -506,9 +620,10 @@ function usageOf(type: number, selector: number, usageByte: number): number {
  * Decodes an analog key event. Returns null for anything that is not one.
  *
  * The kind in `payload[1]` is what separates an event from a command reply —
- * both start with 0xA0. Total stroke is deliberately *not* used for that: an
- * uncalibrated board reports 0, and rejecting on it discarded every event until
- * a calibration pass had run, which looked exactly like a dead stream.
+ * both start with 0xA0. Total stroke is deliberately *not* used for that: a
+ * board was seen reporting 0 there, and rejecting on it discarded every event
+ * until a calibration pass had run, which looked exactly like a dead stream.
+ * (Why it was 0 is still open — see `calibrated`.)
  */
 export function parseKeyEvent(payload: ArrayLike<number>): KeyEvent | null {
   if (payload[0] !== REPLY_DATA) return null
@@ -519,7 +634,9 @@ export function parseKeyEvent(payload: ArrayLike<number>): KeyEvent | null {
   const depthCounts = payload[EVENT.depth] ?? 0
   const selector = payload[EVENT.modifiers] ?? 0
   const usage = usageOf(type, selector, payload[EVENT.usage] ?? 0)
-  const sensorId = ((payload[EVENT.sensorHi] ?? 0) << 8) | (payload[EVENT.sensorLo] ?? 0)
+  const tenths = payload[EVENT.scaleTenths] ?? 0
+  const hundredths = payload[EVENT.scaleHundredths] ?? 0
+  const sensorId = (tenths << 8) | hundredths
   const adcBaseline = be16(payload, EVENT.adcBaseline)
   return {
     usage,
@@ -539,7 +656,11 @@ export function parseKeyEvent(payload: ArrayLike<number>): KeyEvent | null {
     direction: payload[EVENT.direction] === 0x01 ? 'down' : 'up',
     adc: be16(payload, EVENT.adc),
     adcBaseline,
-    sensorDelta: be16(payload, EVENT.sensorDelta),
+    travelRaw: be16(payload, EVENT.travelRaw),
+    calState: payload[EVENT.calState] ?? 0,
+    // Digits, not a fixed-point number: the firmware truncates each one, so
+    // reassembling them is exact to two decimals and no further.
+    calScale: (payload[EVENT.scaleUnits] ?? 0) + tenths / 10 + hundredths / 100,
     pressed: depthCounts > 0,
   }
 }

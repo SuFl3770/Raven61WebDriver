@@ -1,7 +1,11 @@
-import { useState, type ReactNode } from 'react'
-import { useT, type MessageKey } from '../i18n'
+import { useState } from 'react'
+import { useT } from '../i18n'
+import { T } from '../i18n/T'
+import { DEBUG_GESTURE } from '../state/debugGesture'
+import { SubTabs, type SubTab } from '../ui/SubTabs'
 import { Events } from './Events'
 import { HidExplorer } from './HidExplorer'
+import { KeyIdSetting } from './KeyIdSetting'
 import { Prober } from './Prober'
 import { ReportConsole } from './ReportConsole'
 import { Sensors } from './Sensors'
@@ -17,16 +21,10 @@ import { TrafficLogView } from './TrafficLogView'
  * The live monitor sits above that navigation rather than inside it: probing a
  * command and watching what the board reports back are the same activity, and
  * putting the stream in one of the sub-tools would mean losing sight of it the
- * moment you switch to another.
+ * moment you switch to another. The identity-table switch is above it for the
+ * same kind of reason — see KeyIdSetting.
  */
-interface Tool {
-  id: string
-  labelKey: MessageKey
-  hintKey: MessageKey
-  render: () => ReactNode
-}
-
-const TOOLS: Tool[] = [
+const TOOLS: SubTab[] = [
   {
     id: 'explorer',
     labelKey: 'debug.tool.explorer.label',
@@ -62,29 +60,25 @@ const TOOLS: Tool[] = [
 export function Debug() {
   const [active, setActive] = useState(TOOLS[0]!.id)
   const t = useT()
-  const tool = TOOLS.find((tl) => tl.id === active) ?? TOOLS[0]!
-
   return (
     <>
-      <Sensors analysis />
-
-      <nav className="tabs subtabs" role="tablist" aria-label={t('debug.tools')}>
-        {TOOLS.map((tl) => (
-          <button
-            key={tl.id}
-            role="tab"
-            aria-selected={tl.id === active}
-            onClick={() => setActive(tl.id)}
-          >
-            {t(tl.labelKey)}
-          </button>
-        ))}
-      </nav>
-      <div className="small dim" style={{ padding: '6px 2px 10px' }}>
-        {t(tool.hintKey)}
+      {/*
+        How to leave. The gesture that turns this tab on is the gesture that
+        turns it off, and with the settings checkbox gone this line is the only
+        place that says so — which matters most for whoever got here by
+        accident.
+      */}
+      <div className="small dim" style={{ marginBottom: 12 }}>
+        <T k="debug.gestureOff" params={{ presses: DEBUG_GESTURE.presses }} />
       </div>
 
-      {tool.render()}
+      <Sensors analysis />
+      {/*
+        Directly under the analysis, because that is where the warning about a
+        drifted identity table appears and this is the switch that answers it.
+      */}
+      <KeyIdSetting />
+      <SubTabs tabs={TOOLS} label={t('debug.tools')} active={active} onActive={setActive} />
     </>
   )
 }

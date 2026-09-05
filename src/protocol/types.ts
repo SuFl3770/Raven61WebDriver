@@ -10,7 +10,7 @@
  * Units here are millimetres. The wire encoding is the codec's problem.
  */
 
-import { t } from '../i18n'
+import { t, type MessageKey } from '../i18n'
 
 /**
  * `key_mode` in the stock schema. 0 = off, 1 = rapid trigger, 2 = rapid trigger
@@ -47,18 +47,33 @@ export interface SwitchTypeInfo {
   name: string
   /** Full travel in mm, from the stock driver's own table. */
   travelMm: number
+  /**
+   * False for an entry that exists in the driver's table but not as a switch
+   * anyone can fit. Kept for decoding — a board reporting the value still gets
+   * a name instead of a bare number — but never offered as something to write.
+   */
+  selectable: boolean
 }
 
 export const SWITCH_TYPES: readonly SwitchTypeInfo[] = [
-  { value: 0, name: 'Magnetic Orange', travelMm: 4.0 },
-  { value: 1, name: 'Magnetic White', travelMm: 4.0 },
-  { value: 2, name: 'Magnetic Jade', travelMm: 3.32 },
-  { value: 3, name: 'Light Breeze', travelMm: 4.0 },
-  { value: 4, name: 'Light Breeze V2', travelMm: 3.8 },
-  { value: 5, name: 'GEON RAW HE', travelMm: 3.5 },
-  { value: 6, name: 'TTC Magneto', travelMm: 3.4 },
-  { value: 7, name: 'Chocolate Dwarf', travelMm: 2.5 },
+  { value: 0, name: 'Magnetic Orange', travelMm: 4.0, selectable: true },
+  { value: 1, name: 'Magnetic White', travelMm: 4.0, selectable: true },
+  { value: 2, name: 'Magnetic Jade', travelMm: 3.32, selectable: true },
+  { value: 3, name: 'Light Breeze', travelMm: 4.0, selectable: true },
+  { value: 4, name: 'Light Breeze V2', travelMm: 3.8, selectable: true },
+  { value: 5, name: 'GEON RAW HE', travelMm: 3.5, selectable: true },
+  { value: 6, name: 'TTC Magneto', travelMm: 3.4, selectable: true },
+  // Not a switch that exists — confirmed by the board's owner. It is in the
+  // driver's table, so it is decoded, but writing it would tell the board its
+  // keys have a 2.50 mm stroke they do not have, and every depth measured
+  // against that would be wrong.
+  { value: 7, name: 'Chocolate Dwarf', travelMm: 2.5, selectable: false },
 ] as const
+
+/** The types a user may actually assign. See SwitchTypeInfo.selectable. */
+export const SELECTABLE_SWITCH_TYPES: readonly SwitchTypeInfo[] = SWITCH_TYPES.filter(
+  (s) => s.selectable,
+)
 
 export function switchTypeInfo(value: number | undefined): SwitchTypeInfo | undefined {
   return value === undefined ? undefined : SWITCH_TYPES.find((s) => s.value === value)
@@ -76,8 +91,6 @@ export interface RapidTrigger {
   pressMm: number
   /** `rt_release` — upward travel that releases, in mm. */
   releaseMm: number
-  /** UI-only: when false the two sensitivities are edited as one value. */
-  separate: boolean
   /** "Full stroke quick trigger": rapid trigger stays active below actuation. */
   continuous: boolean
 }
@@ -155,10 +168,105 @@ export interface DeviceInfo {
   vendorId: number
   productId: number
   productName: string
-  firmwareVersion?: string
+  firmware?: FirmwareIdentity
   /** Full key travel in mm — needed to turn raw counts into depth. */
   travelMm: number
   keyCount: number
+}
+
+/**
+ * What the board answers when asked which firmware it is running — command
+ * 0x03, see COMMAND.readFirmware.
+ *
+ * **Not a version number, and this app never calls it one.** The firmware has
+ * none: the reply is its build name and the date and time it was compiled,
+ * three strings the compiler baked in. Two boards flashed from the same release
+ * are indistinguishable here, and two builds made on the same day are too. It
+ * is still the only identity the board has, and it does change across a
+ * firmware update, which is what makes it worth showing.
+ */
+export interface FirmwareIdentity {
+  /** The reply exactly as the board sent it, commas and all. */
+  raw: string
+  /** The build's own name — `HALL_HS_USB_KB` on the board this was read from. */
+  name: string
+  /** The compiler's `__DATE__`, e.g. `Nov 13 2024`. Absent if the board omits it. */
+  buildDate?: string
+  /** The compiler's `__TIME__`, e.g. `11:05:59`. */
+  buildTime?: string
+}
+
+/**
+ * `reporte_rate` (the vendor's own typo) — the USB polling rate.
+ *
+ * The value on the wire is *not* a rate, and not an index into the list as it
+ * reads either: it is the number the stock driver attaches to each item of its
+ * own report-rate combo box (built at 0x4443ef-0x444527, one AddString per
+ * entry with the value pushed alongside the language-string id). Those four
+ * pairings are what this table is:
+ *
+ *   1 -> string 80 "8000Hz Report Rate"
+ *   2 -> string 81 "4000Hz"
+ *   3 -> string 82 "2000Hz"
+ *   4 -> string 83 "1000Hz"
+ *
+ * The shipped profile database agrees: `reporte_rate` is 1 in the default
+ * profile and 4 in the three user profiles, the two ends of that range and
+ * nothing outside it. 8000 Hz being on the list is not a mistake either — the
+ * firmware calls itself `HALL_HS_USB_KB`, and high speed is what it takes.
+ *
+ * Nothing here is confirmed against hardware: no capture of the stock driver
+ * changing the rate has been taken, so the pairing rests on the driver's own
+ * table alone.
+ */
+export interface ReportRateInfo {
+  value: number
+  hz: number
+}
+
+export const REPORT_RATES: readonly ReportRateInfo[] = [
+  { value: 1, hz: 8000 },
+  { value: 2, hz: 4000 },
+  { value: 3, hz: 2000 },
+  { value: 4, hz: 1000 },
+] as const
+
+export function reportRateInfo(value: number | undefined): ReportRateInfo | undefined {
+  return value === undefined ? undefined : REPORT_RATES.find((r) => r.value === value)
+}
+
+/** Never invents a rate: a value outside the driver's table is shown as itself. */
+export function reportRateName(value: number | undefined): string {
+  if (value === undefined) return '—'
+  const info = reportRateInfo(value)
+  return info ? t('board.rate.hz', { hz: info.hz }) : t('board.rate.unknown', { value })
+}
+
+/**
+ * `debounce_level`, `payload[15]` bits 5-6.
+ *
+ * Three levels, named the way the stock driver names them in its own combo box
+ * (0x44427e-0x444362, language strings 75-77 with the values 0, 1 and 2). What
+ * they are in milliseconds is not written down anywhere on either side, so this
+ * app repeats the names and shows the raw value rather than inventing a figure.
+ *
+ * The field is two bits wide, so a board could report 3. Nothing names it.
+ */
+export interface DebounceLevelInfo {
+  value: number
+  labelKey: MessageKey
+}
+
+export const DEBOUNCE_LEVELS = [
+  { value: 0, labelKey: 'board.debounce.high' },
+  { value: 1, labelKey: 'board.debounce.medium' },
+  { value: 2, labelKey: 'board.debounce.low' },
+] as const satisfies readonly DebounceLevelInfo[]
+
+export function debounceLevelName(value: number | undefined): string {
+  if (value === undefined) return '—'
+  const info = DEBOUNCE_LEVELS.find((d) => d.value === value)
+  return info ? t(info.labelKey) : t('board.debounce.unknown', { value })
 }
 
 /**

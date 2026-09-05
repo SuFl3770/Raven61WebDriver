@@ -140,41 +140,100 @@ export class HidLink {
 
   // --- traffic -------------------------------------------------------------
 
+  /**
+   * One exchange at a time, in call order.
+   *
+   * The board has a single HID packet buffer (`gp + 0x134`), so a second write
+   * that lands before the firmware has picked up the first replaces it — and
+   * the first command is answered by nothing at all. It is not a theory: a
+   * capture has `55 aa` (calibration table) and `55 01` (keymap begin) written
+   * in the same millisecond, the board answering only the second, and the
+   * calibration read timing out while fourteen keymap chunks went through
+   * beside it. Two callers with no knowledge of each other is all it takes;
+   * there it was a `Promise.all` in `useCalibrationRun`.
+   *
+   * So every write goes through here, `send` included: a fire-and-forget packet
+   * clobbers an in-flight request exactly as well as a request does, which is
+   * what the 1500 ms calibration re-arm would otherwise do.
+   *
+   * Order is FIFO and the chain never breaks — a rejected exchange must not
+   * take the queue down with it, so failures are absorbed here and re-thrown to
+   * their own caller.
+   */
+  private queue: Promise<unknown> = Promise.resolve()
+
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    // `.then(fn, fn)`, not `.then(fn)`: the next turn is taken whether the
+    // exchange before it resolved or rejected.
+    const run = this.queue.then(fn, fn)
+    this.queue = run.catch(() => {})
+    return run
+  }
+
   async send(data: Uint8Array, reportId = this.defaultOutReportId(), note?: string): Promise<void> {
+    return this.enqueue(() => this.writeNow(data, reportId, note))
+  }
+
+  /** The write itself, already at the head of the queue. */
+  private async writeNow(
+    data: Uint8Array,
+    reportId = this.defaultOutReportId(),
+    note?: string,
+  ): Promise<void> {
     const d = this.requireDevice()
     const payload = padToReport(this.outSpecs, reportId, data)
     this.log.push('out', reportId, payload, note)
     await d.sendReport(reportId, payload)
   }
 
+  /**
+   * Feature reports go through the same queue as everything else — a different
+   * pipe on the host, but the same firmware on the other end. What it does not
+   * do is make a set/get *pair* atomic; a caller that needs the two to belong
+   * together has to say so, and none does yet.
+   */
   async setFeature(data: Uint8Array, reportId = this.featSpecs[0]?.reportId ?? 0, note?: string): Promise<void> {
-    const d = this.requireDevice()
-    const payload = padToReport(this.featSpecs, reportId, data)
-    this.log.push('feature-set', reportId, payload, note)
-    await d.sendFeatureReport(reportId, payload)
+    return this.enqueue(async () => {
+      const d = this.requireDevice()
+      const payload = padToReport(this.featSpecs, reportId, data)
+      this.log.push('feature-set', reportId, payload, note)
+      await d.sendFeatureReport(reportId, payload)
+    })
   }
 
   async getFeature(reportId = this.featSpecs[0]?.reportId ?? 0, note?: string): Promise<Uint8Array> {
-    const d = this.requireDevice()
-    const view = await d.receiveFeatureReport(reportId)
-    const data = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
-    this.log.push('feature-get', reportId, data, note)
-    return data
+    return this.enqueue(async () => {
+      const d = this.requireDevice()
+      const view = await d.receiveFeatureReport(reportId)
+      const data = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+      this.log.push('feature-get', reportId, data, note)
+      return data
+    })
   }
 
-  /** Write, then resolve with the first input report that satisfies `match`. */
+  /**
+   * Write, then resolve with the first input report that satisfies `match`.
+   *
+   * The wait is part of the exchange, not something that happens beside it:
+   * the queue is held until the reply lands or the timeout expires, which is
+   * what keeps the next caller's packet out of the board's buffer. The timeout
+   * therefore measures the device, not the queue — time spent waiting for a
+   * turn is not charged against it.
+   */
   async request(data: Uint8Array, opts: RequestOptions = {}): Promise<{ reportId: number; data: Uint8Array }> {
     const { timeoutMs = 1000, match = () => true, note } = opts
-    const answer = this.waitFor(match, timeoutMs)
-    // Attach the waiter before writing: a fast device can answer within the
-    // same task, and losing that race would look like a dead command.
-    try {
-      await this.send(data, opts.reportId ?? this.defaultOutReportId(), note)
-    } catch (e) {
-      this.failAllWaiters(e instanceof Error ? e : new HidError(String(e)))
-      throw e
-    }
-    return answer
+    return this.enqueue(async () => {
+      const answer = this.waitFor(match, timeoutMs)
+      // Attach the waiter before writing: a fast device can answer within the
+      // same task, and losing that race would look like a dead command.
+      try {
+        await this.writeNow(data, opts.reportId ?? this.defaultOutReportId(), note)
+      } catch (e) {
+        this.failAllWaiters(e instanceof Error ? e : new HidError(String(e)))
+        throw e
+      }
+      return answer
+    })
   }
 
   waitFor(

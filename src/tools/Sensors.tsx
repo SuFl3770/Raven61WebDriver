@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { BASELINE_TOLERANCE, KEY_FINGERPRINTS } from '../keyboard/fingerprints'
+import { BASELINE_TOLERANCE, KEY_FINGERPRINTS, type KeyFingerprint } from '../keyboard/fingerprints'
 import { DEFAULT_TRAVEL_MM, RAVEN61_KEYS, keyByIndex } from '../keyboard/raven61'
 import { t as translate, useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
-import { isEvent, parseKeyEvent } from '../protocol/frame'
+import { EVENT_TYPE, isEvent, parseKeyEvent } from '../protocol/frame'
 import { MONITOR, armAnalogStream } from '../protocol/raven61'
 import { sensorMap, useSensorMap } from '../state/sensorMap'
 import { selection, useSelection } from '../state/selection'
 import { KeyGrid } from '../ui/KeyGrid'
+import { Marquee } from '../ui/Marquee'
 import { Notice, Panel } from '../ui/Panel'
+import { SelectionBar } from '../ui/SelectionBar'
 import { link, useConnection } from '../state/link'
 
 /**
@@ -123,7 +125,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           adcLast: e.adc,
           adcMin: e.adc,
           adcMax: e.adc,
-          deltaLast: e.sensorDelta,
+          deltaLast: e.travelRaw,
           depthMm: e.depthMm,
           depthMinMm: e.depthMm,
           depthMaxMm: e.depthMm,
@@ -147,7 +149,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       row.adcLast = e.adc
       row.adcMin = Math.min(row.adcMin, e.adc)
       row.adcMax = Math.max(row.adcMax, e.adc)
-      row.deltaLast = e.sensorDelta
+      row.deltaLast = e.travelRaw
       row.depthMm = e.depthMm
       row.depthMinMm = Math.min(row.depthMinMm, e.depthMm)
       row.depthMaxMm = Math.max(row.depthMaxMm, e.depthMm)
@@ -253,8 +255,16 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
   // Reports that name no key by any route. The board emits these steadily on a
   // perfectly working keyboard, so they are shown but never flagged.
   const nonKey = rows.filter((r) => !r.identifiable)
-  const unnamedRows = rows.filter((r) => !r.usageIsReal).sort((a, b) => a.sensorId - b.sensorId)
+  // Keys that would need the fingerprint table. Reports that name no key at all
+  // must not count: `0601:0` arrives steadily on a healthy board, its sensor
+  // value is in no table, and letting it in here raised the stale-table alarm
+  // permanently on a keyboard where every key resolved correctly.
+  const unnamedRows = rows
+    .filter((r) => !r.usageIsReal && r.identifiable)
+    .sort((a, b) => a.sensorId - b.sensorId)
   const addresses = candidates.filter((c) => c.perfect).slice(0, 4)
+
+  const sensorSummary = summariseSensors(rows, resolved)
 
   const focus = [...sel][0] ?? 0
   const focusKey = keyByIndex(focus)
@@ -267,41 +277,70 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
 
   return (
     <>
+      {/*
+        The grid at the top with its controls beside it, the way the
+        input-point tab is laid out — see features/KeyMetrics.tsx.
+        It used to sit at the bottom of a panel, under a row of buttons and
+        four possible warnings, so the live display of the thing you are
+        pressing moved down the page as the board had more to say about it.
+      */}
+      <Marquee className="gridband">
+        <div className="gridrow">
+          <LiveGrid current={current} selected={sel} running={listening} />
+
+          {/*
+            `selectable={false}` on purpose: the column is the capture's, not
+            the selection's. Selecting here picks the key the trace follows,
+            and "select all" would mean nothing to a graph of one key.
+          */}
+          <SelectionBar selectable={false}>
+            <div className="group">
+              <button className="primary" onClick={() => void toggle()} disabled={!connected}>
+                {listening ? t('sensors.stop') : t('sensors.start')}
+              </button>
+              <button onClick={clear}>{t('sensors.clear')}</button>
+            </div>
+
+            <hr className="sep" />
+
+            <label className="small dim">
+              <input
+                type="checkbox"
+                checked={listenOnly}
+                disabled={listening}
+                onChange={(e) => setListenOnly(e.target.checked)}
+              />{' '}
+              <T k="sensors.listenOnly" params={{ arm: `0x${MONITOR.arm.toString(16)}` }} />
+            </label>
+
+            <div className="small dim">
+              {t('sensors.focus', { index: focus, key: focusKey?.label ?? '' })}
+              <div style={{ marginTop: 4 }}>
+                {t('sensors.keyCount', { seen: resolved.size, total: RAVEN61_KEYS.length })}
+              </div>
+              {analysis && (
+                <div style={{ marginTop: 4 }}>
+                  {t('sensors.identities', { count: rows.length })}
+                </div>
+              )}
+              {analysis && undecoded.current > 0 && (
+                <div style={{ marginTop: 4, color: 'var(--warn)' }}>
+                  {t('sensors.undecoded', { count: undecoded.current })}
+                </div>
+              )}
+            </div>
+          </SelectionBar>
+        </div>
+      </Marquee>
+
       <Panel title={t('sensors.title')}>
         <Notice>
           <span className="small">
             <T k="sensors.intro" />
           </span>
         </Notice>
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="primary" onClick={() => void toggle()} disabled={!connected}>
-            {listening ? t('sensors.stop') : t('sensors.start')}
-          </button>
-          <button onClick={clear}>{t('sensors.clear')}</button>
-          <label className="small dim">
-            <input
-              type="checkbox"
-              checked={listenOnly}
-              disabled={listening}
-              onChange={(e) => setListenOnly(e.target.checked)}
-            />{' '}
-            <T k="sensors.listenOnly" params={{ arm: `0x${MONITOR.arm.toString(16)}` }} />
-          </label>
-          <span className="small dim">
-            {t('sensors.focus', { index: focus, key: focusKey?.label ?? '' })}
-          </span>
-          <span className="small dim">
-            {t('sensors.keyCount', { seen: resolved.size, total: RAVEN61_KEYS.length })}
-            {analysis && ` · ${t('sensors.identities', { count: rows.length })}`}
-            {analysis && undecoded.current > 0 && (
-              <>
-                {' · '}
-                <span style={{ color: 'var(--warn)' }}>
-                  {t('sensors.undecoded', { count: undecoded.current })}
-                </span>
-              </>
-            )}
-          </span>
+        <div className="small dim" style={{ marginTop: 10 }}>
+          <T k="sensors.gridLegend" />
         </div>
         {rows.some((r) => r.identifiable && !r.calibrated) && (
           <div style={{ marginTop: 10 }}>
@@ -348,13 +387,52 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
             </Notice>
           </div>
         )}
-        <div className="small dim" style={{ marginTop: 12, marginBottom: 8 }}>
-          <T k="sensors.gridLegend" />
-        </div>
-        <LiveGrid current={current} selected={sel} running={listening} />
       </Panel>
 
       <LiveTrace current={current} focus={focus} label={focusKey?.label ?? ''} running={listening} />
+
+      {analysis && sensorSummary.length > 0 && (
+        <Panel title={t('sensors.sensorTable.title')}>
+          <div className="small dim" style={{ marginBottom: 8 }}>
+            <T k="sensors.sensorTable.intro" />
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: 90 }}>{t('sensors.sensorTable.col.sensor')}</th>
+                <th style={{ width: 140 }}>{t('sensors.sensorTable.col.baselines')}</th>
+                <th>{t('sensors.sensorTable.col.keys')}</th>
+                <th style={{ width: 110 }}>{t('sensors.sensorTable.col.path')}</th>
+                <th>{t('sensors.sensorTable.col.table')}</th>
+                <th style={{ width: 150 }}>{t('sensors.sensorTable.col.status')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sensorSummary.map((v) => (
+                <tr key={v.sensorId}>
+                  <td className="mono">{hex4(v.sensorId)}</td>
+                  <td className="mono">{v.baselines.join(', ')}</td>
+                  <td className="small">{v.keys.join(', ') || '—'}</td>
+                  <td className="small dim">
+                    {v.paths.map((k) => t(`sensors.sensorTable.path.${k}`)).join(', ')}
+                  </td>
+                  <td className="small dim mono">
+                    {v.table.length > 0
+                      ? v.table.map((f) => `${f.label} ${f.adcBaseline}`).join(', ')
+                      : t('sensors.sensorTable.notInTable')}
+                  </td>
+                  <td
+                    className="small"
+                    style={{ color: v.status === 'warn' ? 'var(--err)' : 'var(--fg-dim)' }}
+                  >
+                    {t(`sensors.sensorTable.status.${v.status}`)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
 
       {analysis && rows.length > 0 && (
         <Panel title={t('sensors.identitiesTitle', { count: rows.length })}>
@@ -613,6 +691,69 @@ function siblingNote(
   return expected === 0 ? String(seen) : `${seen}/${expected}`
 }
 
+interface SensorSummary {
+  sensorId: number
+  baselines: number[]
+  keys: string[]
+  paths: IdPath[]
+  table: KeyFingerprint[]
+  status: 'ok' | 'harmless' | 'warn' | 'nonKey'
+}
+
+type IdPath = 'usage' | 'modifier' | 'fingerprint' | 'none'
+
+/** Which of the three routes actually named this key. */
+function idPath(r: Observation): IdPath {
+  if (!r.identifiable) return 'none'
+  if (r.type === EVENT_TYPE.fn) return 'modifier'
+  if (isSingleBit(r.modifierBits) && r.usage >= 0xe0 && r.usage <= 0xe7) return 'modifier'
+  if (r.usageIsReal) return 'usage'
+  return 'fingerprint'
+}
+
+/**
+ * Groups the observations by sensor value and says, for each, whether the
+ * built-in table matters.
+ *
+ * The point is to separate "this sensor value is not in the table" from "this
+ * is a problem". They are not the same: a key that names itself by usage or by
+ * modifier bit is identified before the table is ever consulted, so a missing
+ * value is only a fault when some key actually needs the fallback.
+ */
+function summariseSensors(
+  rows: readonly Observation[],
+  resolved: ReadonlyMap<number, Observation>,
+): SensorSummary[] {
+  const labelOf = new Map<Observation, string>()
+  for (const [index, r] of resolved) labelOf.set(r, `#${index} ${keyByIndex(index)?.label ?? '?'}`)
+
+  const grouped = new Map<number, Observation[]>()
+  for (const r of rows) grouped.set(r.sensorId, [...(grouped.get(r.sensorId) ?? []), r])
+
+  const out: SensorSummary[] = []
+  for (const [sensorId, group] of grouped) {
+    const paths = [...new Set(group.map(idPath))]
+    const table = KEY_FINGERPRINTS.filter((f) => f.sensorId === sensorId)
+    const status: SensorSummary['status'] =
+      table.length > 0
+        ? 'ok'
+        : paths.every((p) => p === 'none')
+          ? 'nonKey'
+          : paths.includes('fingerprint')
+            ? 'warn'
+            : 'harmless'
+    out.push({
+      sensorId,
+      baselines: [...new Set(group.flatMap((r) => [...r.baselines.keys()]))].sort((a, b) => a - b),
+      keys: [...new Set(group.map((r) => labelOf.get(r)).filter((v): v is string => !!v))],
+      paths,
+      table,
+      status,
+    })
+  }
+  return out.sort((a, b) => a.sensorId - b.sensorId)
+}
+
 function excessSensors(
   siblings: ReadonlyMap<number, Set<number>>,
   keysPerSensor: ReadonlyMap<number, number>,
@@ -640,6 +781,8 @@ const EVENT_FIELDS: Record<number, MessageKey> = {
   7: 'sensors.field.depth',
   8: 'sensors.field.undecodedDepth',
   9: 'sensors.field.direction',
+  10: 'sensors.field.calState',
+  11: 'sensors.field.scaleUnits',
   12: 'sensors.field.sensorHigh',
   13: 'sensors.field.sensorLow',
   14: 'sensors.field.travelHigh',
@@ -823,7 +966,7 @@ function LiveGrid({
   return (
     <KeyGrid
       selected={selected}
-      onSelect={(i, additive) => selection.toggle(i, additive)}
+      onToggle={(i, on) => selection.setSelected(i, on)}
       fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / DEFAULT_TRAVEL_MM}
       sub={(k) => {
         const r = current.current?.get(k.index)

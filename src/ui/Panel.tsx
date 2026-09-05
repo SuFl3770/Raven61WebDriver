@@ -11,8 +11,18 @@ export function Panel({ title, children }: { title?: string; children: ReactNode
   )
 }
 
-export function Notice({ kind = 'info', children }: { kind?: 'info' | 'warn' | 'err'; children: ReactNode }) {
-  return <div className={`notice${kind === 'info' ? ' info' : kind === 'err' ? ' err' : ''}`}>{children}</div>
+export type NoticeKind = 'info' | 'warn' | 'err' | 'ok'
+
+const NOTICE_CLASS: Record<NoticeKind, string> = {
+  // Warn is the bare style, since it is what the un-decoded panels use.
+  warn: '',
+  info: ' info',
+  err: ' err',
+  ok: ' ok',
+}
+
+export function Notice({ kind = 'info', children }: { kind?: NoticeKind; children: ReactNode }) {
+  return <div className={`notice${NOTICE_CLASS[kind]}`}>{children}</div>
 }
 
 /** Shown by every feature panel whose capability the active codec lacks. */
