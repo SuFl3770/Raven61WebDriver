@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useT, type MessageKey } from '../i18n'
 
 /**
@@ -13,6 +13,13 @@ import { useT, type MessageKey } from '../i18n'
 export interface SubTab {
   id: string
   labelKey: MessageKey
+  /**
+   * Overrides `labelKey` when the label cannot be a message key.
+   *
+   * A board's layers are the case: how many there are comes from its spec, and
+   * the bundles cannot carry a name for a layer nobody knew about.
+   */
+  label?: string
   /** One line under the strip saying what this section is for. Optional. */
   hintKey?: MessageKey
   render: () => ReactNode
@@ -38,6 +45,18 @@ export function SubTabs({
   const t = useT()
   const current = tabs.find((s) => s.id === active) ?? tabs[0]!
 
+  /*
+   * Which way the last move went, so the new section can come in from the side
+   * it was on: forwards from the right, backwards from the left.
+   *
+   * Set on the click rather than worked out while rendering. The component is
+   * controlled, so `active` and this land in the same batch and the render that
+   * shows the new section already knows which way it arrived — no ref written
+   * during a render, and nothing to get wrong when a render is repeated.
+   */
+  const [back, setBack] = useState(false)
+  const indexOf = (id: string) => tabs.findIndex((s) => s.id === id)
+
   return (
     <>
       <nav className="subtabs" role="tablist" aria-label={label}>
@@ -46,19 +65,29 @@ export function SubTabs({
             key={s.id}
             role="tab"
             aria-selected={s.id === active}
-            onClick={() => onActive(s.id)}
+            onClick={() => {
+              setBack(indexOf(s.id) < indexOf(active))
+              onActive(s.id)
+            }}
           >
-            {t(s.labelKey)}
+            {s.label ?? t(s.labelKey)}
           </button>
         ))}
       </nav>
-      {current.hintKey && (
-        <div className="small dim" style={{ padding: '6px 2px 10px' }}>
-          {t(current.hintKey)}
-        </div>
-      )}
+      {/*
+        The hint travels with the section it describes, so the two arrive as
+        one thing rather than the caption changing under a panel that is still
+        sliding. Keyed by the section for the same reason as the tab above.
+      */}
+      <div key={current.id} className={`section-in${back ? ' back' : ''}`}>
+        {current.hintKey && (
+          <div className="small dim" style={{ padding: '6px 2px 10px' }}>
+            {t(current.hintKey)}
+          </div>
+        )}
 
-      {current.render()}
+        {current.render()}
+      </div>
     </>
   )
 }

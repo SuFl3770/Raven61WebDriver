@@ -1,22 +1,42 @@
+import { allSpecs, specForDevice } from '../device/registry'
 import { t, type MessageKey } from '../i18n'
-import { PAYLOAD_LENGTH } from '../protocol/frame'
 import { inputReports, isVendorPage, outputReports } from './reportInfo'
 
 /**
- * Device ids recovered from the stock driver binary. It matches devices by the
- * Windows hardware id `VID_19F5&PID_xxxx&MI_01`, i.e. always USB interface 1 —
- * the vendor interface, not the keyboard interface.
+ * Which HID interfaces to offer, and which of them is the configurator.
  *
- * The binary's string pool does not preserve the name-to-id pairing reliably,
- * so all three ids are treated as one family; the actual product id is read
- * back from the device once connected.
+ * Nothing here names a board any more. The vendor ids come from the registered
+ * specs, so adding a device definition also adds it to the chooser's filter and
+ * to the ranking below — see `src/device/spec.ts`.
  */
-export const RAVEN_VENDOR_ID = 0x19f5
 
-export const RAVEN_PRODUCT_IDS = [0xfe20, 0xfed0, 0xfeb1] as const
+/** Vendor ids any registered board answers to, de-duplicated. */
+export function knownVendorIds(): number[] {
+  return [...new Set(allSpecs().map((s) => s.usb.vendorId))]
+}
 
-/** Layout files shipped by the stock driver, for reference. */
-export const RAVEN_FAMILY = ['Raven61', 'Raven68', 'ABT68'] as const
+/** Payload sizes the registered boards use; the report-shape signal below. */
+function knownPayloadLengths(): number[] {
+  return [...new Set(allSpecs().map((s) => s.frame.payloadLength))]
+}
+
+/**
+ * True when a registered spec lists this exact product id.
+ *
+ * Stricter than `specForDevice`, deliberately: this is a ranking signal, and a
+ * spec that claims a whole vendor would otherwise make every device under it
+ * look equally identified.
+ */
+export function isKnownDevice(device: HIDDevice): boolean {
+  return allSpecs().some(
+    (s) => s.usb.vendorId === device.vendorId && s.usb.productIds.includes(device.productId),
+  )
+}
+
+/** The board a registered spec claims for this device, if any. */
+export function specFor(device: HIDDevice) {
+  return specForDevice(device)
+}
 
 export interface FilterPreset {
   id: string
@@ -25,29 +45,27 @@ export interface FilterPreset {
   filters: HIDDeviceFilter[]
 }
 
-export const FILTER_PRESETS: FilterPreset[] = [
-  {
-    id: 'raven',
-    labelKey: 'device.filter.raven.label',
-    hintKey: 'device.filter.raven.hint',
-    filters: [{ vendorId: RAVEN_VENDOR_ID }],
-  },
-  {
-    id: 'all',
-    labelKey: 'device.filter.all.label',
-    hintKey: 'device.filter.all.hint',
-    filters: [],
-  },
-  {
-    id: 'vendor-pages',
-    labelKey: 'device.filter.vendorPages.label',
-    hintKey: 'device.filter.vendorPages.hint',
-    filters: [{ usagePage: 0xff00 }, { usagePage: 0xff01 }, { usagePage: 0xff02 }],
-  },
-]
-
-export function isRavenDevice(device: HIDDevice): boolean {
-  return device.vendorId === RAVEN_VENDOR_ID
+export function filterPresets(): FilterPreset[] {
+  return [
+    {
+      id: 'known',
+      labelKey: 'device.filter.known.label',
+      hintKey: 'device.filter.known.hint',
+      filters: knownVendorIds().map((vendorId) => ({ vendorId })),
+    },
+    {
+      id: 'all',
+      labelKey: 'device.filter.all.label',
+      hintKey: 'device.filter.all.hint',
+      filters: [],
+    },
+    {
+      id: 'vendor-pages',
+      labelKey: 'device.filter.vendorPages.label',
+      hintKey: 'device.filter.vendorPages.hint',
+      filters: [{ usagePage: 0xff00 }, { usagePage: 0xff01 }, { usagePage: 0xff02 }],
+    },
+  ]
 }
 
 /**
@@ -97,10 +115,10 @@ export function rankDevice(device: HIDDevice): DeviceRank {
   const reasons: string[] = []
   let score = 0
 
-  if (isRavenDevice(device)) {
+  if (knownVendorIds().includes(device.vendorId)) {
     score += 100
-    reasons.push(t('device.reason.ravenVid'))
-    if ((RAVEN_PRODUCT_IDS as readonly number[]).includes(device.productId)) {
+    reasons.push(t('device.reason.knownVid'))
+    if (isKnownDevice(device)) {
       score += 20
       reasons.push(t('device.reason.knownPid'))
     }
@@ -109,13 +127,15 @@ export function rankDevice(device: HIDDevice): DeviceRank {
   const ins = inputReports(device)
   const outs = outputReports(device)
 
-  if (ins.some((r) => r.byteLength === PAYLOAD_LENGTH)) {
-    score += 60
-    reasons.push(t('device.reason.inReport', { bytes: PAYLOAD_LENGTH }))
-  }
-  if (outs.some((r) => r.byteLength === PAYLOAD_LENGTH)) {
-    score += 60
-    reasons.push(t('device.reason.outReport', { bytes: PAYLOAD_LENGTH }))
+  for (const bytes of knownPayloadLengths()) {
+    if (ins.some((r) => r.byteLength === bytes)) {
+      score += 60
+      reasons.push(t('device.reason.inReport', { bytes }))
+    }
+    if (outs.some((r) => r.byteLength === bytes)) {
+      score += 60
+      reasons.push(t('device.reason.outReport', { bytes }))
+    }
   }
 
   for (const c of collectionsOf(device)) {

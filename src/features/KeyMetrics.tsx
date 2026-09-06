@@ -1,13 +1,13 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import type { MessageKey } from '../i18n'
-import { DEFAULT_TRAVEL_MM } from '../keyboard/raven61'
-import { switchTypeInfo, type KeyConfig } from '../protocol/types'
+import { switchColor, travelMmFor } from '../device/tables'
+import type { KeyConfig } from '../protocol/types'
 import { CAL_STATE, type CalRecord } from '../protocol/calibration'
 import { useKeyConfigs } from '../state/config'
+import { hover } from '../state/hover'
 import { selection, useSelection } from '../state/selection'
 import { KeyGrid } from '../ui/KeyGrid'
-import { Marquee } from '../ui/Marquee'
-import { SelectionBar } from '../ui/SelectionBar'
+import { GridFrame } from '../ui/GridFrame'
 
 /**
  * The one key grid the input-point tab uses, and the metrics it can show.
@@ -60,7 +60,7 @@ function capStatus(record: CalRecord | undefined): 'done' | 'marginal' | 'bad' |
 
 /** Full travel depends on the switch fitted — see SWITCH_TYPES. */
 function travelOf(config: KeyConfig | undefined): number {
-  return switchTypeInfo(config?.switchType)?.travelMm ?? DEFAULT_TRAVEL_MM
+  return travelMmFor(config?.switchType)
 }
 
 /**
@@ -97,7 +97,23 @@ export function metricSub(metric: Metric, c: KeyConfig | undefined): ReactNode {
     if (!c.deadZone.enabled) return undefined
     return `${c.deadZone.topMm.toFixed(2)} ${c.deadZone.bottomMm.toFixed(2)}`
   }
-  return c.switchType === undefined ? undefined : `S${c.switchType}`
+  // The switch is a band along the bottom of the cap, not a label — see
+  // `switchStripe` and `KeyGridProps.stripe`. It used to print `S4`, which is a
+  // code you have to go and look up, sixty-one times.
+  return undefined
+}
+
+/**
+ * The switch fitted, as a colour for the cap's bottom edge.
+ *
+ * Three states, and they have to stay distinguishable: a switch whose colour
+ * somebody filled in paints that colour, a switch with no colour on file gets
+ * the hatch (`--hatch`, the same fill the swatch beside its name uses), and a
+ * key with no switch type read yet gets no band at all. Painting the third case
+ * grey would make "not read" look like a dark switch.
+ */
+function switchStripe(c: KeyConfig | undefined): string | undefined {
+  return c?.switchType === undefined ? undefined : switchColor(c.switchType)
 }
 
 /** Which metrics put two numbers on a cap, and so need the tighter type. */
@@ -108,7 +124,8 @@ function isPair(metric: Metric): boolean {
 export function KeyMetrics({
   metric,
   calibration,
-  side,
+  top,
+  foot,
 }: {
   metric: Metric
   /**
@@ -131,11 +148,18 @@ export function KeyMetrics({
      */
     records: readonly (CalRecord | undefined)[]
   }
-  /** Controls for the column beside the grid — see SelectionBar. */
-  side?: ReactNode
+  /** Controls for the row above the grid — see GridFrame. */
+  top?: ReactNode
+  /** Readouts for the line below it. */
+  foot?: ReactNode
 }) {
   const configs = useKeyConfigs()
   const sel = useSelection()
+
+  // Leaving the tab, or entering a calibration pass, unmounts the grid without
+  // the pointer ever leaving a cap — so the last key hovered would stay in the
+  // store, and the panel would come back naming a key nobody is pointing at.
+  useEffect(() => () => hover.set(undefined), [])
 
   // A calibration pass owns the grid: the caps mirror the board's own LEDs and
   // there is nothing to edit, so the selection goes away rather than sitting
@@ -144,36 +168,30 @@ export function KeyMetrics({
   const picking = calibration === undefined
 
   return (
-    <Marquee className="gridband" disabled={!picking}>
-      <div className="gridrow">
-        <KeyGrid
-          selected={picking ? sel : undefined}
-          onToggle={picking ? (i, on) => selection.setSelected(i, on) : undefined}
-          subClass={calibration ? undefined : isPair(metric) ? 'pair' : undefined}
-          sub={(k) => {
-            if (calibration) {
-              const rec = calibration.records[k.index]
-              return rec ? rec.scale.toFixed(2) : undefined
-            }
-            return metricSub(metric, configs[k.index])
-          }}
-          status={calibration ? (k) => capStatus(calibration.records[k.index]) : undefined}
-          // Only calibration fills the caps here — see metricSub.
-          fill={
-            calibration
-              ? (k) => (calibration.deepest[k.index] ?? 0) / travelOf(configs[k.index])
-              : undefined
+    <GridFrame selectable={picking} marquee={picking} top={top} foot={foot}>
+      <KeyGrid
+        selected={picking ? sel : undefined}
+        onToggle={picking ? (i, on) => selection.setSelected(i, on) : undefined}
+        subClass={calibration ? undefined : isPair(metric) ? 'pair' : undefined}
+        onHover={hover.set}
+        stripe={
+          !calibration && metric === 'switch' ? (k) => switchStripe(configs[k.index]) : undefined
+        }
+        sub={(k) => {
+          if (calibration) {
+            const rec = calibration.records[k.index]
+            return rec ? rec.scale.toFixed(2) : undefined
           }
-        />
-
-        {/*
-          Just the caller's controls. The calibration legend used to sit here as
-          well, which put a paragraph of caveats in a control column — it lives
-          in the calibration panel now, where there is room to say what the cap
-          border and the cap number are.
-        */}
-        <SelectionBar selectable={picking}>{side}</SelectionBar>
-      </div>
-    </Marquee>
+          return metricSub(metric, configs[k.index])
+        }}
+        status={calibration ? (k) => capStatus(calibration.records[k.index]) : undefined}
+        // Only calibration fills the caps here — see metricSub.
+        fill={
+          calibration
+            ? (k) => (calibration.deepest[k.index] ?? 0) / travelOf(configs[k.index])
+            : undefined
+        }
+      />
+    </GridFrame>
   )
 }

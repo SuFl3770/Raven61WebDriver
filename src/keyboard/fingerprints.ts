@@ -20,8 +20,10 @@
  * Neither field is unique on its own: 0x0806 is shared by Esc, LAlt and RAlt,
  * and 0x0805 by LCtrl and LShift. The pair is what separates them.
  *
- * Measured on hardware. Kept in its own file because src/keyboard/raven61.ts is
- * regenerated from the stock driver's layout XML and would lose these.
+ * Measured on hardware, on a Raven61. Kept in its own file because
+ * src/device/boards/raven61/layout.ts is regenerated from the stock driver's
+ * layout XML and would lose these — and because they are one board's sensors,
+ * not a fact about the protocol.
  */
 export interface KeyFingerprint {
   /** payload[12..13]. */

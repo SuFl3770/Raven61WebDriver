@@ -15,6 +15,7 @@ import {
 } from '../protocol/frame'
 import { Notice, Panel } from '../ui/Panel'
 import { link, useConnection } from '../state/link'
+import { Select } from '../ui/Select'
 
 type Mode = 'frame' | 'output' | 'feature-set' | 'feature-get'
 
@@ -154,16 +155,17 @@ export function ReportConsole() {
         <div className="row">
           <label className="small dim">
             {t('console.mode')}
-            <select
+            <Select
               value={mode}
-              onChange={(e) => setMode(e.target.value as Mode)}
+              onChange={(v) => setMode(v as Mode)}
               style={{ display: 'block', marginTop: 4 }}
-            >
-              <option value="frame">{t('console.mode.frame')}</option>
-              <option value="output">{t('console.mode.output')}</option>
-              <option value="feature-set">{t('console.mode.featureSet')}</option>
-              <option value="feature-get">{t('console.mode.featureGet')}</option>
-            </select>
+              options={[
+                { value: 'frame', label: t('console.mode.frame') },
+                { value: 'output', label: t('console.mode.output') },
+                { value: 'feature-set', label: t('console.mode.featureSet') },
+                { value: 'feature-get', label: t('console.mode.featureGet') },
+              ]}
+            />
           </label>
           <label className="small dim">
             Report ID
@@ -188,14 +190,15 @@ export function ReportConsole() {
             <div className="row" style={{ marginTop: 10 }}>
               <label className="small dim">
                 {t('console.magic')}
-                <select
+                <Select
                   value={magic}
-                  onChange={(e) => setMagic(e.target.value)}
+                  onChange={setMagic}
                   style={{ display: 'block', marginTop: 4 }}
-                >
-                  <option value={MAGIC.toString(16)}>{t('console.magic.config')}</option>
-                  <option value={MAGIC_FIRMWARE.toString(16)}>{t('console.magic.firmware')}</option>
-                </select>
+                  options={[
+                    { value: MAGIC.toString(16), label: t('console.magic.config') },
+                    { value: MAGIC_FIRMWARE.toString(16), label: t('console.magic.firmware') },
+                  ]}
+                />
               </label>
               <label className="small dim">
                 {t('console.command')}

@@ -1,6 +1,8 @@
 import { useRef, type ReactNode } from 'react'
+import { useActiveDevice, useLayout } from '../device/active'
+import type { KeyDef } from '../device/spec'
 import { useT } from '../i18n'
-import { LAYOUT_UNITS, RAVEN61_KEYS, type KeyDef } from '../keyboard/raven61'
+import { useConnection } from '../state/link'
 
 export interface KeyGridProps {
   selected?: ReadonlySet<number>
@@ -32,6 +34,27 @@ export interface KeyGridProps {
   /** Extra class for that line — `pair` when it holds two numbers. */
   subClass?: string
   /**
+   * A thin band along the bottom edge of the cap, as a CSS background.
+   *
+   * For a value that is a *category* rather than a quantity — which switch is
+   * fitted, today. A category has no business being a number on a cap: "S4"
+   * has to be looked up, is the same width as the actuation value it replaces,
+   * and 61 of them is a page of codes. A colour is recognised without being
+   * read, and the panel below spells out whatever the pointer is on.
+   *
+   * A background rather than a colour so the caller can hand over a gradient —
+   * `var(--hatch)` is the app's "known to be unknown", and it has to mean the
+   * same thing here as it does on the swatch beside a switch's name.
+   */
+  stripe?: (key: KeyDef) => string | undefined
+  /**
+   * The key under the pointer, or undefined on the way out.
+   *
+   * Only a report. The grid does not draw anything differently for it — the
+   * cap already lights on hover — and nothing about the selection changes.
+   */
+  onHover?: (index: number | undefined) => void
+  /**
    * Per-key condition, drawn as a border colour.
    *
    * A border rather than a fill or a label: the cap already carries both, and
@@ -50,7 +73,23 @@ export interface KeyGridProps {
 
 const PAD = 0.06 // gap between caps, in keyboard units
 
-export function KeyGrid({ selected, onSelect, onToggle, fill, sub, subClass, label, status }: KeyGridProps) {
+export function KeyGrid({
+  selected,
+  onSelect,
+  onToggle,
+  fill,
+  sub,
+  subClass,
+  stripe,
+  onHover,
+  label,
+  status,
+}: KeyGridProps) {
+  // The board's own key table and size in units. A different keyboard is a
+  // different grid, and nothing here knows which one it is drawing.
+  const { keys, units } = useLayout()
+  const { matched, forced } = useActiveDevice()
+  const { device, connected } = useConnection()
   const t = useT()
   /** What the in-progress drag is painting, or null when none is running. */
   const painting = useRef<boolean | null>(null)
@@ -109,7 +148,7 @@ export function KeyGrid({ selected, onSelect, onToggle, fill, sub, subClass, lab
     const dy = e.clientY - from.y
     // One keyboard unit wide, halved — narrow enough that no cap fits between
     // two samples, and it follows the grid when the window resizes.
-    const step = Math.max(4, (grid.current?.clientWidth ?? 0) / LAYOUT_UNITS.width / 2)
+    const step = Math.max(4, (grid.current?.clientWidth ?? 0) / units.width / 2)
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / step))
     for (let i = 1; i <= steps; i++) {
       const index = keyUnder(from.x + (dx * i) / steps, from.y + (dy * i) / steps)
@@ -124,6 +163,32 @@ export function KeyGrid({ selected, onSelect, onToggle, fill, sub, subClass, lab
     if (grid.current?.hasPointerCapture(e.pointerId)) {
       grid.current.releasePointerCapture(e.pointerId)
     }
+  }
+
+  /*
+   * A keyboard no spec claims gets no grid.
+   *
+   * The layout store falls back to a placeholder board so the rest of the app
+   * has a shape to work with, and drawing that placeholder here would be this
+   * app's worst lie: 61 caps, laid out like a real keyboard, for hardware whose
+   * key count nobody knows. The ids are shown instead, because they are what a
+   * definition needs — see src/device/README.md.
+   */
+  if (connected && !matched && !forced) {
+    const hex = (n: number) => n.toString(16).padStart(4, '0')
+    return (
+      <div className="keygrid-unknown">
+        <b>{t('keygrid.unknown.title')}</b>
+        <div className="small dim" style={{ marginTop: 6 }}>
+          {t('keygrid.unknown.body')}
+        </div>
+        {device && (
+          <div className="mono small" style={{ marginTop: 6 }}>
+            {hex(device.vendorId)}:{hex(device.productId)}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -141,15 +206,22 @@ export function KeyGrid({ selected, onSelect, onToggle, fill, sub, subClass, lab
       onPointerMove={onToggle ? paintAt : undefined}
       onPointerUp={onToggle ? endPaint : undefined}
       onPointerCancel={onToggle ? endPaint : undefined}
+      /*
+        Leaving any cap for the gap between caps would otherwise leave the last
+        one reported, so the grid clears it rather than each cap clearing its
+        own.
+      */
+      onPointerLeave={onHover ? () => onHover(undefined) : undefined}
     >
-      {RAVEN61_KEYS.map((k) => {
+      {keys.map((k) => {
         const style = {
-          left: `${((k.x + PAD) / LAYOUT_UNITS.width) * 100}%`,
-          top: `${((k.y + PAD) / LAYOUT_UNITS.height) * 100}%`,
-          width: `${((k.w - PAD * 2) / LAYOUT_UNITS.width) * 100}%`,
-          height: `${((1 - PAD * 2) / LAYOUT_UNITS.height) * 100}%`,
+          left: `${((k.x + PAD) / units.width) * 100}%`,
+          top: `${((k.y + PAD) / units.height) * 100}%`,
+          width: `${((k.w - PAD * 2) / units.width) * 100}%`,
+          height: `${((1 - PAD * 2) / units.height) * 100}%`,
         }
         const amount = fill?.(k) ?? 0
+        const band = stripe?.(k)
         const subText = sub?.(k)
         const state = status?.(k)
         const stateClass = state ? ` ${state}` : ''
@@ -164,6 +236,14 @@ export function KeyGrid({ selected, onSelect, onToggle, fill, sub, subClass, lab
             aria-pressed={isSelected}
             title={`#${k.index} ${k.label}`}
             onPointerDown={onToggle ? (e) => startPaint(e, k.index) : undefined}
+            onPointerEnter={onHover ? () => onHover(k.index) : undefined}
+            /*
+              Focus reports too: a cap reached by tab is the one being asked
+              about, and without this the readout below stays on whatever the
+              pointer last touched.
+            */
+            onFocus={onHover ? () => onHover(k.index) : undefined}
+            onBlur={onHover ? () => onHover(undefined) : undefined}
             onClick={(e) => {
               // The pointer path already ran on the way down. A click with no
               // pointer behind it (`detail === 0`) is the keyboard activating
@@ -176,6 +256,7 @@ export function KeyGrid({ selected, onSelect, onToggle, fill, sub, subClass, lab
             }}
           >
             {amount > 0 && <span className="fill" style={{ height: `${Math.min(1, amount) * 100}%` }} />}
+            {band && <span className="stripe" style={{ background: band }} />}
             <span className="cap-label">{label?.(k) ?? k.label}</span>
             {subText && (
               <span className={`sub cap-label${subClass ? ` ${subClass}` : ''}`}>{subText}</span>

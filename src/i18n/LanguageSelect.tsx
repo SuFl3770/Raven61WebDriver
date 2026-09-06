@@ -1,4 +1,5 @@
 import { LOCALES, i18n, useLocale, useT, type Locale } from '.'
+import { Select } from '../ui/Select'
 
 /**
  * The language picker.
@@ -13,17 +14,11 @@ export function LanguageSelect() {
   const t = useT()
   const label = t('app.language')
   return (
-    <select
+    <Select
       value={locale}
-      aria-label={label}
-      title={label}
-      onChange={(e) => i18n.set(e.target.value as Locale)}
-    >
-      {LOCALES.map((l) => (
-        <option key={l.id} value={l.id}>
-          {l.label}
-        </option>
-      ))}
-    </select>
+      label={label}
+      options={LOCALES.map((l) => ({ value: l.id, label: l.label }))}
+      onChange={(v) => i18n.set(v as Locale)}
+    />
   )
 }

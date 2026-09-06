@@ -10,10 +10,10 @@ import { selection } from '../state/selection'
  * and selects everything it touches. Grabbing the bottom two rows should not
  * require landing the first pixel exactly on a cap.
  *
- * The surface is the whole row rather than the grid element, so there is
- * somewhere to start a drag that is not already a key. Two places inside it are
- * excluded: the caps, which have their own gesture, and the control column,
- * where a drag off a button must not turn into a selection.
+ * The surface is the whole band rather than the grid element, so there is
+ * somewhere to start a drag that is not already a key. Excluded are the caps,
+ * which have their own gesture; the line of readouts below; and anything the
+ * band holds in the React tree but not on screen — see `begin`.
  */
 interface Rect {
   left: number
@@ -67,8 +67,20 @@ export function Marquee({
   const begin = (e: React.PointerEvent) => {
     if (disabled || e.button !== 0) return
     const target = e.target as HTMLElement
-    // The caps paint, and the column has buttons on it.
-    if (target.closest('.keycap') || target.closest('.gridside')) return
+    /*
+     * Anything not physically inside the band is not part of this gesture,
+     * whatever the React tree says about it.
+     *
+     * The tab's controls are the case that needs saying: they are declared in
+     * here (ui/GridFrame.tsx) but drawn up in the title row through a portal,
+     * and React bubbles their events through the tree they were *declared* in
+     * — so without this a press on "select all" starts a rubber band, captures
+     * the pointer on the band, and the button never sees the release that
+     * would have made it a click. The gesture is spatial; so is the test.
+     */
+    if (!host.current?.contains(target)) return
+    // The caps paint, and the readouts below are not a place to drag from.
+    if (target.closest('.keycap') || target.closest('.gridfoot')) return
     origin.current = { x: e.clientX, y: e.clientY }
     base.current = new Set(selection.current())
     setBox({ left: e.clientX, top: e.clientY, width: 0, height: 0 })

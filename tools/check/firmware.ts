@@ -20,7 +20,8 @@ import {
   SAFE_COMMANDS,
   checksum,
 } from '../../src/protocol/frame'
-import { decodeFirmwareIdentity, readFirmware } from '../../src/protocol/raven61'
+import { decodeFirmwareIdentity } from '../../src/protocol/engine'
+import { readFirmware } from '../../src/protocol/raven61'
 
 let pass = 0
 const fails: string[] = []

@@ -5,6 +5,7 @@ import { BoardSettings } from '../ui/BoardSettings'
 import { FactoryReset } from '../ui/FactoryReset'
 import { FirmwareInfo } from '../ui/FirmwareInfo'
 import { Notice, Panel } from '../ui/Panel'
+import { ThemePicker } from '../ui/ThemePicker'
 
 /**
  * What is on this tab, and what left it.
@@ -14,9 +15,10 @@ import { Notice, Panel } from '../ui/Panel'
  * between them is there to draw the line: everything else this app remembers
  * lives in the browser and never reaches the keyboard.
  *
- * The point-colour picker sits below the storage panel rather than above it,
- * because it is one of the things that panel is talking about: it is kept in
- * this browser and never reaches the keyboard.
+ * The theme and point-colour pickers sit below the storage panel rather than
+ * above it, because they are two of the things that panel is talking about:
+ * both are kept in this browser and neither reaches the keyboard. Theme first —
+ * it decides which surfaces the accent has to work against.
  *
  * Three things that used to be here are not any more. The language picker moved
  * to the top bar, where it is reachable from every tab rather than only from
@@ -43,6 +45,7 @@ export function Settings() {
         </Notice>
       </Panel>
 
+      <ThemePicker />
       <AccentPicker />
 
       {/*

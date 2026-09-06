@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
 import { supports } from '../protocol/codec'
-import { FACTORY_RESET, type FactoryResetResult, type FactoryResetStage } from '../protocol/raven61'
-import { debounceLevelName, reportRateName } from '../protocol/types'
+import { useDeviceSpec } from '../device/active'
+import { reportRateName } from '../device/tables'
+import type { FactoryResetResult, FactoryResetStage } from '../protocol/engine'
+import { debounceLevelName } from '../protocol/types'
 import { configStore } from '../state/config'
 import { globalStore } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
@@ -44,6 +46,7 @@ const STAGE_KEY: Record<FactoryResetStage, MessageKey> = {
  * button is gated on.
  */
 export function FactoryReset() {
+  const spec = useDeviceSpec()
   const codec = useCodec()
   const { connected } = useConnection()
   const t = useT()
@@ -164,7 +167,7 @@ export function FactoryReset() {
             <T
               k="reset.stage.note"
               params={{
-                seconds: (FACTORY_RESET.firstWaitMs + FACTORY_RESET.secondWaitMs) / 1000,
+                seconds: (spec.factoryReset.firstWaitMs + spec.factoryReset.secondWaitMs) / 1000,
               }}
             />
           </div>

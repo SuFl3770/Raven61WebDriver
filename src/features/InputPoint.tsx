@@ -141,23 +141,19 @@ export function InputPoint() {
         calibration={
           calibrating ? { deepest: run.deepest, records: run.records } : undefined
         }
-        side={
-          <>
-            <button
-              className={calibrating ? 'primary' : undefined}
-              onClick={() => void leaveOrEnter()}
-            >
-              {calibrating ? t('calibration.exit') : t('calibration.enter')}
-            </button>
-            {/*
-              Under the button that ends the mode, beside the grid it counts.
-              The panel is where the procedure is explained; the count is a
-              readout of what is on screen, so it belongs with it.
-            */}
-            {calibrating && <CalibrationProgress run={run} />}
-            {!calibrating && <div className="small dim">{t('calibration.enterHint')}</div>}
-          </>
+        // Accent in both states, not only on the way out: it is the one control
+        // up here that changes what the grid *is* rather than what is picked in
+        // it, and that is as true before the mode starts as during it — see the
+        // rule that separates it from the other three.
+        top={
+          <button className="primary" onClick={() => void leaveOrEnter()}>
+            {calibrating ? t('calibration.exit') : t('calibration.enter')}
+          </button>
         }
+        // Under the grid, beside the selection count it replaces during a
+        // pass: the panel is where the procedure is explained, this is a
+        // readout of what is on screen, so it belongs with what it counts.
+        foot={calibrating ? <CalibrationProgress run={run} /> : undefined}
       />
 
       {calibrating ? (

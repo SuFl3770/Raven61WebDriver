@@ -18,6 +18,7 @@ import {
 } from '../protocol/frame'
 import { Notice, Panel } from '../ui/Panel'
 import { link, useConnection } from '../state/link'
+import { Select } from '../ui/Select'
 
 interface Probe {
   value: number
@@ -161,28 +162,30 @@ export function Prober() {
       <div className="row" style={{ marginTop: 12 }}>
         <label className="small dim">
           {t('prober.mode')}
-          <select
+          <Select
             value={mode}
-            onChange={(e) => setMode(e.target.value as Mode)}
+            onChange={(v) => setMode(v as Mode)}
             style={{ display: 'block', marginTop: 4 }}
-          >
-            <option value="frame">{t('prober.mode.frame')}</option>
-            <option value="output">RAW OUTPUT → IN</option>
-            <option value="feature">RAW FEATURE (set → get)</option>
-          </select>
+            options={[
+              { value: 'frame', label: t('prober.mode.frame') },
+              { value: 'output', label: 'RAW OUTPUT → IN' },
+              { value: 'feature', label: 'RAW FEATURE (set → get)' },
+            ]}
+          />
         </label>
 
         {mode === 'frame' ? (
           <label className="small dim">
             {t('prober.magic')}
-            <select
+            <Select
               value={magic}
-              onChange={(e) => setMagic(e.target.value)}
+              onChange={setMagic}
               style={{ display: 'block', marginTop: 4 }}
-            >
-              <option value={MAGIC.toString(16)}>{t('prober.magic.config')}</option>
-              <option value={MAGIC_FIRMWARE.toString(16)}>{t('prober.magic.firmware')}</option>
-            </select>
+              options={[
+                { value: MAGIC.toString(16), label: t('prober.magic.config') },
+                { value: MAGIC_FIRMWARE.toString(16), label: t('prober.magic.firmware') },
+              ]}
+            />
           </label>
         ) : (
           <label className="small dim" style={{ flex: '1 1 280px' }}>

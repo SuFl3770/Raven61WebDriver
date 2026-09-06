@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { BASELINE_TOLERANCE, KEY_FINGERPRINTS, type KeyFingerprint } from '../keyboard/fingerprints'
-import { DEFAULT_TRAVEL_MM, RAVEN61_KEYS, keyByIndex } from '../keyboard/raven61'
+import { activeLayout, activeSpec, useLayout } from '../device/active'
 import { t as translate, useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
-import { EVENT_TYPE, isEvent, parseKeyEvent } from '../protocol/frame'
-import { MONITOR, armAnalogStream } from '../protocol/raven61'
+import { isActiveEvent, parseActiveEvent } from '../protocol/events'
+import { analogModeCommands, armActiveStream, commandHex } from '../state/link'
 import { sensorMap, useSensorMap } from '../state/sensorMap'
 import { selection, useSelection } from '../state/selection'
+import { useSettings } from '../state/settings'
 import { KeyGrid } from '../ui/KeyGrid'
-import { Marquee } from '../ui/Marquee'
 import { Notice, Panel } from '../ui/Panel'
-import { SelectionBar } from '../ui/SelectionBar'
+import { GridFrame } from '../ui/GridFrame'
 import { link, useConnection } from '../state/link'
 
 /**
@@ -83,10 +83,12 @@ function identityKey(usageIsReal: boolean, usage: number, sensorId: number, base
  * live monitor at the top so the stream stays visible while probing.
  */
 export function Sensors({ analysis = false }: { analysis?: boolean }) {
+  const layout = useLayout()
   const { connected } = useConnection()
   const sel = useSelection()
   const [listening, setListening] = useState(false)
   const [arm, setArm] = useState(false)
+  const { debug } = useSettings()
   const [listenOnly, setListenOnly] = useState(false)
   const [armError, setArmError] = useState<string | null>(null)
   const [, forceRender] = useState(0)
@@ -104,12 +106,12 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
     if (!listening) return
     t0.current = performance.now()
     return link.onInput((_reportId, data) => {
-      const e = parseKeyEvent(data)
+      const e = parseActiveEvent(data)
       if (!e) {
         // An 0xA0 report that will not decode is worth counting rather than
         // dropping: it is the difference between "no stream" and "a stream we
         // do not understand", and those need opposite fixes.
-        if (isEvent(data)) undecoded.current++
+        if (isActiveEvent(data)) undecoded.current++
         return
       }
       const id = identityKey(e.usageIsReal, e.usage, e.sensorId, e.adcBaseline)
@@ -183,7 +185,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
     setListening(true)
     if (listenOnly) return
     try {
-      const fn = await armAnalogStream(link)
+      const fn = await armActiveStream()
       if (seq !== armSeq.current) await fn()
       else {
         release.current = fn
@@ -267,7 +269,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
   const sensorSummary = summariseSensors(rows, resolved)
 
   const focus = [...sel][0] ?? 0
-  const focusKey = keyByIndex(focus)
+  const focusKey = layout.byIndex(focus)
   // Either signal means the table no longer describes this board: a sensor
   // value it has never heard of, or more baselines under one value than that
   // value has keys.
@@ -284,54 +286,56 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
         four possible warnings, so the live display of the thing you are
         pressing moved down the page as the board had more to say about it.
       */}
-      <Marquee className="gridband">
-        <div className="gridrow">
-          <LiveGrid current={current} selected={sel} running={listening} />
-
-          {/*
-            `selectable={false}` on purpose: the column is the capture's, not
-            the selection's. Selecting here picks the key the trace follows,
-            and "select all" would mean nothing to a graph of one key.
-          */}
-          <SelectionBar selectable={false}>
-            <div className="group">
-              <button className="primary" onClick={() => void toggle()} disabled={!connected}>
-                {listening ? t('sensors.stop') : t('sensors.start')}
-              </button>
-              <button onClick={clear}>{t('sensors.clear')}</button>
-            </div>
-
-            <hr className="sep" />
-
-            <label className="small dim">
-              <input
-                type="checkbox"
-                checked={listenOnly}
-                disabled={listening}
-                onChange={(e) => setListenOnly(e.target.checked)}
-              />{' '}
-              <T k="sensors.listenOnly" params={{ arm: `0x${MONITOR.arm.toString(16)}` }} />
-            </label>
-
-            <div className="small dim">
-              {t('sensors.focus', { index: focus, key: focusKey?.label ?? '' })}
-              <div style={{ marginTop: 4 }}>
-                {t('sensors.keyCount', { seen: resolved.size, total: RAVEN61_KEYS.length })}
-              </div>
-              {analysis && (
-                <div style={{ marginTop: 4 }}>
-                  {t('sensors.identities', { count: rows.length })}
-                </div>
-              )}
-              {analysis && undecoded.current > 0 && (
-                <div style={{ marginTop: 4, color: 'var(--warn)' }}>
-                  {t('sensors.undecoded', { count: undecoded.current })}
-                </div>
-              )}
-            </div>
-          </SelectionBar>
-        </div>
-      </Marquee>
+      {/*
+        `selectable={false}` on purpose: the grid here is the capture's, not
+        the selection's. Clicking picks the key the trace follows, and "select
+        all" would mean nothing to a graph of one key.
+      */}
+      <GridFrame
+        marquee
+        selectable={false}
+        top={
+          <>
+            {debug && (
+              <label className="small dim">
+                <input
+                  type="checkbox"
+                  checked={listenOnly}
+                  disabled={listening}
+                  onChange={(e) => setListenOnly(e.target.checked)}
+                />{' '}
+                <T k="sensors.listenOnly" params={{ arm: commandHex(analogModeCommands().arm) }} />
+              </label>
+            )}
+            <button className="primary" onClick={() => void toggle()} disabled={!connected}>
+              {listening ? t('sensors.stop') : t('sensors.start')}
+            </button>
+            <button onClick={clear}>{t('sensors.clear')}</button>
+            {/*
+              Only with debug mode on. It suppresses the command that puts the
+              board into analog mode, which is a thing to try while working out
+              what the board answers to and a way to get a silent capture and
+              no explanation otherwise. Off is the default, so a reader who
+              never turns debug on gets the working path.
+            */}
+            
+          </>
+        }
+        foot={
+          <>
+            <span>{t('sensors.focus', { index: focus, key: focusKey?.label ?? '' })}</span>
+            <span>{t('sensors.keyCount', { seen: resolved.size, total: layout.count })}</span>
+            {analysis && <span>{t('sensors.identities', { count: rows.length })}</span>}
+            {analysis && undecoded.current > 0 && (
+              <span style={{ color: 'var(--warn)' }}>
+                {t('sensors.undecoded', { count: undecoded.current })}
+              </span>
+            )}
+          </>
+        }
+      >
+        <LiveGrid current={current} selected={sel} running={listening} />
+      </GridFrame>
 
       <Panel title={t('sensors.title')}>
         <Notice>
@@ -346,7 +350,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           <div style={{ marginTop: 10 }}>
             <Notice kind="warn">
               <span className="small">
-                <T k="sensors.uncalibrated" params={{ nominal: DEFAULT_TRAVEL_MM.toFixed(2) }} />
+                <T k="sensors.uncalibrated" params={{ nominal: layout.travelMm.toFixed(2) }} />
               </span>
             </Notice>
           </div>
@@ -379,8 +383,8 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
                 <T
                   k="sensors.armed"
                   params={{
-                    arm: `0x${MONITOR.arm.toString(16)}`,
-                    disarm: `0x${MONITOR.disarm.toString(16)}`,
+                    arm: commandHex(analogModeCommands().arm),
+                    disarm: commandHex(analogModeCommands().disarm),
                   }}
                 />
               </span>
@@ -457,7 +461,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
                 .sort((a, b) => sortIndex(a, resolved) - sortIndex(b, resolved))
                 .map((r) => {
                   const index = [...resolved.entries()].find(([, v]) => v === r)?.[0]
-                  const key = index === undefined ? undefined : keyByIndex(index)
+                  const key = index === undefined ? undefined : layout.byIndex(index)
                   const many = r.baselines.size > 1
                   return (
                     <tr key={r.id}>
@@ -705,7 +709,7 @@ type IdPath = 'usage' | 'modifier' | 'fingerprint' | 'none'
 /** Which of the three routes actually named this key. */
 function idPath(r: Observation): IdPath {
   if (!r.identifiable) return 'none'
-  if (r.type === EVENT_TYPE.fn) return 'modifier'
+  if (r.type === activeSpec().event.kind.fn) return 'modifier'
   if (isSingleBit(r.modifierBits) && r.usage >= 0xe0 && r.usage <= 0xe7) return 'modifier'
   if (r.usageIsReal) return 'usage'
   return 'fingerprint'
@@ -725,7 +729,8 @@ function summariseSensors(
   resolved: ReadonlyMap<number, Observation>,
 ): SensorSummary[] {
   const labelOf = new Map<Observation, string>()
-  for (const [index, r] of resolved) labelOf.set(r, `#${index} ${keyByIndex(index)?.label ?? '?'}`)
+  const layout = activeLayout()
+  for (const [index, r] of resolved) labelOf.set(r, `#${index} ${layout.byIndex(index)?.label ?? '?'}`)
 
   const grouped = new Map<number, Observation[]>()
   for (const r of rows) grouped.set(r.sensorId, [...(grouped.get(r.sensorId) ?? []), r])
@@ -963,11 +968,13 @@ function LiveGrid({
   running,
 }: LiveProps & { selected: ReadonlySet<number> }) {
   useDisplayClock(running)
+  // The cap fill is a fraction of full travel, which is the board's own.
+  const travelMm = useLayout().travelMm
   return (
     <KeyGrid
       selected={selected}
       onToggle={(i, on) => selection.setSelected(i, on)}
-      fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / DEFAULT_TRAVEL_MM}
+      fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / travelMm}
       sub={(k) => {
         const r = current.current?.get(k.index)
         return r ? `${r.depthMm.toFixed(2)} / ${r.adcLast}` : undefined
@@ -1021,7 +1028,11 @@ function drawTrace(el: HTMLCanvasElement | null, data: readonly number[]): void 
   if (!el || !ctx) return
   const { width: w, height: h } = el
   ctx.clearRect(0, 0, w, h)
-  ctx.strokeStyle = '#2a3441'
+  // The two colours a canvas cannot inherit. Read every frame rather than
+  // cached: this is the one part of the app that would keep its dark colours
+  // after the theme is switched, and the trace is redrawn constantly anyway.
+  const theme = getComputedStyle(el)
+  ctx.strokeStyle = theme.getPropertyValue('--trace-grid').trim()
   ctx.lineWidth = 1
   for (let i = 0; i <= 4; i++) {
     const y = (h / 4) * i
@@ -1031,12 +1042,13 @@ function drawTrace(el: HTMLCanvasElement | null, data: readonly number[]): void 
     ctx.stroke()
   }
   if (data.length < 2) return
-  ctx.strokeStyle = '#4c9aff'
+  ctx.strokeStyle = theme.getPropertyValue('--trace-line').trim()
   ctx.lineWidth = 1.5
   ctx.beginPath()
   data.forEach((mm, i) => {
     const x = (i / (HISTORY - 1)) * w
-    const y = (Math.min(mm, DEFAULT_TRAVEL_MM) / DEFAULT_TRAVEL_MM) * h
+    const full = activeSpec().layout.travelMm
+    const y = (Math.min(mm, full) / full) * h
     if (i === 0) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
   })

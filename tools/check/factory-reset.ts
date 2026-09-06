@@ -28,7 +28,8 @@ import {
   SAFE_COMMANDS,
   checksum,
 } from '../../src/protocol/frame'
-import { FACTORY_GLOBAL, GLOBAL, factoryReset } from '../../src/protocol/raven61'
+import { FACTORY_GLOBAL, GLOBAL } from '../../src/protocol/global'
+import { factoryReset } from '../../src/protocol/raven61'
 
 let pass = 0
 const fails: string[] = []

@@ -28,22 +28,29 @@
  * The 0x0a block is NOT this one — it came back all zeros on hardware, which
  * fits it being the Fn layer (unassigned on this board).
  */
-import { keyByUsage, RAVEN61_KEYS, type KeyDef } from '../keyboard/raven61'
+import type { Layout } from '../device/layout'
+import type { KeyDef, KeymapSpec } from '../device/spec'
+import { DEFAULT_KEYMAP } from './keymap'
 
+/**
+ * The block as this module reads it, for the Raven61 and anything that
+ * inherits its geometry. A sibling board passes its own `KeymapSpec` instead —
+ * every function here takes one.
+ */
 export const KEYMAP = {
-  entrySize: 3,
+  entrySize: DEFAULT_KEYMAP.entrySize,
   /** 768 bytes: 256 entries, i.e. two layers of 128. */
-  blobSize: 768,
+  blobSize: DEFAULT_KEYMAP.defaultsBlobSize,
   /** Only the first layer names keys. */
-  slots: 128,
+  slots: DEFAULT_KEYMAP.slots,
   /** entry[0] for an ordinary HID key. */
-  plainKey: 0x10,
+  plainKey: DEFAULT_KEYMAP.plainKey,
   /** entry[0] for a layer key; Fn is the one this board has. */
-  layerKey: 0xf0,
+  layerKey: DEFAULT_KEYMAP.layerKey,
   /** entry[1] for Fn, and the usage this project gives it. */
-  fnSelector: 0xff,
+  fnSelector: DEFAULT_KEYMAP.fnSelector,
   /** Bit n of entry[1] is usage 0xE0 + n. */
-  modifierBaseUsage: 0xe0,
+  modifierBaseUsage: DEFAULT_KEYMAP.modifierBaseUsage,
 } as const
 
 export interface SlotMap {
@@ -64,16 +71,21 @@ export interface SlotMap {
  * than the keycode array, so the firmware has no usage byte to put in entry[2].
  * Same reason the analog event stream identifies them from `payload[2]`.
  */
-export function usageOfKeymapEntry(type: number, selector: number, usage: number): number {
-  if (type === KEYMAP.plainKey) {
+export function usageOfKeymapEntry(
+  type: number,
+  selector: number,
+  usage: number,
+  spec: KeymapSpec = DEFAULT_KEYMAP,
+): number {
+  if (type === spec.plainKey) {
     // A single set bit is a modifier. Anything else is not one, and the usage
     // byte stands.
     if (selector !== 0 && (selector & (selector - 1)) === 0) {
-      return KEYMAP.modifierBaseUsage + Math.log2(selector)
+      return spec.modifierBaseUsage + Math.log2(selector)
     }
-    return usage === 0 || usage === KEYMAP.fnSelector ? 0 : usage
+    return usage === 0 || usage === spec.fnSelector ? 0 : usage
   }
-  if (type === KEYMAP.layerKey && selector === KEYMAP.fnSelector) return KEYMAP.fnSelector
+  if (type === spec.layerKey && selector === spec.fnSelector) return spec.fnSelector
   return 0
 }
 
@@ -85,15 +97,19 @@ export function usageOfKeymapEntry(type: number, selector: number, usage: number
  * physically there. The stock driver behaves the same way, and the alternative
  * — inventing a position — is worse.
  */
-export function slotMapFromKeymap(blob: ArrayLike<number>): SlotMap {
+export function slotMapFromKeymap(
+  blob: ArrayLike<number>,
+  layout: Layout,
+  spec: KeymapSpec = DEFAULT_KEYMAP,
+): SlotMap {
   const keyBySlot = new Map<number, KeyDef>()
   const slotByKey = new Map<number, number>()
   const unknownUsages: { slot: number; usage: number }[] = []
-  for (let slot = 0; slot < KEYMAP.slots; slot++) {
-    const at = slot * KEYMAP.entrySize
-    const usage = usageOfKeymapEntry(blob[at] ?? 0, blob[at + 1] ?? 0, blob[at + 2] ?? 0)
+  for (let slot = 0; slot < spec.slots; slot++) {
+    const at = slot * spec.entrySize
+    const usage = usageOfKeymapEntry(blob[at] ?? 0, blob[at + 1] ?? 0, blob[at + 2] ?? 0, spec)
     if (usage === 0) continue
-    const key = keyByUsage(usage)
+    const key = layout.byUsage(usage)
     if (!key) {
       unknownUsages.push({ slot, usage })
       continue
@@ -122,12 +138,15 @@ export const UNUSED_SLOTS: readonly number[] = [12, 20, 53]
  * places, and nothing more. Kept only so a failed keymap read degrades to
  * something ordered rather than to nothing, and the UI labels it as a guess.
  */
-export function fallbackSlotMap(): SlotMap {
+export function fallbackSlotMap(
+  layout: Layout,
+  unusedSlots: readonly number[] = UNUSED_SLOTS,
+): SlotMap {
   const keyBySlot = new Map<number, KeyDef>()
   const slotByKey = new Map<number, number>()
   let slot = 0
-  for (const key of RAVEN61_KEYS) {
-    while (UNUSED_SLOTS.includes(slot)) slot++
+  for (const key of layout.keys) {
+    while (unusedSlots.includes(slot)) slot++
     keyBySlot.set(slot, key)
     slotByKey.set(key.index, slot)
     slot++

@@ -1,5 +1,5 @@
 import { useT } from '../i18n'
-import { useConnection } from '../state/link'
+import { link, useConnection } from '../state/link'
 
 /**
  * What is plugged in, at the top of the rail.
@@ -10,6 +10,10 @@ import { useConnection } from '../state/link'
  * rather than only on the settings tab because they are the first thing worth
  * quoting when something is wrong — a board that reports an unexpected pair is
  * the explanation for half of what can go strange in this app.
+ *
+ * Disconnecting is here too. It was in the top bar, a window's width away from
+ * the name of the thing it disconnects; the one control that acts on the board
+ * as a whole belongs on the card that says which board that is.
  *
  * Firmware build and the board's own settings deliberately stay on the settings
  * tab: those are read over the wire and can fail, and a card in the chrome is
@@ -28,6 +32,7 @@ export function DeviceCard() {
       <div className="ids">
         {hex(device.vendorId)}:{hex(device.productId)}
       </div>
+      <button onClick={() => void link.close()}>{t('device.disconnect')}</button>
     </section>
   )
 }

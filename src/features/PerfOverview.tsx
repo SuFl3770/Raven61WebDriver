@@ -1,18 +1,17 @@
 import { useCallback, useState } from 'react'
 import { t as translate, useT } from '../i18n'
 import { T } from '../i18n/T'
-import { RAVEN61_KEYS, DEFAULT_TRAVEL_MM, type KeyDef } from '../keyboard/raven61'
+import { activeLayout, activeSpec, useDeviceSpec, useLayout } from '../device/active'
+import type { KeyDef } from '../device/spec'
+import { switchTypeName, travelMmFor } from '../device/tables'
 import { supports } from '../protocol/codec'
 import { MM_PER_COUNT, mmToCounts } from '../protocol/encoding'
 import {
-  switchTypeInfo,
-  switchTypeName,
   type GlobalSettings,
   type KeyConfig,
   type KeyPerfSnapshot,
 } from '../protocol/types'
-import { KEY_PERF, decodeKeyPerfRecord } from '../protocol/keyPerf'
-import { KEYMAP } from '../protocol/slotMap'
+import { decodeKeyPerfRecord } from '../protocol/keyPerf'
 import { configStore, useDirtyKeys, useKeyConfigs, useLastRead } from '../state/config'
 import { globalStore, useGlobalSettings } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
@@ -32,7 +31,7 @@ type Status = 'idle' | 'loading' | 'ok' | 'error'
 
 /** Full travel depends on the switch fitted — see SWITCH_TYPES. */
 function travelOf(config: KeyConfig): number {
-  return switchTypeInfo(config.switchType)?.travelMm ?? DEFAULT_TRAVEL_MM
+  return travelMmFor(config.switchType)
 }
 
 function rtLabel(config: KeyConfig): string {
@@ -81,7 +80,7 @@ interface Group {
 
 function groupKeys(configs: readonly KeyConfig[]): Group[] {
   const byId = new Map<string, Group>()
-  for (const key of RAVEN61_KEYS) {
+  for (const key of activeLayout().keys) {
     const config = configs[key.index]
     if (!config) continue
     const id = signatureOf(config)
@@ -94,7 +93,7 @@ function groupKeys(configs: readonly KeyConfig[]): Group[] {
 }
 
 function groupLabel(group: Group): string {
-  if (group.keys.length === RAVEN61_KEYS.length)
+  if (group.keys.length === activeLayout().count)
     return translate('perf.allKeys', { count: group.keys.length })
   const shown = group.keys.slice(0, 10).map((k) => k.label)
   const rest = group.keys.length - shown.length
@@ -113,11 +112,12 @@ function groupLabel(group: Group): string {
 function dumpText(snap: KeyPerfSnapshot, global: GlobalSettings | null): string {
   const hex = (n: number) => n.toString(16).padStart(2, '0')
   const lines: string[] = []
+  const perf = activeSpec().keyPerf
   lines.push(
-    `# key perf blob — ${snap.blob.length} bytes, ${KEY_PERF.slots} slots x ${KEY_PERF.recordSize}`,
+    `# key perf blob — ${snap.blob.length} bytes, ${perf.slots} slots x ${perf.recordSize}`,
   )
   lines.push(
-    `# slot map: ${snap.slotMap.source} — ${snap.slotMap.slotByKey.size}/${RAVEN61_KEYS.length} keys resolved`,
+    `# slot map: ${snap.slotMap.source} — ${snap.slotMap.slotByKey.size}/${activeLayout().count} keys resolved`,
   )
   if (snap.slotMap.unknownUsages.length > 0) {
     lines.push(
@@ -128,11 +128,12 @@ function dumpText(snap: KeyPerfSnapshot, global: GlobalSettings | null): string 
   lines.push(`# empty perf slots (${snap.emptySlots.length}): ${snap.emptySlots.join(',') || 'none'}`)
   if (global) lines.push(`# global 0x05 reply: ${[...global.raw].map(hex).join(' ')}`)
   lines.push('# slot  perf bytes               keymap    key         act mode rtP rtR dzT dzB sw flags')
-  for (let slot = 0; slot < KEY_PERF.slots; slot++) {
-    const at = slot * KEY_PERF.recordSize
-    const bytes = [...snap.blob.subarray(at, at + KEY_PERF.recordSize)].map(hex).join(' ')
+  const keymapEntry = activeSpec().keymap.entrySize
+  for (let slot = 0; slot < perf.slots; slot++) {
+    const at = slot * perf.recordSize
+    const bytes = [...snap.blob.subarray(at, at + perf.recordSize)].map(hex).join(' ')
     const km = snap.keymap
-      ? [...snap.keymap.subarray(slot * KEYMAP.entrySize, slot * KEYMAP.entrySize + KEYMAP.entrySize)]
+      ? [...snap.keymap.subarray(slot * keymapEntry, slot * keymapEntry + keymapEntry)]
           .map(hex)
           .join(' ')
       : '-- -- --'
@@ -150,6 +151,8 @@ function dumpText(snap: KeyPerfSnapshot, global: GlobalSettings | null): string 
 }
 
 export function PerfOverview() {
+  const { keys } = useLayout()
+  const spec = useDeviceSpec()
   const codec = useCodec()
   const { connected } = useConnection()
   const configs = useKeyConfigs()
@@ -208,7 +211,7 @@ export function PerfOverview() {
           <NotDecoded what="perf.what" />
         ) : (
           <Notice>
-            <T k="perf.needDevice" params={{ keys: RAVEN61_KEYS.length }} />
+            <T k="perf.needDevice" params={{ keys: keys.length }} />
           </Notice>
         )}
       </Panel>
@@ -218,7 +221,7 @@ export function PerfOverview() {
   const groups = groupKeys(configs)
   const uniform = groups.length === 1
   const emptyKeys = snapshot
-    ? RAVEN61_KEYS.filter((k) => {
+    ? keys.filter((k) => {
         const slot = snapshot.slotMap.slotByKey.get(k.index)
         return slot === undefined || snapshot.emptySlots.includes(slot)
       })
@@ -253,7 +256,7 @@ export function PerfOverview() {
             ·{' '}
             {t('perf.slotMap.count', {
               resolved: snapshot.slotMap.slotByKey.size,
-              total: RAVEN61_KEYS.length,
+              total: keys.length,
             })}
           </span>
         )}
@@ -307,7 +310,7 @@ export function PerfOverview() {
         </span>
         <label className="small">
           <input type="checkbox" checked={perKey} onChange={(e) => setPerKey(e.target.checked)} />{' '}
-          {t('perf.expandAll', { rows: RAVEN61_KEYS.length })}
+          {t('perf.expandAll', { rows: keys.length })}
         </label>
       </div>
 
@@ -326,7 +329,7 @@ export function PerfOverview() {
           </thead>
           <tbody>
             {perKey
-              ? RAVEN61_KEYS.map((k) => {
+              ? keys.map((k) => {
                   const c = configs[k.index]
                   if (!c) return null
                   return <Row key={k.index} name={k.label} config={c} />
@@ -337,7 +340,7 @@ export function PerfOverview() {
                     name={groupLabel(g)}
                     config={g.config}
                     // The all-keys label already carries the count.
-                    count={g.keys.length === RAVEN61_KEYS.length ? undefined : g.keys.length}
+                    count={g.keys.length === keys.length ? undefined : g.keys.length}
                   />
                 ))}
           </tbody>
@@ -350,7 +353,7 @@ export function PerfOverview() {
             <strong>
               {t('perf.emptySlots.title', {
                 count: emptyKeys.length,
-                bytes: KEY_PERF.recordSize,
+                bytes: spec.keyPerf.recordSize,
               })}
             </strong>
             <div className="small" style={{ marginTop: 4 }}>
@@ -370,7 +373,7 @@ export function PerfOverview() {
         <div style={{ marginTop: 12 }}>
           <div className="row">
             <button onClick={() => setShowRaw((v) => !v)}>
-              {showRaw ? t('perf.hideRaw') : t('perf.showRaw', { slots: KEY_PERF.slots })}
+              {showRaw ? t('perf.hideRaw') : t('perf.showRaw', { slots: spec.keyPerf.slots })}
             </button>
             {showRaw && (
               <button
@@ -381,8 +384,8 @@ export function PerfOverview() {
             )}
             <span className="small dim">
               {t('perf.nonEmpty', {
-                used: KEY_PERF.slots - snapshot.emptySlots.length,
-                total: KEY_PERF.slots,
+                used: spec.keyPerf.slots - snapshot.emptySlots.length,
+                total: spec.keyPerf.slots,
               })}
             </span>
           </div>

@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react'
-import { FILTER_PRESETS, describeDevice, pickConfigInterface, rankDevice } from '../hid/filters'
+import { describeDevice, filterPresets, pickConfigInterface, rankDevice } from '../hid/filters'
 import { HidLink } from '../hid/link'
 import { isVendorPage } from '../hid/reportInfo'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
+import { useActiveDevice } from '../device/active'
+import { codecLabel } from '../protocol/codec'
 import { Notice, Panel } from '../ui/Panel'
+import { setForcedProtocol, useForcedProtocol } from '../state/forcedProtocol'
 import { link, refreshCodec, useCodec, useConnection } from '../state/link'
+import { Select } from '../ui/Select'
 
 export function DevicePanel() {
   const { device, connected } = useConnection()
   const codec = useCodec()
+  const { matched, forced } = useActiveDevice()
+  const forcing = useForcedProtocol()
   const t = useT()
-  const [presetId, setPresetId] = useState(FILTER_PRESETS[0]!.id)
+  const presets = filterPresets()
+  const [presetId, setPresetId] = useState(presets[0]!.id)
   const [known, setKnown] = useState<HIDDevice[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -43,7 +50,7 @@ export function DevicePanel() {
     }
   }
 
-  const preset = FILTER_PRESETS.find((p) => p.id === presetId)!
+  const preset = presets.find((p) => p.id === presetId)!
   const ranked = known
     .map((d) => ({ d, rank: rankDevice(d) }))
     .sort((a, b) => b.rank.score - a.rank.score)
@@ -55,13 +62,11 @@ export function DevicePanel() {
   return (
     <Panel title={t('device.title')}>
       <div className="row">
-        <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
-          {FILTER_PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {t(p.labelKey)}
-            </option>
-          ))}
-        </select>
+        <Select
+          value={presetId}
+          onChange={setPresetId}
+          options={presets.map((p) => ({ value: p.id, label: t(p.labelKey) }))}
+        />
         <button className="primary" onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
           {t('device.pick')}
         </button>
@@ -72,7 +77,7 @@ export function DevicePanel() {
           <span className={`dot ${connected ? 'on' : 'off'}`} />
           {connected ? t('app.connected') : t('app.disconnected')}
         </span>
-        <span className="dim small">{t('device.codec', { codec: t(codec.labelKey) })}</span>
+        <span className="dim small">{t('device.codec', { codec: codecLabel(codec) })}</span>
       </div>
       <div className="small dim" style={{ marginTop: 6 }}>
         {t(preset.hintKey)}
@@ -88,6 +93,28 @@ export function DevicePanel() {
         <div style={{ marginTop: 10 }}>
           <Notice kind="warn">
             <T k="device.wrongInterface" />
+          </Notice>
+        </div>
+      )}
+
+      {/*
+        ⚠ Development only, and only where it can do something: a device that
+        no definition claims. It sits in this panel — which the debug gesture
+        already gates — rather than on the settings tab, because the traffic log
+        is the thing you watch while using it. See src/device/forced.ts.
+      */}
+      {connected && !matched && (
+        <div style={{ marginTop: 12 }}>
+          <Notice kind={forced ? 'warn' : undefined}>
+            <strong>{t('device.force.title')}</strong>
+            <div className="small" style={{ marginTop: 4 }}>
+              {forced ? t('device.force.active') : t('device.force.body')}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => setForcedProtocol(!forcing)}>
+                {forcing ? t('device.force.off') : t('device.force.on')}
+              </button>
+            </div>
           </Notice>
         </div>
       )}

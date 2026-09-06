@@ -1,7 +1,18 @@
 import { useSyncExternalStore } from 'react'
-import { DEFAULT_TRAVEL_MM, KEY_COUNT } from '../keyboard/raven61'
+import { activeLayout, activeSpec } from '../device/active'
 import { FACTORY_DEFAULTS, countsToMm } from '../protocol/encoding'
 import type { KeyConfig } from '../protocol/types'
+
+/**
+ * How many keys the attached board has.
+ *
+ * Read on every use rather than captured once: the key count changes when a
+ * different board is opened, and a size captured at module load would be the
+ * first board's forever.
+ */
+function keyCount(): number {
+  return activeLayout().count
+}
 
 /** Factory defaults, converted from the profile 0 counts in `t_config_data`. */
 export function defaultKeyConfig(): KeyConfig {
@@ -27,13 +38,13 @@ export function defaultKeyConfig(): KeyConfig {
  * board is an explicit action so an un-decoded protocol never writes silently.
  */
 class ConfigStore {
-  private configs: KeyConfig[] = Array.from({ length: KEY_COUNT }, defaultKeyConfig)
+  private configs: KeyConfig[] = Array.from({ length: keyCount() }, defaultKeyConfig)
   /**
    * What the board had at the last read. Kept so an edit can be shown as a
    * change from the hardware rather than as a bare number, and so it can be
    * dropped again without a re-read.
    */
-  private baseline: readonly KeyConfig[] = Array.from({ length: KEY_COUNT }, defaultKeyConfig)
+  private baseline: readonly KeyConfig[] = Array.from({ length: keyCount() }, defaultKeyConfig)
   /**
    * When the board was last read, or null if it never was.
    *
@@ -47,7 +58,7 @@ class ConfigStore {
   /** Cached snapshot: useSyncExternalStore requires a stable identity between mutations. */
   private dirtyList: readonly number[] = []
   private listeners = new Set<() => void>()
-  travelMm = DEFAULT_TRAVEL_MM
+  travelMm = activeSpec().layout.travelMm
 
   all(): readonly KeyConfig[] {
     return this.configs
@@ -85,8 +96,9 @@ class ConfigStore {
 
   /** Replaces the whole set, e.g. after reading from the board. */
   load(configs: readonly KeyConfig[]): void {
-    this.configs = configs.slice(0, KEY_COUNT)
-    while (this.configs.length < KEY_COUNT) this.configs.push(defaultKeyConfig())
+    const count = keyCount()
+    this.configs = configs.slice(0, count)
+    while (this.configs.length < count) this.configs.push(defaultKeyConfig())
     // A read is the only thing that moves the baseline: it is the one moment
     // this app knows what the hardware holds.
     this.baseline = this.configs.slice()
@@ -118,7 +130,8 @@ class ConfigStore {
    * next write has to follow a real read.
    */
   clear(): void {
-    this.configs = Array.from({ length: KEY_COUNT }, defaultKeyConfig)
+    this.travelMm = activeSpec().layout.travelMm
+    this.configs = Array.from({ length: keyCount() }, defaultKeyConfig)
     this.baseline = this.configs.slice()
     this.readAt = null
     this.dirty.clear()

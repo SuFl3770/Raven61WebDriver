@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  FILTER_PRESETS,
+  filterPresets,
   describeDevice,
   pickConfigInterface,
   scoreDevice,
@@ -50,7 +50,7 @@ export function Connect() {
   // The Raven filter, so the chooser is not a list of every HID device in the
   // machine. The other presets exist for the debug tab, where a board that
   // reports an unexpected VID can still be reached.
-  const preset = FILTER_PRESETS[0]!
+  const preset = filterPresets()[0]!
   // Chrome remembers granted devices across reloads, so a second visit should
   // not need the chooser again. Only offer one that actually looks like a
   // configurator interface: an unrelated device the user once allowed would

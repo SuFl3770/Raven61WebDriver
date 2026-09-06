@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useT } from '../i18n'
 import { useSyncState } from '../state/sync'
+import { useExitValue } from './useExit'
 
 /** How long the confirmation stays on screen. */
 const TOAST_MS = 2400
+
+/**
+ * And how long it takes to leave once it has. Must match `.toast.closing` in
+ * styles.css — see ui/useExit.ts on why the two are written twice.
+ */
+const EXIT_MS = 160
 
 /**
  * Says how many keys just reached the board, then gets out of the way.
@@ -35,11 +42,26 @@ export function ApplyToast() {
     return () => clearTimeout(id)
   }, [shown])
 
-  if (!shown) return null
+  // Held for the length of its exit after the timer drops it, with its text —
+  // a toast that blanked halfway through leaving would be worse than one that
+  // disappeared. See ui/useExit.ts.
+  const { shown: toast, closing } = useExitValue(shown, EXIT_MS)
+  if (!toast) return null
 
   return (
-    <div className="toast" role="status" aria-live="polite">
-      {t('apply.applied', { count: shown.count })}
+    <div
+      /*
+       * Keyed by the moment it announces, so a second write during the first
+       * one's exit remounts this and plays the arrival again. Without a key
+       * React would reuse the element mid-fade, and the new count would fade
+       * out on the old one's animation.
+       */
+      key={toast.at}
+      className={`toast${closing ? ' closing' : ''}`}
+      role="status"
+      aria-live="polite"
+    >
+      {t('apply.applied', { count: toast.count })}
     </div>
   )
 }

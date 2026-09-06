@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { DEFAULT_ACCENT } from './accent'
+import { DEFAULT_THEME, type Theme } from './theme'
 
 /**
  * App preferences, kept out of the protocol layer and persisted per browser.
@@ -20,6 +21,10 @@ import { DEFAULT_ACCENT } from './accent'
  * offers. Stored as the colour rather than as an index or a name so that
  * reordering or renaming the list cannot repaint someone's app behind them.
  *
+ * `theme` is light, dark, or whatever the machine says — see state/theme.ts.
+ * Stored alongside the accent because they are the same kind of thing: how this
+ * browser draws the app, which never reaches the board.
+ *
  * How big the interface is drawn is deliberately *not* here. It follows the
  * window on its own — see `html { font-size }` in styles.css — and a control
  * for it would be a second answer to a question already answered, with the
@@ -28,11 +33,12 @@ import { DEFAULT_ACCENT } from './accent'
 export interface Settings {
   debug: boolean
   accent: string
+  theme: Theme
 }
 
 const STORAGE_KEY = 'raven61.settings.v1'
 
-const DEFAULTS: Settings = { debug: false, accent: DEFAULT_ACCENT }
+const DEFAULTS: Settings = { debug: false, accent: DEFAULT_ACCENT, theme: DEFAULT_THEME }
 
 class SettingsStore {
   private value: Settings = DEFAULTS
@@ -82,6 +88,9 @@ function known(value: Partial<Settings>): Settings {
     // version offers is state/accent.ts's call, and it decides that every time
     // it applies rather than once at load.
     accent: typeof value.accent === 'string' ? value.accent : DEFAULTS.accent,
+    // Same division of labour as the accent above: shape here, and whether the
+    // name is still one this version knows is state/theme.ts's call.
+    theme: typeof value.theme === 'string' ? (value.theme as Theme) : DEFAULTS.theme,
   }
 }
 

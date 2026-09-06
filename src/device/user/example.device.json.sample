@@ -1,0 +1,61 @@
+{
+  "id": "example-pad-v1",
+  "name": "Example Pad",
+  "notes": "A template, not a real keyboard. Copy this to <name>.device.json, put your board's ids and key table in it, and delete this note.",
+  "confidence": "guess",
+
+  "//basedOn": "Required. It says you have CHECKED that this board answers the Raven61's protocol — everything this file leaves out is that board's framing, command bytes and block sizes. Do not set it on a hunch.",
+  "basedOn": "raven61-v1",
+
+  "//usb": "Exact match, vendor and product. A device whose id is not listed here gets no codec at all — the app never guesses that an unlisted board is a sibling.",
+  "usb": {
+    "vendorId": 4660,
+    "productIds": [22136]
+  },
+
+  "layout": {
+    "units": { "width": 3, "height": 2 },
+    "travelMm": 4.0,
+    "keys": [
+      { "index": 0, "label": "1", "code": 30, "x": 0, "y": 0, "w": 1, "keyIndex": 0, "lightIndex": 0 },
+      { "index": 1, "label": "2", "code": 31, "x": 1, "y": 0, "w": 1, "keyIndex": 1, "lightIndex": 1 },
+      { "index": 2, "label": "3", "code": 32, "x": 2, "y": 0, "w": 1, "keyIndex": 2, "lightIndex": 2 },
+      { "index": 3, "label": "4", "code": 33, "x": 0, "y": 1, "w": 1, "keyIndex": 3, "lightIndex": 3 },
+      { "index": 4, "label": "5", "code": 34, "x": 1, "y": 1, "w": 1, "keyIndex": 4, "lightIndex": 4 },
+      { "index": 5, "label": "6", "code": 35, "x": 2, "y": 1, "w": 1, "keyIndex": 5, "lightIndex": 5 }
+    ]
+  },
+
+  "commands": {
+    "readKeyPerf": 160,
+    "writeKeyPerf": 161,
+    "readGlobalSettings": 5,
+    "writeGlobalSettings": 6,
+    "readKeymapDefaults": 7,
+    "readKeymapLive": 8,
+    "writeKeymapLive": 9,
+    "analogTestOn": 168,
+    "analogTestOff": 169,
+    "readCalibration": 170,
+    "readFirmware": 3,
+    "factoryReset": null
+  },
+
+  "keyPerf": { "slots": 16 },
+  "keymap": { "slots": 16, "layers": 1, "layerBytes": 64, "defaultsBlobSize": 64 },
+  "calibration": { "records": 16, "recordSize": 8 },
+  "slotMap": { "unusedSlots": [], "resolveTolerance": 1 },
+
+  "//switchTypes": "value and travelMm are the board's; vendor, magnetGauss and color are description, all optional, and left out when unknown rather than guessed.",
+  "switchTypes": [
+    { "value": 0, "vendor": "Example Co", "name": "Example Linear", "travelMm": 4.0, "selectable": true, "magnetGauss": 350, "color": "#4c8bf5" },
+    { "value": 1, "name": "Example Short", "travelMm": 3.4, "selectable": true }
+  ],
+
+  "reportRates": [
+    { "value": 3, "hz": 2000 },
+    { "value": 4, "hz": 1000 }
+  ],
+
+  "profileSupport": { "kind": "none", "count": 1, "scope": [], "hostSwitchable": false }
+}

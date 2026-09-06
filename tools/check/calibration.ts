@@ -28,7 +28,7 @@ import {
 } from '../../src/protocol/calibration'
 import { countBottomedOut } from '../../src/features/Calibration'
 import { COMMAND, SAFE_COMMANDS, buildBlock, checksum } from '../../src/protocol/frame'
-import { SWITCH_TYPES } from '../../src/protocol/types'
+import { RAVEN61_SWITCH_TYPES as SWITCH_TYPES } from '../../src/device/boards/raven61/switches'
 
 let pass = 0
 const fails: string[] = []

@@ -1,5 +1,5 @@
 import { useT } from '../i18n'
-import { supports } from '../protocol/codec'
+import { codecLabel, supports } from '../protocol/codec'
 import { useCodec, useConnection } from '../state/link'
 import { boardSync, useSyncState } from '../state/sync'
 
@@ -34,7 +34,7 @@ export function SyncBadge() {
   // every tab quietly goes nowhere, which is worth a permanent amber.
   if (!supports(codec, 'writeKeyPerf')) {
     return (
-      <div className="sync-badge" title={t('apply.noWrite', { codec: t(codec.labelKey) })}>
+      <div className="sync-badge" title={t('apply.noWrite', { codec: codecLabel(codec) })}>
         <span className="dot busy" />
         {t('apply.readOnly')}
       </div>

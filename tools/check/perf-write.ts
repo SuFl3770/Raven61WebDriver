@@ -28,7 +28,9 @@ import {
 } from '../../src/protocol/keyPerf'
 import { KEYMAP, slotMapFromKeymap } from '../../src/protocol/slotMap'
 import { writeKeyPerfConfigs } from '../../src/protocol/raven61'
-import { RAVEN61_KEYS } from '../../src/keyboard/raven61'
+import { RAVEN61_KEYS } from '../../src/device/boards/raven61/layout'
+import { raven61Spec } from '../../src/device/boards/raven61/index'
+import { layoutOf } from '../../src/device/layout'
 import { mmToCounts } from '../../src/protocol/encoding'
 import type { KeyConfig } from '../../src/protocol/types'
 import { defaultKeyConfig } from '../../src/state/config'
@@ -154,7 +156,7 @@ const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
 // and every mapping assertion still passed, because the fallback happened to
 // agree with it.
 {
-  const map = slotMapFromKeymap(new FakeBoard().keymap)
+  const map = slotMapFromKeymap(new FakeBoard().keymap, layoutOf(raven61Spec.layout))
   eq('fake keymap resolves every key', map.slotByKey.size, RAVEN61_KEYS.length)
   eq('and places A where the test expects', map.slotByKey.get(A.index), slotFor(A.index))
   eq('no unknown usages', map.unknownUsages, [])

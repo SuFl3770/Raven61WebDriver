@@ -20,7 +20,7 @@
 import { BoardSync } from '../../src/state/sync'
 import { configStore, defaultKeyConfig } from '../../src/state/config'
 import type { HidLink } from '../../src/hid/link'
-import type { Raven61Codec } from '../../src/protocol/codec'
+import type { KeyboardCodec } from '../../src/protocol/codec'
 
 let pass = 0
 const fails: string[] = []
@@ -67,7 +67,7 @@ async function trace<T>(what: string, result: () => T): Promise<T> {
 }
 
 const boardSync = new BoardSync({
-  codec: () => codec as unknown as Raven61Codec,
+  codec: () => codec as unknown as KeyboardCodec,
   connected: () => true,
   link: () => ({}) as HidLink,
 })

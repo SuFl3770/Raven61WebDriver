@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { KEY_COUNT } from '../keyboard/raven61'
+import { activeLayout } from '../device/active'
 
 /**
  * Which keys the per-key panels act on.
@@ -46,7 +46,20 @@ class SelectionStore {
   }
 
   selectAll(): void {
-    this.set = new Set(Array.from({ length: KEY_COUNT }, (_, i) => i))
+    this.set = new Set(activeLayout().keys.map((k) => k.index))
+    this.emit()
+  }
+
+  /**
+   * Every key that is not selected, and none of the ones that are.
+   *
+   * Built from the layout rather than from the current set, the way
+   * `selectAll` is: what "not selected" means is the board's own list of keys,
+   * and a set that somehow held an index the layout does not have should come
+   * out of this empty-handed rather than carried over.
+   */
+  invert(): void {
+    this.set = new Set(activeLayout().keys.map((k) => k.index).filter((i) => !this.set.has(i)))
     this.emit()
   }
 

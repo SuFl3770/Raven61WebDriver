@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { useT } from '../i18n'
 import { ACCENTS, resolveAccent } from '../state/accent'
 import { settings, useSettings } from '../state/settings'
@@ -23,7 +24,10 @@ export function AccentPicker() {
           <button
             key={color}
             className="accent-swatch"
-            style={{ background: color }}
+            // The colour as chosen; what the dot is actually filled with is the
+            // stylesheet's call, because the light theme paints a knocked-down
+            // version of it and the swatch has to show what it will get.
+            style={{ '--swatch': color } as CSSProperties}
             aria-pressed={color === current}
             aria-label={t('settings.accent.swatch', { color })}
             title={color}

@@ -10,7 +10,9 @@
  * Units here are millimetres. The wire encoding is the codec's problem.
  */
 
+import type { ReportRateSpec, SwitchTypeSpec } from '../device/spec'
 import { t, type MessageKey } from '../i18n'
+import type { KeyBinding } from './keymap'
 
 /**
  * `key_mode` in the stock schema. 0 = off, 1 = rapid trigger, 2 = rapid trigger
@@ -20,70 +22,14 @@ import { t, type MessageKey } from '../i18n'
 export type KeyMode = 'normal' | 'rapidTrigger'
 
 /**
- * `switch_type` — which magnetic switch is fitted, reported per key by the
- * board in the performance blob.
+ * A magnetic switch the board can report.
  *
- * **Names are hardware-derived.** Each type was set for the whole board in the
- * stock driver and read back here, so the value-to-name pairing below is
- * measured, not inferred. That matters because it contradicts the binary: the
- * stock driver pushes language strings 1450-1457 in ascending order as varargs
- * (0x44af0d-0x44aff8), which would put Light Breeze at 0, and hardware says 0
- * is Magnetic Orange. Four of the eight came out swapped that way — 0 with 4,
- * and 1 with 3 — while 2, 5, 6 and 7 matched. So that vararg list is not the
- * order the selector ends up in, and how it gets reordered is still unknown.
- * See docs, "switch name order", for the open question.
- *
- * Travel comes from a dword table at 0x576c8c, and stays attached to the *value*
- * rather than the name: the driver indexes it with the raw `switch_type`
- * (0x43a7df), the same number it hands to SetCurSel. Its 3.32 / 3.80 / 3.50 /
- * 3.40 / 2.50 mm entries are why total stroke cannot be assumed to be 4 mm for
- * every board.
- *
- * Older string ids 502-504 name a different, shorter list ("Jiadalong Magnetic
- * Jade/White Axis", "Hejin axis") which belongs to another model's UI.
+ * The *list* is a property of the board, so it lives in its spec and is read
+ * through `device/tables.ts`; this is only the shape. It was in this file when
+ * there was one board, and moving it is what stopped a second board from
+ * showing the Raven61's switch names.
  */
-export interface SwitchTypeInfo {
-  value: number
-  name: string
-  /** Full travel in mm, from the stock driver's own table. */
-  travelMm: number
-  /**
-   * False for an entry that exists in the driver's table but not as a switch
-   * anyone can fit. Kept for decoding — a board reporting the value still gets
-   * a name instead of a bare number — but never offered as something to write.
-   */
-  selectable: boolean
-}
-
-export const SWITCH_TYPES: readonly SwitchTypeInfo[] = [
-  { value: 0, name: 'Magnetic Orange', travelMm: 4.0, selectable: true },
-  { value: 1, name: 'Magnetic White', travelMm: 4.0, selectable: true },
-  { value: 2, name: 'Magnetic Jade', travelMm: 3.32, selectable: true },
-  { value: 3, name: 'Light Breeze', travelMm: 4.0, selectable: true },
-  { value: 4, name: 'Light Breeze V2', travelMm: 3.8, selectable: true },
-  { value: 5, name: 'GEON RAW HE', travelMm: 3.5, selectable: true },
-  { value: 6, name: 'TTC Magneto', travelMm: 3.4, selectable: true },
-  // Not a switch that exists — confirmed by the board's owner. It is in the
-  // driver's table, so it is decoded, but writing it would tell the board its
-  // keys have a 2.50 mm stroke they do not have, and every depth measured
-  // against that would be wrong.
-  { value: 7, name: 'Chocolate Dwarf', travelMm: 2.5, selectable: false },
-] as const
-
-/** The types a user may actually assign. See SwitchTypeInfo.selectable. */
-export const SELECTABLE_SWITCH_TYPES: readonly SwitchTypeInfo[] = SWITCH_TYPES.filter(
-  (s) => s.selectable,
-)
-
-export function switchTypeInfo(value: number | undefined): SwitchTypeInfo | undefined {
-  return value === undefined ? undefined : SWITCH_TYPES.find((s) => s.value === value)
-}
-
-/** Never invents a name: an out-of-range value is shown as the number it is. */
-export function switchTypeName(value: number | undefined): string {
-  if (value === undefined) return '—'
-  return switchTypeInfo(value)?.name ?? t('protocol.switchType.unknown', { value })
-}
+export type SwitchTypeInfo = SwitchTypeSpec
 
 export interface RapidTrigger {
   enabled: boolean
@@ -197,50 +143,12 @@ export interface FirmwareIdentity {
 }
 
 /**
- * `reporte_rate` (the vendor's own typo) — the USB polling rate.
+ * A USB polling rate the board accepts.
  *
- * The value on the wire is *not* a rate, and not an index into the list as it
- * reads either: it is the number the stock driver attaches to each item of its
- * own report-rate combo box (built at 0x4443ef-0x444527, one AddString per
- * entry with the value pushed alongside the language-string id). Those four
- * pairings are what this table is:
- *
- *   1 -> string 80 "8000Hz Report Rate"
- *   2 -> string 81 "4000Hz"
- *   3 -> string 82 "2000Hz"
- *   4 -> string 83 "1000Hz"
- *
- * The shipped profile database agrees: `reporte_rate` is 1 in the default
- * profile and 4 in the three user profiles, the two ends of that range and
- * nothing outside it. 8000 Hz being on the list is not a mistake either — the
- * firmware calls itself `HALL_HS_USB_KB`, and high speed is what it takes.
- *
- * Nothing here is confirmed against hardware: no capture of the stock driver
- * changing the rate has been taken, so the pairing rests on the driver's own
- * table alone.
+ * Same as SwitchTypeInfo: the values are the board's and live in its spec, and
+ * `device/tables.ts` is what reads them.
  */
-export interface ReportRateInfo {
-  value: number
-  hz: number
-}
-
-export const REPORT_RATES: readonly ReportRateInfo[] = [
-  { value: 1, hz: 8000 },
-  { value: 2, hz: 4000 },
-  { value: 3, hz: 2000 },
-  { value: 4, hz: 1000 },
-] as const
-
-export function reportRateInfo(value: number | undefined): ReportRateInfo | undefined {
-  return value === undefined ? undefined : REPORT_RATES.find((r) => r.value === value)
-}
-
-/** Never invents a rate: a value outside the driver's table is shown as itself. */
-export function reportRateName(value: number | undefined): string {
-  if (value === undefined) return '—'
-  const info = reportRateInfo(value)
-  return info ? t('board.rate.hz', { hz: info.hz }) : t('board.rate.unknown', { value })
-}
+export type ReportRateInfo = ReportRateSpec
 
 /**
  * `debounce_level`, `payload[15]` bits 5-6.
@@ -337,8 +245,16 @@ export interface SlotMapInfo {
   unknownUsages: { slot: number; usage: number }[]
 }
 
+/**
+ * What one key of one layer is bound to.
+ *
+ * It used to be a bare HID usage, from before the record was decoded. The board
+ * stores three bytes that can also be a mouse button, a consumer key, a macro,
+ * an advanced key or a firmware action, so a usage alone cannot hold what a
+ * read finds — see protocol/keymap.ts for the record and the catalogs.
+ */
 export interface KeymapEntry {
-  /** HID usage code or a vendor-specific action code. */
-  code: number
-  label?: string
+  binding: KeyBinding
+  /** Slot the record came from, when the slot map resolved one for the key. */
+  slot?: number
 }

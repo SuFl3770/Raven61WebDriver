@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { matchFingerprint } from '../keyboard/fingerprints'
-import { RAVEN61_KEYS, keyByUsage } from '../keyboard/raven61'
+import { activeLayout } from '../device/active'
 /** The fields needed to identify a key, common to events and samples. */
 export interface KeyIdentity {
   usage: number
@@ -54,7 +54,7 @@ class SensorMap {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return
       for (const [fp, index] of JSON.parse(raw) as [string, number][]) {
-        if (RAVEN61_KEYS[index]) this.map.set(fp, index)
+        if (activeLayout().byIndex(index)) this.map.set(fp, index)
       }
     } catch {
       // A corrupt or unavailable store just means we start empty.
@@ -80,7 +80,7 @@ class SensorMap {
    * re-taught without editing the built-in table.
    */
   resolve(event: KeyIdentity): number | undefined {
-    if (event.usageIsReal) return keyByUsage(event.usage)?.index
+    if (event.usageIsReal) return activeLayout().byUsage(event.usage)?.index
     const bound = this.map.get(event.fingerprint)
     if (bound !== undefined) return bound
     if (this.ignoreBuiltIn) return undefined
@@ -140,7 +140,7 @@ class SensorMap {
   toSource(): string {
     const rows = [...this.map]
       .sort((a, b) => a[1] - b[1])
-      .map(([fp, index]) => `  ['${fp}', ${index}], // ${RAVEN61_KEYS[index]?.label ?? '?'}`)
+      .map(([fp, index]) => `  ['${fp}', ${index}], // ${activeLayout().byIndex(index)?.label ?? '?'}`)
     return `export const KEY_FINGERPRINTS = new Map<string, number>([\n${rows.join('\n')}\n])`
   }
 }

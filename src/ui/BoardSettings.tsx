@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
-import { supports } from '../protocol/codec'
-import { GLOBAL, type GlobalPatch } from '../protocol/raven61'
-import {
-  DEBOUNCE_LEVELS,
-  REPORT_RATES,
-  debounceLevelName,
-  reportRateInfo,
-  reportRateName,
-} from '../protocol/types'
+import { useDeviceSpec } from '../device/active'
+import { reportRateInfo, reportRateName, reportRates } from '../device/tables'
+import { codecLabel, supports } from '../protocol/codec'
+import type { GlobalPatch } from '../protocol/global'
+import { DEBOUNCE_LEVELS, debounceLevelName } from '../protocol/types'
 import { globalStore, useGlobalSettings } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
 import { NotDecoded, Notice, Panel } from './Panel'
+import { Select } from './Select'
 
 /**
  * The two board-wide settings this keyboard actually has: the USB polling rate
@@ -32,6 +29,7 @@ import { NotDecoded, Notice, Panel } from './Panel'
  * on the buttons below. A retry appears only if that read failed.
  */
 export function BoardSettings() {
+  const spec = useDeviceSpec()
   const codec = useCodec()
   const { connected } = useConnection()
   const t = useT()
@@ -140,29 +138,31 @@ export function BoardSettings() {
         <span className="small dim" style={{ minWidth: 96 }}>
           {t('board.rate.label')}
         </span>
-        <select
-          value={shownRate ?? ''}
+        <Select
+          value={shownRate === null ? '' : String(shownRate)}
           disabled={!connected || rateOnBoard === null || busy !== null}
-          onChange={(e) => setRate(Number(e.target.value))}
+          onChange={(v) => setRate(Number(v))}
           style={{ minWidth: 180 }}
-        >
-          {shownRate === null && <option value="">—</option>}
-          {/*
-            A value outside the driver's table is listed as disabled rather than
-            hidden: the select would otherwise show a blank while the board
-            plainly has a value, which reads as "unset".
-          */}
-          {rateUnknown && (
-            <option value={rateOnBoard ?? ''} disabled>
-              {reportRateName(rateOnBoard ?? undefined)}
-            </option>
-          )}
-          {REPORT_RATES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {t('board.rate.hz', { hz: r.hz })}
-            </option>
-          ))}
-        </select>
+          options={[
+            ...(shownRate === null ? [{ value: '', label: '—' }] : []),
+            /*
+              A value outside the driver's table is listed as disabled rather
+              than hidden: the control would otherwise show a blank while the
+              board plainly has a value, which reads as "unset".
+            */
+            ...(rateUnknown
+              ? [{
+                  value: rateOnBoard === null ? '' : String(rateOnBoard),
+                  label: reportRateName(rateOnBoard ?? undefined),
+                  disabled: true,
+                }]
+              : []),
+            ...reportRates().map((r) => ({
+              value: String(r.value),
+              label: t('board.rate.hz', { hz: r.hz }),
+            })),
+          ]}
+        />
         <span className="small dim">
           {t('actuation.board')} <b className="mono">{reportRateName(rateOnBoard ?? undefined)}</b>
         </span>
@@ -176,25 +176,27 @@ export function BoardSettings() {
         <span className="small dim" style={{ minWidth: 96 }}>
           {t('board.debounce.label')}
         </span>
-        <select
-          value={shownDebounce ?? ''}
+        <Select
+          value={shownDebounce === null ? '' : String(shownDebounce)}
           disabled={!connected || debounceOnBoard === null || busy !== null}
-          onChange={(e) => setDebounce(Number(e.target.value))}
+          onChange={(v) => setDebounce(Number(v))}
           style={{ minWidth: 180 }}
-        >
-          {shownDebounce === null && <option value="">—</option>}
-          {debounceOnBoard !== null &&
-            !DEBOUNCE_LEVELS.some((d) => d.value === debounceOnBoard) && (
-              <option value={debounceOnBoard} disabled>
-                {debounceLevelName(debounceOnBoard)}
-              </option>
-            )}
-          {DEBOUNCE_LEVELS.map((d) => (
-            <option key={d.value} value={d.value}>
-              {d.value} · {t(d.labelKey)}
-            </option>
-          ))}
-        </select>
+          options={[
+            ...(shownDebounce === null ? [{ value: '', label: '—' }] : []),
+            ...(debounceOnBoard !== null &&
+            !DEBOUNCE_LEVELS.some((d) => d.value === debounceOnBoard)
+              ? [{
+                  value: String(debounceOnBoard),
+                  label: debounceLevelName(debounceOnBoard),
+                  disabled: true,
+                }]
+              : []),
+            ...DEBOUNCE_LEVELS.map((d) => ({
+              value: String(d.value),
+              label: `${d.value} · ${t(d.labelKey)}`,
+            })),
+          ]}
+        />
         <span className="small dim">
           {t('actuation.board')}{' '}
           <b className="mono">{debounceLevelName(debounceOnBoard ?? undefined)}</b>
@@ -233,7 +235,7 @@ export function BoardSettings() {
             </>
           )}
           {!canWrite && (
-            <span className="small dim">{t('apply.noWrite', { codec: t(codec.labelKey) })}</span>
+            <span className="small dim">{t('apply.noWrite', { codec: codecLabel(codec) })}</span>
           )}
         </div>
       )}
@@ -255,9 +257,9 @@ export function BoardSettings() {
       {global && (
         <div className="small dim mono" style={{ marginTop: 10 }}>
           {t('board.raw', {
-            rate: `0x${(global.raw[GLOBAL.rate] ?? 0).toString(16).padStart(2, '0')}`,
+            rate: `0x${(global.raw[spec.global.offsets.rate] ?? 0).toString(16).padStart(2, '0')}`,
             tick: global.tickRate,
-            flags: `0x${(global.raw[GLOBAL.flags] ?? 0).toString(16).padStart(2, '0')}`,
+            flags: `0x${(global.raw[spec.global.offsets.flags] ?? 0).toString(16).padStart(2, '0')}`,
           })}
         </div>
       )}

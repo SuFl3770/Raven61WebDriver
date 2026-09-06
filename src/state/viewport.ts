@@ -20,11 +20,17 @@ import { useSyncExternalStore } from 'react'
  * column no longer fit side by side, and the panels below them stop being
  * readable.
  *
+ * The width was 1280, which is where the sidebar stopped fitting beside the
+ * content. It is no longer where anything breaks: below 1280 the sidebar folds
+ * into a drawer over the page (`@media (max-width: 1279px)` in styles.css) and
+ * hands its whole width back, so a window that size lays out fine. 1000 is
+ * where the content itself gives out, with no column left to reclaim.
+ *
  * These are viewport pixels rather than display pixels, and the two differ by
  * however much the browser's own chrome takes — vertically that is 100–150px,
  * so 620 is roughly what a 720-tall display leaves.
  */
-export const MIN_VIEWPORT = { width: 1280, height: 620 } as const
+export const MIN_VIEWPORT = { width: 1000, height: 620 } as const
 
 export interface Viewport {
   width: number

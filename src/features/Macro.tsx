@@ -10,8 +10,10 @@ import { Notice, Panel } from '../ui/Panel'
  */
 export function Macro() {
   const t = useT()
+  // No title on the panel: the tab's own name is the heading above it now
+  // (App.tsx), and this one only ever repeated it.
   return (
-    <Panel title={t('macro.title')}>
+    <Panel>
       <Notice kind="info">{t('macro.todo')}</Notice>
     </Panel>
   )

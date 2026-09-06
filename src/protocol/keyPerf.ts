@@ -45,6 +45,7 @@
  *   dead-zone fields being non-zero, and the encoder only writes them when the
  *   state is on, so the round trip is stable.
  */
+import type { KeyPerfSpec } from '../device/spec'
 import { countsToMm, mmToCounts } from './encoding'
 import type { KeyConfig, KeyMode } from './types'
 
@@ -110,8 +111,12 @@ const NINE_BITS = 0x1ff
 const FIVE_BITS = 0x1f
 
 /** Reads one 8-byte record out of the blob. */
-export function decodeKeyPerfRecord(blob: ArrayLike<number>, slot: number): KeyPerfRecord {
-  const at = slot * KEY_PERF.recordSize
+export function decodeKeyPerfRecord(
+  blob: ArrayLike<number>,
+  slot: number,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+): KeyPerfRecord {
+  const at = slot * spec.recordSize
   const b = (i: number) => blob[at + i] ?? 0
   const rtUnset = b(4) === 0xff && b(5) === 0xff && b(6) === 0xff && b(7) === 0xff
   const pressDeadzone = rtUnset ? 0 : (b(5) >> 1) & FIVE_BITS
@@ -136,9 +141,12 @@ export function decodeKeyPerfRecord(blob: ArrayLike<number>, slot: number): KeyP
  * sensitivities are forced to at least one count, and dead-zone bits are only
  * laid down when the dead zone is both enabled and non-zero.
  */
-export function encodeKeyPerfRecord(rec: KeyPerfRecord): Uint8Array {
-  const out = new Uint8Array(KEY_PERF.recordSize)
-  const L = KEY_PERF_LIMITS
+export function encodeKeyPerfRecord(
+  rec: KeyPerfRecord,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+): Uint8Array {
+  const out = new Uint8Array(spec.recordSize)
+  const L = spec.limits
   const actuation = clamp(rec.actuationCounts, L.actuationMin, L.actuationMax) - 1
   if (rec.rtUnset) {
     out[0] = (rec.switchType & FIVE_BITS) | (rec.switchFlags & 0xff & ~FIVE_BITS)
@@ -200,26 +208,51 @@ export const KEY_PERF_LIMITS = {
 /** Largest dead zone the 5-bit field can hold: 31 counts, 0.62 mm. */
 export const MAX_DEADZONE_COUNTS = KEY_PERF_LIMITS.deadZoneMax
 
+/**
+ * The geometry and limits every function here assumes when no spec is passed.
+ *
+ * A sibling board states its own in `DeviceSpec.keyPerf`; the *record layout*
+ * is not negotiable, because the bit positions above came from the stock
+ * driver's encoder and decoder being exact inverses. A board that packs the
+ * record differently needs a codec of its own, not a spec.
+ */
+export const DEFAULT_KEY_PERF: KeyPerfSpec = {
+  recordSize: KEY_PERF.recordSize,
+  slots: KEY_PERF.slots,
+  limits: { ...KEY_PERF_LIMITS },
+  keyMode: { ...KEY_MODE_WIRE },
+}
+
+/** Bytes in the whole blob, for a given geometry. */
+export function keyPerfBlobSize(spec: KeyPerfSpec = DEFAULT_KEY_PERF): number {
+  return spec.recordSize * spec.slots
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v
 }
 
 /** Turns a wire record into the millimetre model the UI edits. */
-export function toKeyConfig(rec: KeyPerfRecord): KeyConfig {
-  const mode: KeyMode = rec.keyMode === KEY_MODE_WIRE.off ? 'normal' : 'rapidTrigger'
+export function toKeyConfig(
+  rec: KeyPerfRecord,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+  countsPerMm?: number,
+): KeyConfig {
+  const mm = (counts: number) => countsToMm(counts, countsPerMm)
+  const mode: KeyMode = rec.keyMode === spec.keyMode.off ? 'normal' : 'rapidTrigger'
   return {
-    actuationMm: countsToMm(rec.actuationCounts),
+    actuationMm: mm(rec.actuationCounts),
     mode,
     rapidTrigger: {
-      enabled: rec.keyMode !== KEY_MODE_WIRE.off,
-      pressMm: countsToMm(rec.rtPressCounts),
-      releaseMm: countsToMm(rec.rtReleaseCounts),
-      continuous: rec.keyMode === KEY_MODE_WIRE.fullStroke,
+      enabled: rec.keyMode !== spec.keyMode.off,
+      pressMm: mm(rec.rtPressCounts),
+      releaseMm: mm(rec.rtReleaseCounts),
+      continuous: rec.keyMode === spec.keyMode.fullStroke,
     },
     deadZone: {
       enabled: rec.deadzoneState,
-      topMm: countsToMm(rec.pressDeadzoneCounts),
-      bottomMm: countsToMm(rec.releaseDeadzoneCounts),
+      topMm: mm(rec.pressDeadzoneCounts),
+      bottomMm: mm(rec.releaseDeadzoneCounts),
     },
     switchType: rec.switchType,
     switchFlags: rec.switchFlags,
@@ -241,22 +274,28 @@ export function toKeyConfig(rec: KeyPerfRecord): KeyConfig {
  *
  * Same reasoning for `rtUnset`: the 0xff marker belongs to the board.
  */
-export function fromKeyConfig(config: KeyConfig, current?: KeyPerfRecord): KeyPerfRecord {
+export function fromKeyConfig(
+  config: KeyConfig,
+  current?: KeyPerfRecord,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+  countsPerMm?: number,
+): KeyPerfRecord {
+  const counts = (mm: number) => mmToCounts(mm, countsPerMm)
   const rt = config.rapidTrigger
   const keyMode = !rt.enabled
-    ? KEY_MODE_WIRE.off
+    ? spec.keyMode.off
     : rt.continuous
-      ? KEY_MODE_WIRE.fullStroke
-      : KEY_MODE_WIRE.rapidTrigger
+      ? spec.keyMode.fullStroke
+      : spec.keyMode.rapidTrigger
   return {
     switchType: config.switchType ?? current?.switchType ?? 0,
     switchFlags: config.switchFlags ?? current?.switchFlags ?? 0,
     keyMode,
-    actuationCounts: mmToCounts(config.actuationMm),
-    rtPressCounts: mmToCounts(rt.pressMm),
-    rtReleaseCounts: mmToCounts(rt.releaseMm),
-    pressDeadzoneCounts: mmToCounts(config.deadZone.topMm),
-    releaseDeadzoneCounts: mmToCounts(config.deadZone.bottomMm),
+    actuationCounts: counts(config.actuationMm),
+    rtPressCounts: counts(rt.pressMm),
+    rtReleaseCounts: counts(rt.releaseMm),
+    pressDeadzoneCounts: counts(config.deadZone.topMm),
+    releaseDeadzoneCounts: counts(config.deadZone.bottomMm),
     deadzoneState: config.deadZone.enabled,
     rtUnset: (config.rtUnset ?? current?.rtUnset) === true && !rt.enabled && !config.deadZone.enabled,
   }
@@ -267,9 +306,13 @@ export function fromKeyConfig(config: KeyConfig, current?: KeyPerfRecord): KeyPe
  * zeroed record decodes to actuation 1 count with rapid trigger off — plausible
  * enough to be mistaken for a real setting if it were shown.
  */
-export function isEmptySlot(blob: ArrayLike<number>, slot: number): boolean {
-  const at = slot * KEY_PERF.recordSize
-  for (let i = 0; i < KEY_PERF.recordSize; i++) {
+export function isEmptySlot(
+  blob: ArrayLike<number>,
+  slot: number,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+): boolean {
+  const at = slot * spec.recordSize
+  for (let i = 0; i < spec.recordSize; i++) {
     if ((blob[at + i] ?? 0) !== 0) return false
   }
   return true
@@ -284,19 +327,28 @@ export function isEmptySlot(blob: ArrayLike<number>, slot: number): boolean {
  * 127, and the three unused channels — go back as zeros. Patching a blob the
  * board just handed us cannot lose anything we do not understand yet.
  */
-export function patchSlot(blob: Uint8Array, slot: number, rec: KeyPerfRecord): Uint8Array {
-  if (slot < 0 || slot >= KEY_PERF.slots) throw new RangeError(`slot ${slot} is out of range`)
+export function patchSlot(
+  blob: Uint8Array,
+  slot: number,
+  rec: KeyPerfRecord,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+): Uint8Array {
+  if (slot < 0 || slot >= spec.slots) throw new RangeError(`slot ${slot} is out of range`)
   const out = blob.slice()
-  out.set(encodeKeyPerfRecord(rec), slot * KEY_PERF.recordSize)
+  out.set(encodeKeyPerfRecord(rec, spec), slot * spec.recordSize)
   return out
 }
 
 /** Slots whose 8 bytes differ between two blobs. */
-export function changedSlots(before: ArrayLike<number>, after: ArrayLike<number>): number[] {
+export function changedSlots(
+  before: ArrayLike<number>,
+  after: ArrayLike<number>,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+): number[] {
   const out: number[] = []
-  for (let slot = 0; slot < KEY_PERF.slots; slot++) {
-    const at = slot * KEY_PERF.recordSize
-    for (let i = 0; i < KEY_PERF.recordSize; i++) {
+  for (let slot = 0; slot < spec.slots; slot++) {
+    const at = slot * spec.recordSize
+    for (let i = 0; i < spec.recordSize; i++) {
       if ((before[at + i] ?? 0) !== (after[at + i] ?? 0)) {
         out.push(slot)
         break
@@ -307,10 +359,14 @@ export function changedSlots(before: ArrayLike<number>, after: ArrayLike<number>
 }
 
 /** One record as hex, for reporting a slot that did not read back as written. */
-export function recordHex(blob: ArrayLike<number>, slot: number): string {
-  const at = slot * KEY_PERF.recordSize
+export function recordHex(
+  blob: ArrayLike<number>,
+  slot: number,
+  spec: KeyPerfSpec = DEFAULT_KEY_PERF,
+): string {
+  const at = slot * spec.recordSize
   const bytes: string[] = []
-  for (let i = 0; i < KEY_PERF.recordSize; i++) {
+  for (let i = 0; i < spec.recordSize; i++) {
     bytes.push((blob[at + i] ?? 0).toString(16).padStart(2, '0'))
   }
   return bytes.join(' ')

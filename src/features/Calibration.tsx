@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { useT } from '../i18n'
+import { t as translate, useT } from '../i18n'
 import { T } from '../i18n/T'
-import { KEY_COUNT, RAVEN61_KEYS } from '../keyboard/raven61'
+import { activeLayout, useLayout } from '../device/active'
 import {
   CAL,
   CAL_LED,
@@ -13,11 +13,10 @@ import {
   type CalHealth,
   type CalRecord,
 } from '../protocol/calibration'
-import { parseKeyEvent } from '../protocol/frame'
-import { armAnalogStream, readCalTable, readSlotMap } from '../protocol/raven61'
+import { parseActiveEvent } from '../protocol/events'
 import { sensorMap } from '../state/sensorMap'
 import { useSettings } from '../state/settings'
-import { link, useConnection } from '../state/link'
+import { armActiveStream, currentCodec, link, useConnection } from '../state/link'
 import { Notice, Panel } from '../ui/Panel'
 
 /**
@@ -85,7 +84,7 @@ export function calibrationDump(run: {
       ` firmware calls a key calibrated above ${CAL.scaleCalibrated}`,
     '# key         idx  deepRaw  deepest  bottomAdc   scale  fwState  health',
   ]
-  for (const key of RAVEN61_KEYS) {
+  for (const key of activeLayout().keys) {
     const i = key.index
     const rec = run.records[i]
     lines.push(
@@ -151,10 +150,14 @@ export function useCalibrationRun(): CalibrationRun {
   const [tableFailure, setTableFailure] = useState<string | null>(null)
   const [, forceRender] = useState(0)
 
-  const deepestRaw = useRef<Uint16Array>(new Uint16Array(KEY_COUNT))
-  const deepest = useRef<Float32Array>(new Float32Array(KEY_COUNT))
-  const bottomAdc = useRef<Int32Array>(new Int32Array(KEY_COUNT))
-  const records = useRef<(CalRecord | undefined)[]>(new Array(KEY_COUNT).fill(undefined))
+  // Sized for the board that is attached. A different keyboard has a different
+  // key count, so `start` resizes before a pass rather than silently dropping
+  // writes past the end of a typed array.
+  const keyCount = useLayout().count
+  const deepestRaw = useRef<Uint16Array>(new Uint16Array(keyCount))
+  const deepest = useRef<Float32Array>(new Float32Array(keyCount))
+  const bottomAdc = useRef<Int32Array>(new Int32Array(keyCount))
+  const records = useRef<(CalRecord | undefined)[]>(new Array(keyCount).fill(undefined))
   const release = useRef<(() => Promise<void>) | null>(null)
   const offInput = useRef<(() => void) | null>(null)
 
@@ -186,8 +189,16 @@ export function useCalibrationRun(): CalibrationRun {
       // read timed out beside fourteen keymap chunks that all went through.
       // The link queue now serialises them anyway; ordering them here is what
       // makes that obvious to the next reader.
-      const table = await readCalTable(link)
-      const { map } = await readSlotMap(link)
+      const codec = currentCodec()
+      if (!codec.readCalibration || !codec.readSlotMap) {
+        // Not an error worth a banner: the pass still works off the stream, it
+        // just starts with nothing to say about keys nobody has pressed.
+        setTableRead('failed')
+        setTableFailure(translate('calibration.tableUnsupported'))
+        return
+      }
+      const table = await codec.readCalibration(link)
+      const { map } = await codec.readSlotMap(link)
       for (const [slot, key] of map.keyBySlot) {
         const rec = table[slot]
         if (rec) records.current[key.index] = rec
@@ -209,12 +220,21 @@ export function useCalibrationRun(): CalibrationRun {
     // anything that captured them before this point holding a set that stays at
     // zero for ever — which is exactly what happened while chasing the grading
     // bug, and cost an hour of looking at the wrong layer.
+    // Reallocating here rather than in place *only* when the board changed:
+    // the arrays are handed out on every render, and replacing them mid-pass is
+    // what the fill() below avoids.
+    if (deepestRaw.current.length !== keyCount) {
+      deepestRaw.current = new Uint16Array(keyCount)
+      deepest.current = new Float32Array(keyCount)
+      bottomAdc.current = new Int32Array(keyCount)
+      records.current = new Array(keyCount).fill(undefined)
+    }
     deepestRaw.current.fill(0)
     deepest.current.fill(0)
     bottomAdc.current.fill(0)
     records.current.fill(undefined)
     offInput.current = link.onInput((_reportId, data) => {
-      const e = parseKeyEvent(data)
+      const e = parseActiveEvent(data)
       if (!e || !e.identifiable) return
       const index = sensorMap.resolve(e)
       if (index === undefined) return
@@ -233,7 +253,7 @@ export function useCalibrationRun(): CalibrationRun {
       records.current[index] = { scale: e.calScale, state: e.calState, valid: true }
     })
     try {
-      release.current = await armAnalogStream(link, { keepAlive: true })
+      release.current = await armActiveStream({ keepAlive: true })
       setRunning(true)
       // After the mode opens, not before: 0xa8 makes the board sweep every slot
       // three times, and a block read racing that sweep spends its timeouts
@@ -287,9 +307,10 @@ export function useCalibrationRun(): CalibrationRun {
  * this is a readout of the thing on screen, and it belongs with it.
  */
 export function CalibrationProgress({ run }: { run: CalibrationRun }) {
+  const total = useLayout().count
   return (
     <div className="small" style={{ marginTop: 8 }}>
-      <T k="calibration.progress" params={{ done: run.done, total: KEY_COUNT }} />
+      <T k="calibration.progress" params={{ done: run.done, total: total }} />
     </div>
   )
 }
@@ -305,6 +326,7 @@ export function CalibrationProgress({ run }: { run: CalibrationRun }) {
  */
 export function CalibrationGuide({ run }: { run: CalibrationRun }) {
   const { connected } = useConnection()
+  const { debug } = useSettings()
   const t = useT()
   const lit = run.records.filter((r) => r && ledColor(r.state) !== undefined).length
 
@@ -332,23 +354,46 @@ export function CalibrationGuide({ run }: { run: CalibrationRun }) {
         </div>
       )}
 
-      <div className="row">
-        {/*
-          The mode starts the run on entry, so this is not the way in. It is
-          "stop" while running, and "start again" after — a second pass wants a
-          cleared progress grid, which is what start() gives.
-        */}
-        <button
-          className={run.running ? 'danger' : 'primary'}
-          onClick={() => void (run.running ? run.stop() : run.start())}
-          disabled={!connected}
-        >
-          {run.running ? t('calibration.stop') : t('calibration.restart')}
-        </button>
-        <button onClick={() => void navigator.clipboard?.writeText(calibrationDump(run))}>
-          {t('calibration.copyDump')}
-        </button>
-      </div>
+      {/*
+        Two controls, and between them they are the panel's whole button row —
+        so the row itself goes when neither is showing, rather than leaving a
+        gap where they were.
+      */}
+      {(debug || !run.running) && (
+        <div className="row">
+          {/*
+            The mode starts the run on entry, so this is not the way in. It is
+            "stop" while running, and "start again" after — a second pass wants
+            a cleared progress grid, which is what start() gives.
+
+            Stopping is the half that is only offered with debug mode on:
+            interrupting a pass leaves the board half-relearned, with no sign of
+            it afterwards except keys that read differently from their
+            neighbours. The way out of the mode for everyone else is the button
+            in the title row, which ends the run cleanly. "Start again" is not
+            gated — it is offered once a pass is over, and running one is the
+            entire point of the tab.
+          */}
+          <button
+            className={run.running ? 'danger' : 'primary'}
+            onClick={() => void (run.running ? run.stop() : run.start())}
+            disabled={!connected}
+          >
+            {run.running ? t('calibration.stop') : t('calibration.restart')}
+          </button>
+          {/*
+            The dump is every record the pass collected, as text for a bug
+            report. Nothing on this screen is read back from it and nothing in
+            the app consumes it — it exists to be pasted somewhere else, which
+            is the definition of the tools half of this app.
+          */}
+          {debug && (
+            <button onClick={() => void navigator.clipboard?.writeText(calibrationDump(run))}>
+              {t('calibration.copyDump')}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Nothing rendered while the string is blank, so the empty slot costs no
           vertical space in the panel until someone writes into it. */}
@@ -402,7 +447,7 @@ export function CalibrationGuide({ run }: { run: CalibrationRun }) {
 function LedComparison({ run }: { run: CalibrationRun }) {
   const t = useT()
   const { debug } = useSettings()
-  const rows = RAVEN61_KEYS.map((key) => {
+  const rows = useLayout().keys.map((key) => {
     const rec = run.records[key.index]
     const health = run.health[key.index]
     // A key with nothing known about it cannot disagree with anything.

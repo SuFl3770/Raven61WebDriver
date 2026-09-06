@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { HidLink } from '../hid/link'
 import { supports, type Raven61Codec } from '../protocol/codec'
-import type { GlobalPatch } from '../protocol/raven61'
+import type { GlobalPatch } from '../protocol/global'
 import { configStore } from './config'
 import { globalStore } from './global'
 import { currentCodec, link } from './link'

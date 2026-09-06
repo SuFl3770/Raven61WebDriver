@@ -1,11 +1,13 @@
 import { useT } from '../i18n'
-import { BUILD, versionLine } from '../version'
+import { BUILD } from '../version'
 
 /**
- * Build identity, pinned to the bottom-right corner of the viewport.
+ * Build identity, at the foot of the rail.
  *
- * Rendered next to the app rather than inside it so it stays put while the
- * content area scrolls, and so the layout does not have to make room for it.
+ * The commit alone, because the column it sits in is thirteen characters wide
+ * and the channel, the date and the dirty marker do not fit beside it. None of
+ * them is lost: the tooltip has always carried all of it, line by line, and
+ * that is where the answer to "which build is this" is actually read from.
  */
 export function VersionBadge() {
   const t = useT()
@@ -22,7 +24,10 @@ export function VersionBadge() {
   return (
     <div className={`version-badge ${BUILD.channel === 'stable' ? 'stable' : 'nightly'}`} title={title}>
       <span className="dot" />
-      <span className="mono">{versionLine()}</span>
+      <span className="mono">
+        {BUILD.commit}
+        {BUILD.dirty && '+'}
+      </span>
     </div>
   )
 }

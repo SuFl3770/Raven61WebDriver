@@ -15,7 +15,8 @@
     "language": "Language",
     "connected": "Connected",
     "disconnected": "Not connected",
-    "codec": "Codec {codec}"
+    "menu": "Menu",
+    "repo": "Source on GitHub"
   },
 
   "viewport": {
@@ -37,15 +38,19 @@
 
   "selection": {
     "selectAll": "Select all",
+    "invert": "Invert selection",
     "clear": "Clear selection",
-    "none": "Nothing selected — pick keys to change their settings",
+    "none": "Nothing selected",
     "count_one": "{count} key selected",
-    "count_other": "{count} keys selected",
-    "hint": "Click to toggle · drag across to select several"
+    "count_other": "{count} keys selected"
   },
 
   "keygrid": {
-    "label": "Raven61 key layout"
+    "label": "Raven61 key layout",
+    "unknown": {
+      "title": "No definition for this device",
+      "body": "No registered board definition matches this VID:PID, so the decoded protocol is not used. If you have confirmed this keyboard speaks it, add a definition under src/device/."
+    }
   },
 
   "panel": {
@@ -84,23 +89,24 @@
   },
 
   "codec": {
+    "forced": {
+      "label": "⚠ Forced: default protocol (development)",
+      "notes": "This device has no definition, and is being spoken to with the default protocol (raven61-v1) anyway. The commands sent are another keyboard’s, and what they do on this hardware is unverified. A write may damage its settings."
+    },
     "unknown": {
       "label": "Not decoded (raw mode)",
       "notes": "The protocol has not been decoded yet. Explorer, console, prober and the traffic log all still work."
     },
     "raven61": {
-      "label": "Raven61 (performance block read/write)",
-      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), and the global settings read (0x05) are decoded. Writes are read-modify-write and are read back afterwards to compare the bytes. The keymap, lighting and advanced keys are not decoded."
+      "label": "Raven61 (performance block and keymap read/write)",
+      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), the global settings read (0x05) and the keymap read (0x08) and write (0x09) are decoded and hardware-verified. Every write is read-modify-write and is read back afterwards to compare the bytes. Lighting, advanced keys and macros are not decoded."
     }
   },
 
   "protocol": {
     "switchType": {
       "unknown": "Type {value}"
-    }
-  },
-
-  "raven61": {
+    },
     "modeNoAck": "The board did not acknowledge {command}; carrying on without waiting — {reason}",
     "chunkTimeout": "{label}: no reply for chunk {index}/{total} (offset {offset}) — {reason}",
     "slotMapPartial": "Only {found}/{total} keys were resolved from the keymap; falling back to the guessed slot mapping.",
@@ -108,7 +114,10 @@
     "keysWithoutSlot": "{count} keys have no slot: {keys}",
     "emptySlots": "{count} key slots are empty in the performance block: {keys}",
     "emptySlotEntry": "{key} (slot {slot})",
-    "blobSize": "The performance blob is {size} bytes; it must be {expected}.",
+    "blobSize": "The blob is {size} bytes; it must be {expected}.",
+    "keymapNeedsSlotMap": "The keymap was not read because the slot mapping did not come from the board. Reading it against the guessed mapping would show one key's binding on another, and editing from that would rebind the wrong key. Try reading again.",
+    "keymapLayerRange": "Layer {layer} does not exist on this board. Only {layers} layers have storage behind them.",
+    "keymapUnsafe": "The action bound to {key} is not safe on this board, so nothing was sent. The layer latches (0x04 and 0x05) make the firmware read another block as a keymap.",
     "chunkNak": "The board did not acknowledge chunk {index}/{total} (offset {offset}).",
     "writeUnmapped": "{count} keys have no slot and were not written: {keys}",
     "writeMismatch": "{count} slots read back differently from what was written: {detail}",
@@ -119,7 +128,8 @@
     "writeMismatch_one": "1 slot read back differently from what was written: {detail}",
     "writeMismatch_other": "{count} slots read back differently from what was written: {detail}",
     "firmwareEmpty": "The board answered 0x03 with nothing. This firmware appears not to report its build.",
-    "resetNak": "The board did not acknowledge the factory reset. It appears not to have started."
+    "resetNak": "The board did not acknowledge the factory reset. It appears not to have started.",
+    "noAnalogMode": "This board’s spec ({board}) names no analog test-mode command, so live travel cannot be started."
   },
 
   "reset": {
@@ -187,6 +197,13 @@
   },
 
   "device": {
+    "force": {
+      "title": "Force the default protocol (development)",
+      "body": "No definition matches this device. For a first look you can send the default protocol as-is and watch what comes back — ⚠ these are another keyboard’s commands, so a write may damage its settings. Keep the traffic log open.",
+      "on": "Start forcing",
+      "off": "Stop forcing",
+      "active": "⚠ Forcing the default protocol. The key grid is a stand-in, not this device’s layout. Disconnecting clears it."
+    },
     "title": "Device interface",
     "unsupported": {
       "title": "This browser does not support WebHID.",
@@ -196,9 +213,9 @@
     "disconnect": "Disconnect",
     "codec": "Codec: {codec}",
     "filter": {
-      "raven": {
-        "label": "Raven family (VID 0x19F5)",
-        "hint": "The device ids the stock driver recognises. This is usually the one you want."
+      "known": {
+        "label": "Registered boards",
+        "hint": "Only the vendor ids some device spec claims. Usually the one you want."
       },
       "all": {
         "label": "All HID devices",
@@ -222,7 +239,7 @@
     "open": "Open",
     "unnamed": "(unnamed)",
     "reason": {
-      "ravenVid": "Raven VID",
+      "knownVid": "known VID",
       "knownPid": "known PID",
       "inReport": "{bytes}-byte IN",
       "outReport": "{bytes}-byte OUT",
@@ -251,18 +268,16 @@
   "switch": {
     "title": "Switch",
     "unread": "Not read from the board yet. The values below are this app's defaults, not what the hardware holds.",
-    "intro": "The board stores the switch type <b>per key</b> (low 5 bits of <c>rec[0]</c>). That value sets the key's <b>full travel</b>, and the millimetre values for actuation and rapid trigger are read against it — so <b>getting this wrong misreads every other setting.</b> Match it to the switch actually fitted.",
     "select": "Switch type",
     "target": "{count} key(s) targeted",
     "board": "board",
     "pending": "pending",
     "mixed": "mixed",
     "travel": "{travel} mm travel",
-    "flagsNote": "The top 3 bits of <c>rec[0]</c> (purpose unknown) are written back exactly as read — only the type changes.",
+    "magnet": "{gauss}Gs",
+    "mm": "{travel}mm",
     "deeper": "{count} key(s) are set deeper than this switch can travel. Fix them in the <b>Actuation</b> panel.",
-    "unknownValue": "The board holds value {value}, which is not in the table. Picking from the list overwrites it.",
-    "phantom": "In the driver's table but not a switch that exists, so it cannot be picked: {names}. A board already holding that value <b>keeps it</b>; this app will not write it.",
-    "phantomOnBoard": "The board holds a switch type that does not exist ({name}). Picking another type overwrites it, but that changes full travel and with it how actuation and rapid trigger millimetres are read."
+    "unknownValue": "The board holds value {value}, which is not in the table. Picking from the list overwrites it."
   },
 
   "actuation": {
@@ -319,13 +334,13 @@
   },
 
   "calibration": {
+    "tableUnsupported": "This board’s codec cannot read the calibration table, so the pass runs from the event stream alone.",
     "title": "Bottom-out calibration",
     "start": "Start calibration",
     "stop": "Stop (restore typing)",
     "progress": "Bottomed out <b>{done}</b>/{total}",
     "enter": "Calibration",
     "exit": "Leave calibration",
-    "enterHint": "Enters calibration at once — the grid switches to progress and typing stops while it runs.",
     "gridLegend": "Calibration progress — the border is the board’s LED, the number is the key’s <b>calibration scale</b>, the fill is how deep it went.",
     "guide": "",
     "restart": "Start again",
@@ -425,17 +440,45 @@
   },
 
   "keymap": {
-    "title": "Keymap",
-    "readLayer": "Read layer",
-    "writeLayer": "Write layer",
-    "transparent": "▽ = transparent (falls through to the layer below).",
-    "pickHint": "Pick a key, then assign a code below.",
-    "picker": {
-      "title": "Choose a keycode",
-      "titleFor": "Choose a keycode — #{index} {key}",
-      "empty": "Select a key above first."
+    "apply": "Apply to board",
+    "applyCount": "Apply {count} keys",
+    "revert": "Discard edits",
+    "reset": "Factory binding",
+    "layers": "Layers",
+    "unread": "Not read from the board yet. Read it first to see what is bound now.",
+    "layerNote": "This board has storage for <b>two layers</b>. The firmware indexes four, but layers 2 and 3 land on the per-key RGB and macro areas. Only a key action such as Fn changes the layer — the host cannot. A write edits the 512 bytes the board just returned, sends them back, then reads them again and compares.",
+    "layer": {
+      "main": "Main layer",
+      "mainHint": "What the keys send normally. Only keys bound to something other than their legend spell it out on the cap.",
+      "fn1": "FN layer 1",
+      "fnHint": "What the keys send while Fn is held. The Fn key itself is what reaches this layer (`f0 ff 01`); the host cannot switch to it."
     },
-    "apply": "Apply",
+    "unmapped": "{count} keys have no slot, so they could not be read or written: {keys}",
+    "applied": "Applied {count} keys and read them back to check",
+    "noChange": "The board already holds these bytes, so nothing was sent.",
+    "mismatch": "{count} slots did not read back as written: {detail}",
+    "resetUnavailable": "The factory keymap read does not reach this slot, so it cannot be reset.",
+    "picker": {
+      "title": "Binding",
+      "key": "#{index} {key}",
+      "empty": "Pick a key on the grid",
+      "unassign": "None",
+      "modifiers": "Held modifiers"
+    },
+    "group": {
+      "basic": "Basic",
+      "multimedia": "Multimedia",
+      "special": "Special",
+      "function": "Function",
+      "lighting": "Lighting",
+      "mouse": "Mouse"
+    },
+    "label": {
+      "macro": "Macro {slot}",
+      "advanced": "Adv key {record}",
+      "momentary": "Layer {layer}",
+      "action": "Action 0x{code}"
+    },
     "writeWhat": "keymap write",
     "writeNote": "The keymap command is usually long enough to be split across several reports. Change <b>one key</b> in the stock driver, save, and diff the captures: the byte that moved is that key's index — the most reliable way to work out the matrix order."
   },
@@ -454,17 +497,14 @@
   },
 
   "overview": {
-    "title": "Overview",
     "todo": "This tab is a placeholder — the feature has not been built yet."
   },
 
   "macro": {
-    "title": "Macro",
     "todo": "This tab is a placeholder — the feature has not been built yet."
   },
 
   "light": {
-    "title": "Lighting",
     "todo": "This tab is a placeholder — the feature has not been built yet."
   },
 
@@ -480,6 +520,12 @@
     "storage": {
       "title": "What gets stored",
       "hint": "The language picked in the top bar, whether debug mode is on, and the sensor addresses you bind on the <b>Events</b> tab live in this browser's <c>localStorage</c> only — they survive closing the browser, and none of them reaches the board. <b>Board settings</b> above are the other way round: they live on the keyboard, so they are the same whichever PC you open this on."
+    },
+    "theme": {
+      "title": "Theme",
+      "system": "Match system",
+      "light": "Light",
+      "dark": "Dark"
     },
     "accent": {
       "title": "Accent colour",

@@ -29,8 +29,8 @@ import {
   globalWriteRequest,
   patchGlobalFlags,
   patchGlobalRate,
-  writeGlobalSettings,
-} from '../../src/protocol/raven61'
+} from '../../src/protocol/global'
+import { writeGlobalSettings } from '../../src/protocol/raven61'
 import { countsToMm, mmToCounts } from '../../src/protocol/encoding'
 import type { KeyConfig } from '../../src/protocol/types'
 

@@ -1,8 +1,9 @@
 import { useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
-import { DEFAULT_TRAVEL_MM, RAVEN61_KEYS } from '../keyboard/raven61'
+import { useLayout } from '../device/active'
+import { travelMmFor } from '../device/tables'
 import { MM_PER_COUNT, mmToCounts, quantizeMm } from '../protocol/encoding'
-import { switchTypeInfo, type KeyConfig } from '../protocol/types'
+import type { KeyConfig } from '../protocol/types'
 import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { Notice, Panel } from '../ui/Panel'
@@ -24,14 +25,14 @@ const PRESETS: { labelKey: MessageKey; value: number }[] = [
  * cannot reach.
  */
 function travelOf(config: KeyConfig | undefined): number {
-  return switchTypeInfo(config?.switchType)?.travelMm ?? DEFAULT_TRAVEL_MM
+  return travelMmFor(config?.switchType)
 }
 
 /** The shallowest travel among the targets — the deepest all of them can reach. */
 function travelLimit(configs: readonly KeyConfig[], targets: readonly number[]): number {
   let min = Infinity
   for (const i of targets) min = Math.min(min, travelOf(configs[i]))
-  return Number.isFinite(min) ? min : DEFAULT_TRAVEL_MM
+  return Number.isFinite(min) ? min : travelMmFor(undefined)
 }
 
 /** One value if the targets agree, null if they do not. */
@@ -45,6 +46,7 @@ function commonActuation(
 }
 
 export function Actuation() {
+  const { keys } = useLayout()
   const configs = useKeyConfigs()
   const base = useBaseline()
   const lastRead = useLastRead()
@@ -70,7 +72,7 @@ export function Actuation() {
       actuationMm: Math.min(quantizeMm(mm), travelOf(c)),
     }))
 
-  const tooDeep = RAVEN61_KEYS.filter((k) => {
+  const tooDeep = keys.filter((k) => {
     const c = configs[k.index]
     return c !== undefined && c.actuationMm > travelOf(c)
   })

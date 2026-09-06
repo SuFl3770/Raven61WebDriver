@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { diffOffsets, toHex } from '../hid/hex'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
-import { RAVEN61_KEYS } from '../keyboard/raven61'
-import { isEvent, parseKeyEvent, type KeyEvent as AnalogEvent } from '../protocol/frame'
-import { MONITOR, armAnalogStream } from '../protocol/raven61'
+import { useLayout } from '../device/active'
+import type { KeyEvent as AnalogEvent } from '../protocol/frame'
+import { isActiveEvent, parseActiveEvent } from '../protocol/events'
 import { identityOf, sensorMap, useSensorMap } from '../state/sensorMap'
 import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, Panel } from '../ui/Panel'
-import { link, useConnection } from '../state/link'
+import { analogModeCommands, armActiveStream, commandHex, link, useConnection } from '../state/link'
 
 interface Event {
   n: number
@@ -29,6 +29,7 @@ const KEEP = 400
  * so arming is offered as an explicit opt-in rather than done silently.
  */
 export function Events() {
+  const { keys } = useLayout()
   const { connected } = useConnection()
   const t = useT()
   const [events, setEvents] = useState<Event[]>([])
@@ -47,7 +48,7 @@ export function Events() {
     if (!listening) return
     t0.current = performance.now()
     return link.onInput((_reportId, data) => {
-      if (onlyEvents && !isEvent(data)) return
+      if (onlyEvents && !isActiveEvent(data)) return
       setEvents((prev) => {
         const next = [
           ...prev,
@@ -76,7 +77,7 @@ export function Events() {
     await previous?.()
     if (!on || seq !== armSeq.current) return
     try {
-      const fn = await armAnalogStream(link)
+      const fn = await armActiveStream()
       if (seq !== armSeq.current) await fn()
       else release.current = fn
     } catch (e) {
@@ -103,7 +104,7 @@ export function Events() {
   const seen = useMemo(() => {
     const out = new Map<string, { count: number; event: AnalogEvent }>()
     for (const e of events) {
-      const ev = parseKeyEvent(e.payload)
+      const ev = parseActiveEvent(e.payload)
       if (!ev) continue
       // Group by identity, not by sensor descriptor: that value is shared
       // between some keys (P and "/"), which would merge them into one entry.
@@ -170,8 +171,8 @@ export function Events() {
             <T
               k="events.armStream"
               params={{
-                arm: `0x${MONITOR.arm.toString(16)}`,
-                disarm: `0x${MONITOR.disarm.toString(16)}`,
+                arm: commandHex(analogModeCommands().arm),
+                disarm: commandHex(analogModeCommands().disarm),
               }}
             />
           </label>
@@ -197,7 +198,7 @@ export function Events() {
         <Panel
           title={t('events.reportedKeys', {
             seen: coverage.size,
-            total: RAVEN61_KEYS.length,
+            total: keys.length,
           })}
         >
           <div className="small dim" style={{ marginBottom: 8 }}>
@@ -274,10 +275,10 @@ export function Events() {
         <Panel title={t('events.latest')}>
           <div className="small dim" style={{ marginBottom: 8 }}>
             {(() => {
-              const ev = parseKeyEvent(latest.payload)
+              const ev = parseActiveEvent(latest.payload)
               if (!ev) return t('events.notAnalog')
               const index = sensorMap.resolve(ev)
-              const key = index === undefined ? undefined : RAVEN61_KEYS[index]
+              const key = index === undefined ? undefined : keys[index]
               return t('events.latestLine', {
                 sensor: `0x${ev.sensorId.toString(16).padStart(4, '0')}`,
                 usage: `0x${ev.usage.toString(16).padStart(2, '0')}`,

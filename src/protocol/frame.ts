@@ -22,7 +22,17 @@
  *   payload[2]     unused
  *   payload[3]     checksum over payload[4..63]
  *   payload[4..63] data
+ *
+ * ## Constants and specs
+ *
+ * The constants below are the *family baseline* — what the Raven61 does, and
+ * what a sibling board inherits unless its spec says otherwise. Every function
+ * here takes an optional `FrameSpec` / `EventSpec` and falls back to that
+ * baseline, so a board that moves the checksum byte or renumbers a command is
+ * a spec change rather than a fork of this file. See `src/device/spec.ts`.
  */
+
+import type { CommandSpec, EventSpec, FrameSpec } from '../device/spec'
 
 export const REPORT_ID = 0
 export const PAYLOAD_LENGTH = 64
@@ -48,6 +58,23 @@ export const OFFSET = {
 
 /** Bytes covered by the checksum: payload[4] through payload[63]. */
 export const CHECKSUM_RANGE = { start: OFFSET.data, end: PAYLOAD_LENGTH }
+
+/**
+ * The framing every function here assumes when a caller names no spec.
+ *
+ * Declared after the constants rather than instead of them so the evidence
+ * above stays attached to the numbers it explains.
+ */
+export const DEFAULT_FRAME: FrameSpec = {
+  reportId: REPORT_ID,
+  payloadLength: PAYLOAD_LENGTH,
+  magic: MAGIC,
+  ack: ACK,
+  replyData: REPLY_DATA,
+  offsets: { ...OFFSET },
+  // BLOCK is declared below; spelled out here to keep this a plain literal.
+  block: { length: 4, offsetLo: 5, offsetHi: 6, data: 8 },
+}
 
 /**
  * Commands the stock driver sends.
@@ -94,19 +121,46 @@ export const COMMAND = {
    * state — so unlike the rest of the table this one is safe to send.
    */
   readFirmware: 0x03,
+  /**
+   * Reads the 256-byte identity page at flash 0x20000: VID, PID, bcdDevice,
+   * then the build date and time as NUL-padded strings. 0xb0 is the same read
+   * and 0xb1 writes it, which is why 0xb1 is in DANGEROUS_COMMANDS.
+   *
+   * Handler 0x74de, a plain block read with the base as a constant. [fw]
+   */
+  readDeviceId: 0x04,
   /** Reads the 32-byte global settings block that 0x06 writes back. */
   readGlobalSettings: 0x05,
   /** Sent by the function that reads reporte_rate, tick_rate, dead_zone, disable_win… */
   globalSettings: 0x06,
-  /** Reads the wide (768-byte) keymap blob; 0x09 writes it. */
-  readKeymapWide: 0x07,
-  /** 512 bytes, 128 x 4, read with a caller-supplied base offset. Content unconfirmed. */
-  readUnknown08: 0x08,
-  writeKeymapWide: 0x09,
-  /** Reads one 384-byte keymap layer; 0x0b writes it. */
-  readKeymapLayer: 0x0a,
-  writeKeymapLayer: 0x0b,
-  unknown0d: 0x0d,
+  /**
+   * Reads the *factory default* keymap out of code flash (0x177f4), not the
+   * keymap the board is running. The two handlers are byte-identical apart
+   * from their base address: 0x68d0 reads 0x177f4, and 0x08's handler at
+   * 0x694c reads the live blob at 0x20b00. [fw]
+   *
+   * That makes it the stable source for the slot map (spec 4.6) — remapping a
+   * key cannot move it — but it is the wrong command to show a user their own
+   * layout with. Use readKeymapLive for that.
+   */
+  readKeymapDefaults: 0x07,
+  /** Reads the live keymap: 2 layers x 512 bytes at flash 0x20b00. [fw] */
+  readKeymapLive: 0x08,
+  /** Writes it back. The handler caps the transfer at 0x400, i.e. both layers. [fw] */
+  writeKeymapLive: 0x09,
+  /**
+   * Per-key custom RGB: 128 entries x 3 bytes at flash 0x20f00, capped at 0x180.
+   *
+   * An earlier pass called this a keymap layer, because it is 384 bytes of
+   * 3-byte records in the same address range and reads back all zero. The LED
+   * path settles it: 0x135f8 loads [key*3+0..2] straight into the R/G/B
+   * registers. All zero means no custom colours, not an unassigned layer. [fw]
+   */
+  readKeyRgb: 0x0a,
+  writeKeyRgb: 0x0b,
+  /** Macro storage: a 32-slot u16 offset table then bodies, 4 KB at 0x21100. [fw] */
+  readMacros: 0x0c,
+  writeMacros: 0x0d,
   /**
    * Reads the 1024-byte per-key performance blob — actuation, rapid trigger,
    * dead zones and switch type for all 128 key slots. See keyPerf.ts.
@@ -118,9 +172,24 @@ export const COMMAND = {
   readKeyPerf: 0xa0,
   /** Writes the same blob back. Whole-blob replacement, not per-key. */
   writeKeyPerf: 0xa1,
-  unknownA3: 0xa3,
-  unknownA5: 0xa5,
-  unknownA7: 0xa7,
+  /**
+   * Advanced keys (DKS / MT / TGL / RS / SOCD / OKS): 1 KB at flash 0x22100,
+   * 42 records of 24 bytes.
+   *
+   * Read out of the firmware rather than the driver, which is why an earlier
+   * pass had 0xa3 down as lighting. A keymap entry of type 0x90 indexes this
+   * table by record — `0x22100 + entry[1] * 24` at 0x88b6 — and 1024 / 24 = 42
+   * matches the driver's "40 advanced keys per profile" limit with two
+   * spare. [fw]
+   */
+  readAdvancedKeys: 0xa2,
+  writeAdvancedKeys: 0xa3,
+  /** Lighting, 256 bytes at flash 0x224f0. Field layout unconfirmed. [fw] */
+  readLightConfigA: 0xa4,
+  writeLightConfigA: 0xa5,
+  /** Lighting, 256 bytes at flash 0x225f0. Field layout unconfirmed. [fw] */
+  readLightConfigB: 0xa6,
+  writeLightConfigB: 0xa7,
   /**
    * Analog test mode, confirmed on hardware.
    *
@@ -148,10 +217,25 @@ export const COMMAND = {
    * read anything but that one blob.
    */
   readCalibration: 0xaa,
-  /** Writes the per-key RGB blob. */
+  /**
+   * Writes the per-key RGB blob into RAM at 0x20002624, which the idle task
+   * flushes to flash 0x20f00 — the same bytes readKeyRgb / writeKeyRgb reach
+   * directly. [fw]
+   */
   writeLightRgb: 0xdd,
-  /** Reads it back. */
+  /**
+   * Reads the *live* LED frame from RAM at 0x200024a4, one buffer earlier than
+   * the one 0xdd writes. So it returns what the board is displaying right now,
+   * effects included — not the stored custom layer. That is what the periodic
+   * 0xde poll in findings.md #20 was watching. [fw]
+   */
   readLightRgb: 0xde,
+  /**
+   * 1 KB at flash 0x226f0. Zeroed by the factory reset and referenced by
+   * nothing else in the image: storage the firmware itself never consults. [fw]
+   */
+  readReserved: 0xf1,
+  writeReserved: 0xf2,
 } as const
 
 /**
@@ -163,11 +247,17 @@ export const COMMAND = {
  */
 export const DANGEROUS_COMMANDS = {
   factoryReset: 0xee,
+  /**
+   * 0xb1 writes the identity page at flash 0x20000 — VID, PID, bcdDevice.
+   * Handler 0x70b6. Nothing here needs it, and a bad write is not something a
+   * factory reset undoes: the reset routine at 0x14500 never touches 0x20000.
+   */
+  writeDeviceId: 0xb1,
 } as const
 
-export function checksum(payload: ArrayLike<number>): number {
+export function checksum(payload: ArrayLike<number>, frame: FrameSpec = DEFAULT_FRAME): number {
   let sum = 0
-  for (let i = CHECKSUM_RANGE.start; i < CHECKSUM_RANGE.end; i++) sum += payload[i] ?? 0
+  for (let i = frame.offsets.data; i < frame.payloadLength; i++) sum += payload[i] ?? 0
   return sum & 0xff
 }
 
@@ -194,8 +284,13 @@ export const BLOCK = {
   data: 8,
 } as const
 
-/** Bytes of blob data one packet can carry. */
+/** Bytes of blob data one packet can carry, with the default framing. */
 export const BLOCK_CHUNK = PAYLOAD_LENGTH - BLOCK.data
+
+/** The same, for a board whose payload or header offsets differ. */
+export function blockChunkSize(frame: FrameSpec = DEFAULT_FRAME): number {
+  return frame.payloadLength - frame.block.data
+}
 
 /**
  * Builds one chunk of a block transfer. Pass no data to request a read.
@@ -204,21 +299,23 @@ export function buildBlock(
   command: number,
   offset: number,
   data?: ArrayLike<number>,
-  opts: { magic?: number; length?: number } = {},
+  opts: { magic?: number; length?: number; frame?: FrameSpec } = {},
 ): Uint8Array {
+  const frame = opts.frame ?? DEFAULT_FRAME
+  const limit = blockChunkSize(frame)
   const len = opts.length ?? data?.length ?? 0
-  if (len > BLOCK_CHUNK) {
-    throw new RangeError(`chunk of ${len} bytes exceeds the ${BLOCK_CHUNK}-byte limit`)
+  if (len > limit) {
+    throw new RangeError(`chunk of ${len} bytes exceeds the ${limit}-byte limit`)
   }
   if (offset < 0 || offset > 0xffff) throw new RangeError(`offset ${offset} is out of range`)
-  const payload = new Uint8Array(PAYLOAD_LENGTH)
-  payload[OFFSET.magic] = opts.magic ?? MAGIC
-  payload[OFFSET.command] = command
-  payload[BLOCK.length] = len
-  payload[BLOCK.offsetLo] = offset & 0xff
-  payload[BLOCK.offsetHi] = (offset >> 8) & 0xff
-  if (data) payload.set(Array.from(data as ArrayLike<number>), BLOCK.data)
-  payload[OFFSET.checksum] = checksum(payload)
+  const payload = new Uint8Array(frame.payloadLength)
+  payload[frame.offsets.magic] = opts.magic ?? frame.magic
+  payload[frame.offsets.command] = command
+  payload[frame.block.length] = len
+  payload[frame.block.offsetLo] = offset & 0xff
+  payload[frame.block.offsetHi] = (offset >> 8) & 0xff
+  if (data) payload.set(Array.from(data as ArrayLike<number>), frame.block.data)
+  payload[frame.offsets.checksum] = checksum(payload, frame)
   return payload
 }
 
@@ -255,17 +352,24 @@ export function chunkPlan(total: number, chunk: number = BLOCK_CHUNK): BlockChun
  * stock driver ignores it and copies into its own cursor, so a firmware that
  * pads or rounds cannot shift the blob.
  */
-export function blockReplyData(payload: ArrayLike<number>, length: number): Uint8Array {
-  const out = new Uint8Array(Math.min(length, BLOCK_CHUNK))
-  for (let i = 0; i < out.length; i++) out[i] = payload[BLOCK.data + i] ?? 0
+export function blockReplyData(
+  payload: ArrayLike<number>,
+  length: number,
+  frame: FrameSpec = DEFAULT_FRAME,
+): Uint8Array {
+  const out = new Uint8Array(Math.min(length, blockChunkSize(frame)))
+  for (let i = 0; i < out.length; i++) out[i] = payload[frame.block.data + i] ?? 0
   return out
 }
 
 /** Offset and length the reply says it carries — useful for logging mismatches. */
-export function blockReplyHeader(payload: ArrayLike<number>): BlockChunk {
+export function blockReplyHeader(
+  payload: ArrayLike<number>,
+  frame: FrameSpec = DEFAULT_FRAME,
+): BlockChunk {
   return {
-    offset: ((payload[BLOCK.offsetHi] ?? 0) << 8) | (payload[BLOCK.offsetLo] ?? 0),
-    length: payload[BLOCK.length] ?? 0,
+    offset: ((payload[frame.block.offsetHi] ?? 0) << 8) | (payload[frame.block.offsetLo] ?? 0),
+    length: payload[frame.block.length] ?? 0,
   }
 }
 
@@ -283,11 +387,17 @@ export function blockReplyHeader(payload: ArrayLike<number>): BlockChunk {
 export const READ_COMMANDS: readonly number[] = [
   COMMAND.readFirmware,
   COMMAND.readGlobalSettings,
-  COMMAND.readKeymapWide,
-  COMMAND.readUnknown08,
-  COMMAND.readKeymapLayer,
+  COMMAND.readDeviceId,
+  COMMAND.readKeymapDefaults,
+  COMMAND.readKeymapLive,
+  COMMAND.readKeyRgb,
+  COMMAND.readMacros,
   COMMAND.readKeyPerf,
+  COMMAND.readAdvancedKeys,
+  COMMAND.readLightConfigA,
+  COMMAND.readLightConfigB,
   COMMAND.readLightRgb,
+  COMMAND.readReserved,
   COMMAND.analogTestOff,
   COMMAND.readCalibration,
 ]
@@ -333,36 +443,38 @@ export interface PacketOptions {
   data?: ArrayLike<number>
   /** Offset within the data area to place `data` at. */
   dataOffset?: number
+  frame?: FrameSpec
 }
 
 /** Builds a complete 64-byte payload with a valid checksum. */
 export function buildPacket(command: number, opts: PacketOptions = {}): Uint8Array {
-  const { magic = MAGIC, reserved = 0, data, dataOffset = 0 } = opts
-  const payload = new Uint8Array(PAYLOAD_LENGTH)
-  payload[OFFSET.magic] = magic
-  payload[OFFSET.command] = command
-  payload[OFFSET.reserved] = reserved
+  const frame = opts.frame ?? DEFAULT_FRAME
+  const { magic = frame.magic, reserved = 0, data, dataOffset = 0 } = opts
+  const payload = new Uint8Array(frame.payloadLength)
+  payload[frame.offsets.magic] = magic
+  payload[frame.offsets.command] = command
+  payload[frame.offsets.reserved] = reserved
   if (data) {
-    const start = OFFSET.data + dataOffset
-    if (start + data.length > PAYLOAD_LENGTH) {
+    const start = frame.offsets.data + dataOffset
+    if (start + data.length > frame.payloadLength) {
       throw new RangeError(
-        `data of ${data.length} bytes at offset ${dataOffset} overflows the ${PAYLOAD_LENGTH}-byte payload`,
+        `data of ${data.length} bytes at offset ${dataOffset} overflows the ${frame.payloadLength}-byte payload`,
       )
     }
     payload.set(Array.from(data as ArrayLike<number>), start)
   }
-  payload[OFFSET.checksum] = checksum(payload)
+  payload[frame.offsets.checksum] = checksum(payload, frame)
   return payload
 }
 
 /** Recomputes the checksum of an existing payload in place. */
-export function sign(payload: Uint8Array): Uint8Array {
-  payload[OFFSET.checksum] = checksum(payload)
+export function sign(payload: Uint8Array, frame: FrameSpec = DEFAULT_FRAME): Uint8Array {
+  payload[frame.offsets.checksum] = checksum(payload, frame)
   return payload
 }
 
-export function isAck(payload: ArrayLike<number>): boolean {
-  return payload[0] === ACK
+export function isAck(payload: ArrayLike<number>, frame: FrameSpec = DEFAULT_FRAME): boolean {
+  return payload[0] === frame.ack
 }
 
 /**
@@ -370,8 +482,12 @@ export function isAck(payload: ArrayLike<number>): boolean {
  * so the command byte comes back in payload[1]. Confirmed on hardware: sending
  * `55 a9 00 38 38 00 …` answers `aa a9 00 38 38 00 …`.
  */
-export function isReplyTo(command: number, payload: ArrayLike<number>): boolean {
-  return payload[0] === ACK && payload[1] === command
+export function isReplyTo(
+  command: number,
+  payload: ArrayLike<number>,
+  frame: FrameSpec = DEFAULT_FRAME,
+): boolean {
+  return payload[0] === frame.ack && payload[1] === command
 }
 
 /**
@@ -380,8 +496,8 @@ export function isReplyTo(command: number, payload: ArrayLike<number>): boolean 
  * timeout, no write, then dispatch on payload[1..3]) — they are events, not
  * replies, and must not be mistaken for one.
  */
-export function isEvent(payload: ArrayLike<number>): boolean {
-  return payload[0] === REPLY_DATA
+export function isEvent(payload: ArrayLike<number>, frame: FrameSpec = DEFAULT_FRAME): boolean {
+  return payload[0] === frame.replyData
 }
 
 export interface Reply {
@@ -398,14 +514,15 @@ export interface Reply {
  *   aa <cmd> 00 …        bare acknowledgement
  *   a0 <len> 00 <?> …    data reply, `len` bytes starting at payload[4]
  */
-export function parseReply(payload: Uint8Array): Reply {
-  if (payload[0] === ACK) return { kind: 'ack', command: payload[1] }
-  if (payload[0] === REPLY_DATA) {
+export function parseReply(payload: Uint8Array, frame: FrameSpec = DEFAULT_FRAME): Reply {
+  if (payload[0] === frame.ack) return { kind: 'ack', command: payload[1] }
+  if (payload[0] === frame.replyData) {
     const length = payload[1] ?? 0
+    const start = frame.offsets.data
     return {
       kind: 'data',
       length,
-      data: payload.slice(OFFSET.data, Math.min(OFFSET.data + length, PAYLOAD_LENGTH)),
+      data: payload.slice(start, Math.min(start + length, frame.payloadLength)),
     }
   }
   return { kind: 'unknown' }
@@ -507,6 +624,41 @@ export const MODIFIER_BASE_USAGE = 0xe0
 /** Full travel, used when the board has not been calibrated and reports none. */
 export const DEFAULT_TRAVEL_COUNTS = 200
 
+/** The event layout `parseKeyEvent` assumes when a caller names no spec. */
+export const DEFAULT_EVENT: EventSpec = {
+  ...EVENT,
+  kind: { ...EVENT_TYPE },
+  fnSelector: FN_SELECTOR,
+  modifierBaseUsage: MODIFIER_BASE_USAGE,
+  defaultTravelCounts: DEFAULT_TRAVEL_COUNTS,
+}
+
+/**
+ * The command table as a spec section.
+ *
+ * `COMMAND` above is a catalog of everything the family is known to answer to,
+ * including the blocks this app does not decode yet; this is the subset the
+ * engine dispatches on, named by job. `factoryReset` comes from
+ * DANGEROUS_COMMANDS rather than COMMAND for the reason given there — it must
+ * not reach the prober's sweep.
+ */
+export const DEFAULT_COMMANDS: CommandSpec = {
+  begin: COMMAND.begin,
+  end: COMMAND.end,
+  readFirmware: COMMAND.readFirmware,
+  readGlobalSettings: COMMAND.readGlobalSettings,
+  writeGlobalSettings: COMMAND.globalSettings,
+  readKeymapDefaults: COMMAND.readKeymapDefaults,
+  readKeymapLive: COMMAND.readKeymapLive,
+  writeKeymapLive: COMMAND.writeKeymapLive,
+  readKeyPerf: COMMAND.readKeyPerf,
+  writeKeyPerf: COMMAND.writeKeyPerf,
+  readCalibration: COMMAND.readCalibration,
+  analogTestOn: COMMAND.analogTestOn,
+  analogTestOff: COMMAND.analogTestOff,
+  factoryReset: DANGEROUS_COMMANDS.factoryReset,
+}
+
 export interface KeyEvent {
   /**
    * HID usage of the key. Real for every key, including the modifiers and Fn:
@@ -593,7 +745,12 @@ export interface KeyEvent {
 
 const be16 = (p: ArrayLike<number>, i: number) => ((p[i] ?? 0) << 8) | (p[i + 1] ?? 0)
 
-/** Counts are 0.02 mm, the same unit the actuation settings use. */
+/**
+ * Counts are 0.02 mm, the same unit the actuation settings use.
+ *
+ * The default matches `COUNTS_PER_MM` in encoding.ts; a board with a different
+ * step passes its own through `parseKeyEvent`'s `countsPerMm`.
+ */
 const COUNT_MM = 0.02
 
 /**
@@ -606,12 +763,12 @@ const COUNT_MM = 0.02
  * wins whenever it holds a real usage, so a modifier held down during another
  * key's event cannot rename that key.
  */
-function usageOf(type: number, selector: number, usageByte: number): number {
+function usageOf(type: number, selector: number, usageByte: number, event: EventSpec): number {
   if (usageByte > 0x01) return usageByte
-  if (type === EVENT_TYPE.fn || selector === FN_SELECTOR) return FN_USAGE
+  if (type === event.kind.fn || selector === event.fnSelector) return FN_USAGE
   // A single set bit is a modifier; anything else leaves the usage as it came.
   if (selector !== 0 && (selector & (selector - 1)) === 0) {
-    return MODIFIER_BASE_USAGE + Math.log2(selector)
+    return event.modifierBaseUsage + Math.log2(selector)
   }
   return usageByte
 }
@@ -625,19 +782,25 @@ function usageOf(type: number, selector: number, usageByte: number): number {
  * until a calibration pass had run, which looked exactly like a dead stream.
  * (Why it was 0 is still open — see `calibrated`.)
  */
-export function parseKeyEvent(payload: ArrayLike<number>): KeyEvent | null {
-  if (payload[0] !== REPLY_DATA) return null
-  const type = payload[EVENT.type] ?? 0
-  if (type !== EVENT_TYPE.key && type !== EVENT_TYPE.fn) return null
-  const reported = be16(payload, EVENT.travel)
-  const travelCounts = reported === 0 ? DEFAULT_TRAVEL_COUNTS : reported
-  const depthCounts = payload[EVENT.depth] ?? 0
-  const selector = payload[EVENT.modifiers] ?? 0
-  const usage = usageOf(type, selector, payload[EVENT.usage] ?? 0)
-  const tenths = payload[EVENT.scaleTenths] ?? 0
-  const hundredths = payload[EVENT.scaleHundredths] ?? 0
+export function parseKeyEvent(
+  payload: ArrayLike<number>,
+  event: EventSpec = DEFAULT_EVENT,
+  frame: FrameSpec = DEFAULT_FRAME,
+  countsPerMm = 1 / COUNT_MM,
+): KeyEvent | null {
+  const countMm = 1 / countsPerMm
+  if (payload[0] !== frame.replyData) return null
+  const type = payload[event.type] ?? 0
+  if (type !== event.kind.key && type !== event.kind.fn) return null
+  const reported = be16(payload, event.travel)
+  const travelCounts = reported === 0 ? event.defaultTravelCounts : reported
+  const depthCounts = payload[event.depth] ?? 0
+  const selector = payload[event.modifiers] ?? 0
+  const usage = usageOf(type, selector, payload[event.usage] ?? 0, event)
+  const tenths = payload[event.scaleTenths] ?? 0
+  const hundredths = payload[event.scaleHundredths] ?? 0
   const sensorId = (tenths << 8) | hundredths
-  const adcBaseline = be16(payload, EVENT.adcBaseline)
+  const adcBaseline = be16(payload, event.adcBaseline)
   return {
     usage,
     type,
@@ -650,17 +813,17 @@ export function parseKeyEvent(payload: ArrayLike<number>): KeyEvent | null {
     // there is nothing left to identify it by.
     identifiable: usage > 0x01 || adcBaseline !== 0,
     depthCounts,
-    depthMm: depthCounts * COUNT_MM,
+    depthMm: depthCounts * countMm,
     travelCounts,
-    travelMm: travelCounts * COUNT_MM,
-    direction: payload[EVENT.direction] === 0x01 ? 'down' : 'up',
-    adc: be16(payload, EVENT.adc),
+    travelMm: travelCounts * countMm,
+    direction: payload[event.direction] === 0x01 ? 'down' : 'up',
+    adc: be16(payload, event.adc),
     adcBaseline,
-    travelRaw: be16(payload, EVENT.travelRaw),
-    calState: payload[EVENT.calState] ?? 0,
+    travelRaw: be16(payload, event.travelRaw),
+    calState: payload[event.calState] ?? 0,
     // Digits, not a fixed-point number: the firmware truncates each one, so
     // reassembling them is exact to two decimals and no further.
-    calScale: (payload[EVENT.scaleUnits] ?? 0) + tenths / 10 + hundredths / 100,
+    calScale: (payload[event.scaleUnits] ?? 0) + tenths / 10 + hundredths / 100,
     pressed: depthCounts > 0,
   }
 }

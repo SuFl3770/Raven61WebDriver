@@ -13,17 +13,23 @@ export const COUNTS_PER_MM = 50
 /** 0.02 mm — the smallest step the board can express. */
 export const MM_PER_COUNT = 1 / COUNTS_PER_MM
 
-export function mmToCounts(mm: number): number {
-  return Math.round(mm * COUNTS_PER_MM)
+/**
+ * The three converters take the step as an argument so a board with a
+ * different resolution is a spec change rather than a fork — see
+ * `EncodingSpec` in `src/device/spec.ts`. `COUNTS_PER_MM` stays the default
+ * because it is the family's, and because the evidence above is for it.
+ */
+export function mmToCounts(mm: number, countsPerMm: number = COUNTS_PER_MM): number {
+  return Math.round(mm * countsPerMm)
 }
 
-export function countsToMm(counts: number): number {
-  return counts / COUNTS_PER_MM
+export function countsToMm(counts: number, countsPerMm: number = COUNTS_PER_MM): number {
+  return counts / countsPerMm
 }
 
 /** Snaps a millimetre value to something the board can actually store. */
-export function quantizeMm(mm: number): number {
-  return countsToMm(mmToCounts(mm))
+export function quantizeMm(mm: number, countsPerMm: number = COUNTS_PER_MM): number {
+  return countsToMm(mmToCounts(mm, countsPerMm), countsPerMm)
 }
 
 /** `t_key_perf_data.key_mode`. */

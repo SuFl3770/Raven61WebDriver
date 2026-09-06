@@ -1,9 +1,10 @@
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
-import { DEFAULT_TRAVEL_MM, RAVEN61_KEYS } from '../keyboard/raven61'
+import { useLayout } from '../device/active'
+import { travelMmFor } from '../device/tables'
 import { FACTORY_DEFAULTS, MM_PER_COUNT, countsToMm, mmToCounts, quantizeMm } from '../protocol/encoding'
 import { KEY_PERF_LIMITS } from '../protocol/keyPerf'
-import { switchTypeInfo, type KeyConfig, type RapidTrigger as RT } from '../protocol/types'
+import type { KeyConfig, RapidTrigger as RT } from '../protocol/types'
 import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { BottomOutTrigger } from '../ui/BottomOutTrigger'
@@ -37,7 +38,7 @@ const RT_MIN_MM = countsToMm(KEY_PERF_LIMITS.rtMin)
 /** The 5-bit dead-zone field: 31 counts, 0.62 mm. Past this a write would wrap. */
 
 function travelOf(config: KeyConfig | undefined): number {
-  return switchTypeInfo(config?.switchType)?.travelMm ?? DEFAULT_TRAVEL_MM
+  return travelMmFor(config?.switchType)
 }
 
 /** One value if every target agrees, null if they do not. */
@@ -58,6 +59,7 @@ function common<T>(
 }
 
 export function RapidTrigger() {
+  const { keys } = useLayout()
   const configs = useKeyConfigs()
   const base = useBaseline()
   const lastRead = useLastRead()
@@ -74,7 +76,9 @@ export function RapidTrigger() {
   // The deepest sensitivity every target can express — bounded by the
   // shallowest switch among them, not by a nominal 4 mm. With no targets
   // `Math.min` would be Infinity, which is not a number an input can take.
-  const limit = none ? DEFAULT_TRAVEL_MM : Math.min(...targets.map((i) => travelOf(configs[i])))
+  const limit = none
+    ? travelMmFor(undefined)
+    : Math.min(...targets.map((i) => travelOf(configs[i])))
 
   const enabledCommon = common(configs, targets, (c) => c.rapidTrigger.enabled)
   const boardEnabled = common(base, targets, (c) => c.rapidTrigger.enabled)
@@ -123,13 +127,13 @@ export function RapidTrigger() {
    * actuation leaves no room to re-trigger in. A warning rather than a clamp:
    * this is read off the stock UI's own description, not off the firmware.
    */
-  const noRoom = RAVEN61_KEYS.filter((k) => {
+  const noRoom = keys.filter((k) => {
     const c = configs[k.index]
     if (!c || !c.rapidTrigger.enabled || c.rapidTrigger.continuous) return false
     return c.rapidTrigger.pressMm > travelOf(c) - c.actuationMm
   })
 
-  const belowFactory = RAVEN61_KEYS.filter((k) => {
+  const belowFactory = keys.filter((k) => {
     const c = configs[k.index]
     return (
       c !== undefined &&
