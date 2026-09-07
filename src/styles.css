@@ -350,19 +350,25 @@ button {
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 /*
- * `.select-trigger` is excluded from both. It is a button, but its background
- * is a drawing — the dropdown's arrow is two gradients placed on it — and
- * `background` here is a shorthand: it resets `background-position` and
- * `background-size` along with the fill, which turned the arrow into two
- * full-size wedges across the whole control on hover. The trigger says what it
- * does on hover in its own rule, without touching the background at all.
+ * Two classes are excluded from both, each with its own hover rule instead.
+ *
+ * `.select-trigger` is a button, but its background is a drawing — the
+ * dropdown's arrow is two gradients placed on it — and `background` here is a
+ * shorthand: it resets `background-position` and `background-size` along with
+ * the fill, which turned the arrow into two full-size wedges across the whole
+ * control on hover.
+ *
+ * `.version-badge` is a button because it toggles between the commit and the
+ * date, but it is a label first, and the two things sitting side by side in
+ * the foot of the rail should light up the same way. The select beside it is
+ * already excluded here, so the badge is too.
  */
-button:hover:not(:disabled):not(.select-trigger) {
+button:hover:not(:disabled):not(.select-trigger):not(.version-badge) {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-dim);
 }
-button:active:not(:disabled):not(.select-trigger) { background: var(--sunk); }
+button:active:not(:disabled):not(.select-trigger):not(.version-badge) { background: var(--sunk); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* The two buttons that are not neutral wear their colour on the edge and the
    label; the fill stays what every other control has, so a row of them does
@@ -1127,15 +1133,45 @@ div.rail { position: sticky; top: 0; }
 .connect-actions button { padding: 0.5rem 1rem; }
 .connect-card .notice { text-align: left; }
 .connect-foot { border-top: 1px solid var(--line); padding-top: 0.875rem; }
+/*
+ * The way in without a keyboard. Above the language picker's rule and under one
+ * of its own, so it reads as a second offer rather than as part of the connect
+ * button's row — it is not another way to reach the same board.
+ */
+.connect-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.875rem;
+}
+.connect-demo button { padding: 0.5rem 1rem; }
 
 .panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
   padding: 1rem 1.1rem;
   margin-bottom: 0.875rem;
 }
-.panel > h2 { font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); margin: 0 0 10px; }
+/*
+ * The one panel that is still a box — see ui/Panel.tsx and features/Calibration.tsx.
+ *
+ * Every other panel is now just a run of padding down the page: the sections
+ * are told apart by their headings and the space between them, and a box drawn
+ * round each of them was only repeating what the stack already said. The
+ * calibration guide is not one of a stack. It is the whole of the tab for the
+ * length of a pass, with the app's chrome dimmed behind it, and while it is on
+ * screen it is the only thing that can be clicked — so it keeps the edge, which
+ * is what says "this, and nothing around it".
+ */
+.panel.framed {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+/* A step up from the body copy rather than a step down from it. These were
+   small-caps captions sitting inside a bordered card, where the border was
+   doing the work of separating one section from the next; without it the
+   heading is the separator, so it is sized to be found while scrolling. */
+.panel > h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); margin: 0 0 12px; }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /*
@@ -1188,13 +1224,23 @@ div.rail { position: sticky; top: 0; }
 .dot.off { background: var(--err); }
 /* A write in flight. */
 .dot.busy { background: var(--warn); }
+/*
+ * The simulated board — see ui/SyncBadge.tsx.
+ *
+ * Warning amber rather than the green of a board that is really there. The
+ * badge is saying two things at once in this state, "in step" and "not
+ * hardware", and the second is the one someone reading a screenshot needs.
+ */
+.dot.demo { background: var(--warn); }
 
 /* Transient confirmation for something with no visible control behind it —
    currently only the Shift gesture that toggles debug mode. */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  /* Just under the top bar rather than against the bottom edge, so the
+     confirmation lands where the eye already is — see `--topbar-h`. */
+  top: calc(var(--topbar-h) + 12px);
   transform: translateX(-50%);
   z-index: 20;
   display: flex;
@@ -1210,15 +1256,15 @@ div.rail { position: sticky; top: 0; }
   animation: toast-in 140ms ease-out;
 }
 @keyframes toast-in {
-  from { opacity: 0; transform: translate(-50%, 6px); }
+  from { opacity: 0; transform: translate(-50%, -6px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 /*
- * Back down the way it came.
+ * Back up the way it came.
  *
  * Both halves of the transform have to be restated even though only one of them
  * moves: `translateX(-50%)` is what centres the toast, and a keyframe that said
- * only `translateY(6px)` would drop it against the left edge of the window for
+ * only `translateY(-6px)` would drop it against the left edge of the window for
  * the length of the animation.
  *
  * A touch longer than the arrival, which is the opposite of the dropdown above
@@ -1228,7 +1274,7 @@ div.rail { position: sticky; top: 0; }
  * words stay legible the whole way out.
  */
 @keyframes toast-out {
-  to { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 0; transform: translate(-50%, -6px); }
 }
 /* The 160ms is written again in ui/ApplyToast.tsx and ui/DebugGesture.tsx,
    which is where the element's lifetime is decided. */
@@ -1332,6 +1378,8 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
  * 56.25rem and the panels around it are not, so on a wide window it used to
  * sit against the left edge of a box far wider than itself.
  */
+/* The ratio is the board's, set inline from its `units` — see ui/KeyGrid.tsx.
+   What is here is the fallback for the instant before that lands. */
 .keygrid { position: relative; width: 100%; max-width: 56.25rem; margin-inline: auto; aspect-ratio: 15 / 5; }
 
 /*
@@ -1397,6 +1445,10 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
   color: var(--fg-dim);
 }
 .gridfoot .err { color: var(--err); }
+/* Same warning colour the caps use for an edit the board has not been sent
+   yet — see `.keycap .sub .pending`. The readout under the keymap grid says
+   what the picked cap is set to, and it has to say pending the same way. */
+.gridfoot .pending { color: var(--warn); }
 
 .gridband {
   padding: 0.875rem 0 1.125rem;
@@ -1725,10 +1777,16 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
   background: var(--surface);
   font-size: 0.75rem;
   color: var(--fg-dim);
-  /* Interactive so the tooltip works; it covers only its own corner. */
+  /* The commit is there to be copied, so a drag over it selects rather than
+     starting a click — the toggle is on the release of a click that did not
+     move, which is what a button does anyway. */
   user-select: text;
+  /* Never two lines. Both faces fit the column; a font that disagrees should
+     clip the pill rather than change its height under the language picker. */
+  white-space: nowrap;
 }
 .version-badge:hover { color: var(--fg); border-color: var(--accent); }
+.version-badge:active { background: var(--sunk); }
 .version-badge .dot { width: 0.375rem; height: 0.375rem; }
 .version-badge.stable .dot { background: var(--ok); }
 .version-badge.nightly .dot { background: var(--warn); }

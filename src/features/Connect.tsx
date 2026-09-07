@@ -9,6 +9,7 @@ import { HidLink } from '../hid/link'
 import { useT } from '../i18n'
 import { LanguageSelect } from '../i18n/LanguageSelect'
 import { T } from '../i18n/T'
+import { startDemo } from '../state/demo'
 import { link, refreshCodec } from '../state/link'
 import { Notice } from '../ui/Panel'
 
@@ -108,6 +109,27 @@ export function Connect() {
             </div>
           </Notice>
         )}
+
+        {/*
+          Outside the branch above, because it is the one thing on this screen
+          that does not need WebHID. A browser that cannot open a keyboard can
+          still run the whole app against the simulated board — see
+          src/demo/board.ts — and telling someone on Firefox that their browser
+          is unsupported and then offering them nothing would be the wrong end
+          of that story.
+
+          Under a rule, and worded as what it is. Nothing about the app changes
+          in demo mode except the thing on the other end of the wire, so the
+          reader has to be told which one they are looking at; afterwards the
+          device card names the board and the corner badge keeps saying it is a
+          simulated one.
+        */}
+        <div className="connect-demo">
+          <button disabled={busy} onClick={run(startDemo)}>
+            {t('connect.demo.action')}
+          </button>
+          <p className="small dim">{t('connect.demo.body')}</p>
+        </div>
 
         <div className="connect-foot">
           <LanguageSelect />

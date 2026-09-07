@@ -201,6 +201,14 @@ export function KeyGrid({
        * showing states while no cap has one.
        */
       className={`keygrid${onToggle ? ' selectable' : ''}${status ? ' flagged' : ''}`}
+      /*
+       * The board's own proportions. Every cap inside is placed as a percentage
+       * of `units`, so the one thing left that has to know the shape is the box
+       * they are placed in — and the stylesheet cannot, because it is the same
+       * stylesheet for every board. It carried 15/5 until a board that is not
+       * 15 by 5 turned up, and squashed it.
+       */
+      style={{ aspectRatio: `${units.width} / ${units.height}` }}
       role="group"
       aria-label={t('keygrid.label')}
       onPointerMove={onToggle ? paintAt : undefined}

@@ -28,31 +28,26 @@ const TOOLS: SubTab[] = [
   {
     id: 'explorer',
     labelKey: 'debug.tool.explorer.label',
-    hintKey: 'debug.tool.explorer.hint',
     render: () => <HidExplorer />,
   },
   {
     id: 'console',
     labelKey: 'debug.tool.console.label',
-    hintKey: 'debug.tool.console.hint',
     render: () => <ReportConsole />,
   },
   {
     id: 'prober',
     labelKey: 'debug.tool.prober.label',
-    hintKey: 'debug.tool.prober.hint',
     render: () => <Prober />,
   },
   {
     id: 'events',
     labelKey: 'debug.tool.events.label',
-    hintKey: 'debug.tool.events.hint',
     render: () => <Events />,
   },
   {
     id: 'log',
     labelKey: 'debug.tool.log.label',
-    hintKey: 'debug.tool.log.hint',
     render: () => <TrafficLogView />,
   },
 ]

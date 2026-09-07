@@ -671,7 +671,7 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
   async function readCalTable(link: HidLink): Promise<CalRecord[]> {
     const command = needCommand(cmd.readCalibration, 'readCalibration')
     const blob = await readBlock(link, command, calBytes, { note: 'calibration table' })
-    return parseCalTable(blob)
+    return parseCalTable(blob, spec.calibration.records)
   }
 
   /**

@@ -401,8 +401,13 @@ export interface DeviceSpec extends ProtocolSpec {
    *
    * `forced` is the debug-only case: not a definition of anything, but the
    * default protocol pointed at a device that has none. See `device/forced.ts`.
+   *
+   * `demo` is the simulated board (`src/demo/`). It is a full definition and
+   * the app drives it like any other, but it describes no hardware — so it is
+   * left out of everything that answers "what boards might be plugged in", by
+   * way of `hardwareSpecs()` in `device/registry.ts`.
    */
-  origin?: 'built-in' | 'user-json' | 'forced'
+  origin?: 'built-in' | 'user-json' | 'forced' | 'demo'
   usb: {
     vendorId: number
     /**

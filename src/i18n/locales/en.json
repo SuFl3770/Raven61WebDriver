@@ -33,7 +33,16 @@
     "body": "",
     "connecting": "Connecting…",
     "remembered": "Reconnect {device}",
-    "requirements": "Works in desktop Chrome, Edge and Opera, served over HTTPS or from localhost."
+    "requirements": "Works in desktop Chrome, Edge and Opera, served over HTTPS or from localhost.",
+    "demo": {
+      "action": "Try the demo",
+      "body": "Runs the whole app against a simulated board, with no keyboard attached. Works in browsers without WebHID too."
+    }
+  },
+
+  "demo": {
+    "badge": "Demo mode",
+    "tooltip": "This is a simulated board. No keyboard is attached."
   },
 
   "selection": {
@@ -85,7 +94,8 @@
     "branch": "Branch {branch}",
     "commit": "Commit {commit}",
     "date": "Commit date {date}",
-    "dirty": "Built with uncommitted changes"
+    "dirty": "Built with uncommitted changes",
+    "hint": "Click to show the date"
   },
 
   "codec": {
@@ -100,6 +110,10 @@
     "raven61": {
       "label": "Raven61 (performance block and keymap read/write)",
       "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), the global settings read (0x05) and the keymap read (0x08) and write (0x09) are decoded and hardware-verified. Every write is read-modify-write and is read back afterwards to compare the bytes. Lighting, advanced keys and macros are not decoded."
+    },
+    "demo": {
+      "label": "Demo TKL (simulated)",
+      "notes": "Not hardware: a board simulated inside this app, 87 keys, tenkeyless. It answers the protocol decoded from a Raven61, so everything from codec selection to the read-back that verifies a write runs the same path it does against a keyboard. The values on screen are invented rather than captured, and are not evidence about any real board."
     }
   },
 
@@ -252,15 +266,10 @@
   "inputPoint": {
     "section": {
       "overview": "Overview",
-      "overviewHint": "What the board actually holds. Read on entering this tab.",
       "trigger": "Trigger point",
-      "triggerHint": "Actuation sets the trigger depth within the stroke. Full travel comes from the Switch section.",
       "rt": "Rapid trigger",
-      "rtHint": "Press and release sensitivity, bottom-out trigger, dead zones, advanced keys.",
       "switch": "Switch",
-      "switchHint": "Which switch each key has fitted. It sets full travel, so the millimetres in the sections above are read against it.",
-      "deadzone": "Dead zone",
-      "deadzoneHint": "Travel at the top and bottom the board ignores. Shares a wire byte with rapid trigger but is a separate setting."
+      "deadzone": "Dead zone"
     },
     "sections": "Input point sections"
   },
@@ -443,15 +452,15 @@
     "apply": "Apply to board",
     "applyCount": "Apply {count} keys",
     "revert": "Discard edits",
+    "picked": "{key} selected",
+    "pickNone": "Click a cap to pick a key",
     "reset": "Factory binding",
     "layers": "Layers",
     "unread": "Not read from the board yet. Read it first to see what is bound now.",
     "layerNote": "This board has storage for <b>two layers</b>. The firmware indexes four, but layers 2 and 3 land on the per-key RGB and macro areas. Only a key action such as Fn changes the layer — the host cannot. A write edits the 512 bytes the board just returned, sends them back, then reads them again and compares.",
     "layer": {
       "main": "Main layer",
-      "mainHint": "What the keys send normally. Only keys bound to something other than their legend spell it out on the cap.",
-      "fn1": "FN layer 1",
-      "fnHint": "What the keys send while Fn is held. The Fn key itself is what reaches this layer (`f0 ff 01`); the host cannot switch to it."
+      "fn1": "FN layer 1"
     },
     "unmapped": "{count} keys have no slot, so they could not be read or written: {keys}",
     "applied": "Applied {count} keys and read them back to check",
@@ -543,24 +552,19 @@
     "tools": "Analysis tools",
     "tool": {
       "explorer": {
-        "label": "Explorer",
-        "hint": "Report descriptor tree, with the usable report ids and their lengths"
+        "label": "Explorer"
       },
       "console": {
-        "label": "Console",
-        "hint": "Send commands as frames or blocks; repeat one and see which bytes move"
+        "label": "Console"
       },
       "prober": {
-        "label": "Prober",
-        "hint": "Sweep commands as real frames (checksum handled) and see what answers"
+        "label": "Prober"
       },
       "events": {
-        "label": "Events",
-        "hint": "Listen to what the board sends unasked, and bind sensor addresses"
+        "label": "Events"
       },
       "log": {
-        "label": "Log",
-        "hint": "Every report in and out, A/B byte diff, TXT and JSON export"
+        "label": "Log"
       }
     }
   },

@@ -42,6 +42,19 @@ export function allSpecs(): readonly DeviceSpec[] {
   return [...userSpecs, ...BUILT_IN_SPECS]
 }
 
+/**
+ * The specs that describe hardware — everything but the demo board.
+ *
+ * `allSpecs` is "what can this app drive", which the codec lookup wants. This
+ * is "what might be at the other end of a USB cable", which is a different
+ * question and the one the device chooser and the interface ranking are asking:
+ * a simulated board contributes a vendor id no device reports and a report
+ * shape that would score a real interface for no reason. See `hid/filters.ts`.
+ */
+export function hardwareSpecs(): readonly DeviceSpec[] {
+  return allSpecs().filter((s) => s.origin !== 'demo')
+}
+
 export function specById(id: string): DeviceSpec | undefined {
   return allSpecs().find((s) => s.id === id)
 }

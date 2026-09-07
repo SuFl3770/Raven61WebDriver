@@ -146,10 +146,19 @@ export function parseCalRecord(bytes: ArrayLike<number>, at = 0): CalRecord {
   }
 }
 
-/** Decodes the whole 512-byte table. */
-export function parseCalTable(blob: ArrayLike<number>): CalRecord[] {
+/**
+ * Decodes the whole table.
+ *
+ * `records` defaults to the Raven61's 64 sensors, which is what this file's
+ * constants describe. It is an argument because the count is a property of the
+ * board — `DeviceSpec.calibration.records` — and a board with more keys than
+ * that has records past the sixty-fourth that the caller needs: the panel walks
+ * the slot map, so a key in slot 70 asks for `table[70]` and a short array
+ * leaves it blank.
+ */
+export function parseCalTable(blob: ArrayLike<number>, records = CAL_SLOTS): CalRecord[] {
   const out: CalRecord[] = []
-  for (let slot = 0; slot < CAL_SLOTS; slot++) {
+  for (let slot = 0; slot < records; slot++) {
     out.push(parseCalRecord(blob, slot * CAL_RECORD_BYTES))
   }
   return out

@@ -1,6 +1,7 @@
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
 import { NotDecoded, Panel } from '../ui/Panel'
+import { PlaceholderGrid } from '../ui/PlaceholderGrid'
 
 /**
  * Advanced keys — DKS, MT, TGL, RS, SOCD, OKS.
@@ -12,15 +13,22 @@ import { NotDecoded, Panel } from '../ui/Panel'
  * write. Advanced keys are a different block (`t_magnetic_key_data`), a
  * different limit (40 per profile) and a different protocol, none of which is
  * decoded — so it shared an apply bar it could never use.
+ *
+ * It opens with the same grid as its neighbours even though nothing here reads
+ * it yet — see ui/PlaceholderGrid.tsx. An advanced key is a per-key setting, so
+ * this is the grid the panel will eventually be wired to.
  */
 export function Advanced() {
   const t = useT()
   return (
-    <Panel title={t('advanced.title')}>
-      <NotDecoded what="advanced.what" />
-      <div className="small dim" style={{ marginTop: 8 }}>
-        <T k="advanced.note" />
-      </div>
-    </Panel>
+    <>
+      <PlaceholderGrid />
+      <Panel title={t('advanced.title')}>
+        <NotDecoded what="advanced.what" />
+        <div className="small dim" style={{ marginTop: 8 }}>
+          <T k="advanced.note" />
+        </div>
+      </Panel>
+    </>
   )
 }
