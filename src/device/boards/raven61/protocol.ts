@@ -20,6 +20,7 @@ import { CAL_RECORD_BYTES, CAL_SLOTS } from '../../../protocol/calibration'
 import { COUNTS_PER_MM } from '../../../protocol/encoding'
 import { FACTORY_RESET_DEFAULTS, MONITOR_DEFAULTS } from '../../../protocol/engine'
 import { DEFAULT_COMMANDS, DEFAULT_EVENT, DEFAULT_FRAME } from '../../../protocol/frame'
+import { DEFAULT_ADVANCED_KEYS } from '../../../protocol/advancedKeys'
 import { DEFAULT_GLOBAL } from '../../../protocol/global'
 import { DEFAULT_KEYMAP } from '../../../protocol/keymap'
 import { DEFAULT_KEY_PERF } from '../../../protocol/keyPerf'
@@ -36,7 +37,14 @@ import type { ProtocolSpec } from '../../spec'
  * straight into the colour registers (docs §3.8). The lighting **effect**
  * settings — mode, brightness, speed, direction — are still not decoded, so no
  * command names them and the panel says so rather than sending a byte nobody
- * has read. Same for the macro and advanced-key blocks.
+ * has read. Same for the macro block.
+ *
+ * `advancedKeys` **is** named, from the firmware: the three tables and the six
+ * commands that reach them are decoded (`protocol/advancedKeys.ts`), and the
+ * two blocks an earlier pass filed under lighting turned out to be two of them.
+ * Reads and writes there follow the same read-modify-write-and-compare rule as
+ * every other block, but unlike the keymap and the performance blob they have
+ * **not been confirmed on hardware**.
  */
 export const RAVEN61_PROTOCOL: ProtocolSpec = {
   frame: DEFAULT_FRAME,
@@ -45,6 +53,7 @@ export const RAVEN61_PROTOCOL: ProtocolSpec = {
   keyPerf: DEFAULT_KEY_PERF,
   keyRgb: KEY_RGB,
   keymap: DEFAULT_KEYMAP,
+  advancedKeys: DEFAULT_ADVANCED_KEYS,
   global: DEFAULT_GLOBAL,
   monitor: { ...MONITOR_DEFAULTS },
   factoryReset: { ...FACTORY_RESET_DEFAULTS },

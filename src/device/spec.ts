@@ -123,6 +123,17 @@ export interface CommandSpec {
    * is about to push out, so writing it would be overwritten on the next frame.
    */
   readLightFrame: number | null
+  /**
+   * The three advanced-key tables. All three or none: a board that answers one
+   * and not the others cannot describe a keyboard's advanced keys, since a
+   * keymap entry can name any of the six kinds. See `protocol/advancedKeys.ts`.
+   */
+  readAdvancedDks: number | null
+  writeAdvancedDks: number | null
+  readAdvancedPair: number | null
+  writeAdvancedPair: number | null
+  readAdvancedToggle: number | null
+  writeAdvancedToggle: number | null
   readCalibration: number | null
   /** Enters analog test mode: travel is reported, typing stops. */
   analogTestOn: number | null
@@ -198,6 +209,24 @@ export interface KeyRgbSpec {
    * a board that answers more slowly can raise it.
    */
   framePollMs: number
+}
+
+/**
+ * Geometry of the three advanced-key tables. See `protocol/advancedKeys.ts`.
+ *
+ * `records` is how many each table holds, and `usable` how many a host should
+ * hand out — the stock driver stops at 40 of the 42 that fit, and staying
+ * inside that keeps a board this app configures readable in the stock driver.
+ */
+export interface AdvancedKeySpec {
+  records: number
+  usable: number
+  dksRecordSize: number
+  dksBlobSize: number
+  pairRecordSize: number
+  pairBlobSize: number
+  toggleRecordSize: number
+  toggleBlobSize: number
 }
 
 /** Geometry of the keymap blocks. See `protocol/keymap.ts` and `protocol/slotMap.ts`. */
@@ -449,6 +478,7 @@ export interface ProtocolSpec {
   keyPerf: KeyPerfSpec
   keyRgb: KeyRgbSpec
   keymap: KeymapSpec
+  advancedKeys: AdvancedKeySpec
   global: GlobalSpec
   monitor: MonitorSpec
   factoryReset: FactoryResetSpec

@@ -232,6 +232,45 @@ export function patchLighting(
   }
 }
 
+/**
+ * A patch shown as settings — what the board *will* hold once the write lands.
+ *
+ * The panel needs this because the write is held while a slider is being
+ * dragged: without it the control would read its value back out of the store,
+ * which still holds the board's, and the slider would not move under the
+ * pointer at all.
+ *
+ * Saturated through the same helpers the write uses, so the number under the
+ * pointer is the number that will be sent. A slider that showed 120 % and then
+ * snapped to 100 on release would be this app disagreeing with itself.
+ */
+export function applyLightingPatch(
+  settings: LightingSettings,
+  patch: LightingPatch | undefined,
+): LightingSettings {
+  if (!patch) return settings
+  return {
+    mode: patch.lightMode !== undefined ? byte(patch.lightMode, 0xff) : settings.mode,
+    brightness:
+      patch.brightness !== undefined
+        ? byte(patch.brightness, LIGHT_LIMITS.brightnessMax)
+        : settings.brightness,
+    speed: patch.speed !== undefined ? byte(patch.speed, LIGHT_LIMITS.speedMax) : settings.speed,
+    direction: patch.direction !== undefined ? patch.direction : settings.direction,
+    colorful: patch.colorful !== undefined ? patch.colorful : settings.colorful,
+    // Never in a patch — nothing is known about what it selects, so the write
+    // puts the board's own byte back and this shows the same.
+    colorIndex: settings.colorIndex,
+    color: patch.color
+      ? {
+          r: byte(patch.color.r, 0xff),
+          g: byte(patch.color.g, 0xff),
+          b: byte(patch.color.b, 0xff),
+        }
+      : settings.color,
+  }
+}
+
 /** The block offsets a lighting patch can touch — the ones worth verifying. */
 export function lightingOffsets(spec: GlobalSpec): number[] {
   const o = spec.offsets

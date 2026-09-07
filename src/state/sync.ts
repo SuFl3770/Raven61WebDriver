@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { HidLink } from '../hid/link'
 import { supports, type Raven61Codec } from '../protocol/codec'
-import type { GlobalPatch } from '../protocol/global'
+import { mergeGlobalPatch, type GlobalPatch } from '../protocol/global'
 import { configStore } from './config'
 import { globalStore } from './global'
 import { currentCodec, link } from './link'
@@ -18,19 +18,25 @@ import { currentCodec, link } from './link'
  *
  * Two things make this safe to do continuously:
  *
- * **A hold, not a delay.** One write is a keymap read, a block read, nineteen
- * write chunks and a verify read — about seventy packets — so a slider firing a
- * change per pixel cannot each send one. The first version waited for the value
- * to stop changing, which throttled the slider but also put that same wait in
- * front of every checkbox, where there is nothing to throttle. Instead the
- * controls that move continuously say so: they `hold()` while the pointer or
- * key is down and `release()` after, and everything else writes at once.
+ * **A hold, not a delay.** One per-key write is a keymap read, a block read,
+ * nineteen write chunks and a verify read — about seventy packets — and one
+ * board-wide write is a read, a write, a 400 ms settle and a verify read. A
+ * slider firing a change per pixel cannot send one of either. The first version
+ * waited for the value to stop changing, which throttled the slider but also
+ * put that same wait in front of every checkbox, where there is nothing to
+ * throttle. Instead the controls that move continuously say so: they `hold()`
+ * while the pointer or key is down and `release()` after, and everything else
+ * writes at once. **Both blocks obey it** — see `applyGlobal` for why that had
+ * to be fixed rather than assumed.
  *
- * **A queue of one.** Reads and writes both touch the whole 1024-byte block, so
- * they must never overlap: a read that lands mid-write returns a half-written
- * block, and two writes race over the same read-modify-write. Everything goes
- * through `chain`, and a change arriving during a write leaves its keys dirty
- * for the write that follows rather than joining the one in flight.
+ * **A queue of one.** Reads and writes both touch a whole block, so they must
+ * never overlap: a read that lands mid-write returns a half-written block, and
+ * two writes race over the same read-modify-write. Everything goes through
+ * `chain`, and a change arriving during a write waits for the write that
+ * follows rather than joining the one in flight — as dirty keys for the per-key
+ * block, and as a merged `pendingGlobal` for the board-wide one. Either way one
+ * write is in flight and at most one is waiting, however fast the changes
+ * arrive.
  */
 
 export type SyncPhase = 'idle' | 'pending' | 'reading' | 'writing'
@@ -48,6 +54,20 @@ export interface SyncState {
   appliedKeys: number
   /** Slots that did not read back as written, if any. */
   mismatch: string[]
+  /**
+   * The board-wide edit the board has not confirmed yet.
+   *
+   * Everything not yet in `globalStore`: what is being held under a pointer,
+   * what is queued behind a write, and what the write in flight is carrying.
+   * All three at once, because the controls that produce them have to keep
+   * showing them — the store holds what the board last *said*, so a slider
+   * reading from there alone would not move under the pointer, and would snap
+   * back to the old value for the length of a write and then jump forward
+   * again.
+   *
+   * Null means the board and the screen agree.
+   */
+  pendingGlobal: GlobalPatch | null
 }
 
 /**
@@ -67,7 +87,14 @@ export interface SyncDeps {
 export class BoardSync {
   constructor(private readonly deps: SyncDeps) {}
 
-  private state: SyncState = { phase: 'idle', error: null, appliedAt: null, appliedKeys: 0, mismatch: [] }
+  private state: SyncState = {
+    phase: 'idle',
+    error: null,
+    appliedAt: null,
+    appliedKeys: 0,
+    mismatch: [],
+    pendingGlobal: null,
+  }
   private listeners = new Set<() => void>()
   /**
    * How many controls are mid-gesture. Writes wait while this is above zero.
@@ -79,6 +106,18 @@ export class BoardSync {
   private held = 0
   /** True while a write is queued but has not started, so none is queued twice. */
   private queued = false
+  /** The same, for the board-wide block, which has its own read-modify-write. */
+  private globalQueued = false
+  /**
+   * The board-wide edit not sent yet, and the one a write is carrying.
+   *
+   * Two fields rather than one because they clear at different moments: the
+   * unsent half clears when a write picks it up, and the in-flight half only
+   * when the verify read has put the board's new state in the store. Both are
+   * shown, merged, as `SyncState.pendingGlobal` — see `showPending`.
+   */
+  private unsentGlobal: GlobalPatch | null = null
+  private inFlightGlobal: GlobalPatch | null = null
   /** Serialises everything against the board. */
   private chain: Promise<unknown> = Promise.resolve()
 
@@ -89,6 +128,20 @@ export class BoardSync {
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
+  }
+
+  /**
+   * Publishes the two halves as one.
+   *
+   * A panel does not care whether a value is under a pointer, in a queue or on
+   * the wire — only that the board does not have it yet, and that the control
+   * should go on showing it until it does.
+   */
+  private showPending(rest: Partial<SyncState> = {}): void {
+    const merged = this.inFlightGlobal
+      ? mergeGlobalPatch(this.inFlightGlobal, this.unsentGlobal ?? {})
+      : this.unsentGlobal
+    this.patch({ ...rest, pendingGlobal: merged })
   }
 
   private patch(next: Partial<SyncState>): void {
@@ -164,32 +217,85 @@ export class BoardSync {
   release(): void {
     if (this.held === 0) return
     this.held--
-    if (this.held === 0 && configStore.dirtyIndices().length > 0) void this.write()
+    if (this.held > 0) return
+    // Both blocks: a lighting slider and an actuation slider are the same
+    // gesture as far as this is concerned, and either may have accumulated
+    // something while the pointer was down.
+    if (configStore.dirtyIndices().length > 0) void this.write()
+    if (this.unsentGlobal) void this.flushGlobal()
   }
 
   /** Sends now, whatever is being held. The retry after a failure. */
   flush(): Promise<void> {
-    return this.write()
+    // Both blocks, because either can be holding something: the retry button
+    // does not know which write failed and should not have to.
+    const global = this.unsentGlobal ? this.flushGlobal() : Promise.resolve()
+    return Promise.all([this.write(), global]).then(() => {})
   }
 
   /**
-   * Changes a field of the board-wide block.
+   * Changes fields of the board-wide block.
    *
-   * Not debounced: the things that live in that block are switches, and a
-   * switch cannot be dragged. It still goes through the queue, because the
-   * global write is its own read-modify-write and must not interleave with a
-   * per-key one.
+   * **Coalesced, and held like the per-key path.** This used to send every
+   * patch as its own write, on the reasoning that the block held nothing but
+   * switches and a switch cannot be dragged. That stopped being true when the
+   * lighting effect moved in: brightness, speed and the colour are dragged, one
+   * write is a read-modify-write with a settle delay in the middle, and a drag
+   * emitting a patch per pixel queued dozens of them — so the board fell
+   * seconds behind the pointer and the whole app felt stuck.
+   *
+   * Two rules fix it, and they are the two the per-key path already had:
+   *
+   *   - **A hold, not a delay.** A control that moves says so (`useHeldWrites`),
+   *     and nothing is sent until it is let go. A checkbox holds nothing and
+   *     still goes at once.
+   *   - **One in flight, one pending.** Patches merge into `pendingGlobal`, and
+   *     the queued job reads it when it *runs* rather than when it was
+   *     scheduled — so everything that arrived while a write was in flight
+   *     leaves in the next one instead of queueing a write each.
+   *
+   * The queue is still shared with the per-key writes, because both are
+   * read-modify-writes over a whole block and must never interleave.
    */
   applyGlobal(patch: GlobalPatch): Promise<void> {
+    if (!this.deps.connected()) return Promise.resolve()
+    this.unsentGlobal = mergeGlobalPatch(this.unsentGlobal, patch)
+    this.showPending({ phase: 'pending', error: null })
+    if (this.held > 0) return Promise.resolve()
+    return this.flushGlobal()
+  }
+
+  /** Sends whatever has accumulated for the board-wide block. */
+  private flushGlobal(): Promise<void> {
+    // One waiting write is enough: it takes the whole pending patch when it
+    // runs, so a second would find nothing left to send.
+    if (this.globalQueued) return this.chain.then(() => {})
+    this.globalQueued = true
     return this.queue(async () => {
+      this.globalQueued = false
       const codec = this.deps.codec()
+      // Read at run time, not when this was scheduled — anything changed while
+      // an earlier write was in flight belongs to this one.
+      const patch = this.unsentGlobal
+      if (!patch) return
       if (!this.deps.connected() || !supports(codec, 'writeGlobalSettings')) return
-      this.patch({ phase: 'writing', error: null, mismatch: [] })
+      /*
+       * Moved, not dropped. The controls go on showing it for the length of the
+       * write — otherwise a slider snaps back to the board's old value the
+       * moment the pointer is let go and jumps forward again half a second
+       * later, which reads as the edit having been lost.
+       */
+      this.unsentGlobal = null
+      this.inFlightGlobal = patch
+      this.showPending({ phase: 'writing', error: null, mismatch: [] })
       try {
         const result = await codec.writeGlobalSettings!(this.deps.link(), patch)
+        // The store first, then the overlay: the two must never be down at the
+        // same moment or the control blinks through the old value.
         globalStore.load(result.after)
+        this.inFlightGlobal = null
         if (result.mismatched.length > 0) {
-          this.patch({
+          this.showPending({
             phase: 'idle',
             mismatch: result.mismatched.map(
               (m) =>
@@ -200,9 +306,18 @@ export class BoardSync {
           })
           return
         }
-        this.patch({ phase: 'idle', appliedAt: new Date(), appliedKeys: 0, mismatch: [] })
+        this.showPending({ phase: 'idle', appliedAt: new Date(), appliedKeys: 0, mismatch: [] })
       } catch (e) {
-        this.patch({ phase: 'idle', error: e instanceof Error ? e.message : String(e) })
+        /*
+         * Put the edit back rather than losing it — the same rule the per-key
+         * path follows by leaving its keys dirty. Merged *under* whatever
+         * arrived while the write was failing, so a newer value still wins, and
+         * not retried from here: a board that is not answering would otherwise
+         * be written to in a loop. The next change, or `flush`, carries it.
+         */
+        this.unsentGlobal = mergeGlobalPatch(patch, this.unsentGlobal ?? {})
+        this.inFlightGlobal = null
+        this.showPending({ phase: 'idle', error: e instanceof Error ? e.message : String(e) })
       }
     })
   }

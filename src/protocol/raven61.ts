@@ -42,6 +42,15 @@ export const writeKeymapLayer = (
   entries: Parameters<NonNullable<EngineCodec['writeKeymap']>>[2],
 ) => raven61Codec.writeKeymap!(link, layer, entries)
 
+/** The three advanced-key tables, plus the keymap entries that name a record. */
+export const readAdvancedKeys = (link: HidLink) => raven61Codec.readAdvancedKeys!(link)
+
+export const writeAdvancedKey = (
+  link: HidLink,
+  record: number,
+  rec: Parameters<NonNullable<EngineCodec['writeAdvancedKey']>>[2],
+) => raven61Codec.writeAdvancedKey!(link, record, rec)
+
 /** The stored per-key colour layer. */
 export const readKeyColors = (link: HidLink) => raven61Codec.readKeyColors!(link)
 

@@ -55,6 +55,58 @@ const codec = {
     const n = payload.filter(Boolean).length
     return trace(`write:${n}`, () => ({ mismatched: [], configs: configStore.all() }))
   },
+  async readGlobalSettings() {
+    return trace('read', () => globalReply())
+  },
+  /*
+   * The board-wide block. It records the patch it was handed, because the thing
+   * worth checking about this path is not that a write happened but *what the
+   * write carried*: a drag that queues twenty writes and a drag that merges
+   * them into one look identical from anywhere else.
+   */
+  async writeGlobalSettings(_link: unknown, patch: Record<string, unknown>) {
+    return trace(`global:${describe(patch)}`, () => ({
+      before: globalReply(),
+      after: globalReply(),
+      mismatched: [],
+      unchanged: false,
+    }))
+  },
+}
+
+/** A settings reply the store will accept. Only the shape matters here. */
+function globalReply() {
+  return {
+    raw: new Uint8Array(64),
+    reportRate: 4,
+    tickRate: 0,
+    deadZone: 0,
+    disableWin: false,
+    disableAltTab: false,
+    disableAltF4: false,
+    tachyon: false,
+    bottomOutTrigger: false,
+    actuationCheck: false,
+    magnetTest: false,
+    debounceLevel: 0,
+    lighting: null,
+  }
+}
+
+/** A patch's lighting fields, in a form a check can compare against a string. */
+function describe(patch: Record<string, unknown>): string {
+  const light = patch.lighting as Record<string, unknown> | undefined
+  if (!light) return Object.keys(patch).sort().join('+') || 'empty'
+  return Object.entries(light)
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .sort()
+    .join(',')
+}
+
+/** The pending patch's lighting half, for the checks that read it back. */
+function pendingLight(): Record<string, unknown> | undefined {
+  const p = boardSync.current().pendingGlobal as { lighting?: Record<string, unknown> } | null
+  return p?.lighting
 }
 
 async function trace<T>(what: string, result: () => T): Promise<T> {
@@ -196,6 +248,125 @@ configStore.subscribe(() => {
   await sleep(200)
   eq('two writes, one key each', calls, ['write:1', 'write:1'])
   eq('and nothing left dirty', configStore.dirtyIndices().length, 0)
+}
+
+// --- a dragged board-wide control holds its write too -----------------------
+/*
+ * The regression this file exists for, in the half that did not have it.
+ * `applyGlobal` used to send every patch as its own write, on the reasoning
+ * that the block held nothing that could be dragged. The lighting effect put
+ * two sliders and a colour in it, and a drag then queued a read-modify-write
+ * per pixel — each with a settle delay — so the board fell seconds behind the
+ * pointer and the app felt stuck.
+ */
+{
+  calls.length = 0
+  boardSync.hold()
+  // Forty ticks of a brightness drag, which is a short one.
+  for (let i = 0; i < 40; i++) {
+    void boardSync.applyGlobal({ lighting: { brightness: i } })
+    await sleep(2)
+  }
+  eq('nothing sent while the handle is held', calls.length, 0)
+  ok('but the panel can see what it will send', boardSync.current().pendingGlobal !== null)
+  eq('and it is the value under the pointer', pendingLight()?.brightness, 39)
+  boardSync.release()
+  await sleep(150)
+  eq('one write on release', calls, ['global:brightness=39'])
+  eq('nothing left pending', boardSync.current().pendingGlobal, null)
+}
+
+// --- the control keeps its value for the length of the write ---------------
+/*
+ * The glitch this guards against: clearing the pending edit when the write
+ * *starts* rather than when the board confirms it. A board-wide write is a
+ * read, a write, a 400 ms settle and a verify read, so for that half-second the
+ * store still holds the old value — and a slider reading from the store alone
+ * snapped back to where it was and jumped forward again once the read landed.
+ * It looks exactly like the edit being lost.
+ */
+{
+  calls.length = 0
+  void boardSync.applyGlobal({ lighting: { brightness: 88 } })
+  // Mid-write: the fake codec takes 30 ms per exchange, so this lands inside.
+  await sleep(15)
+  eq('the phase says a write is running', boardSync.current().phase, 'writing')
+  eq('and the value is still shown', pendingLight()?.brightness, 88)
+  await sleep(200)
+  eq('only once the board confirms does it clear', boardSync.current().pendingGlobal, null)
+  eq('and one write carried it', calls, ['global:brightness=88'])
+}
+
+// --- patches merge rather than replace one another --------------------------
+{
+  calls.length = 0
+  boardSync.hold()
+  void boardSync.applyGlobal({ lighting: { color: { r: 1, g: 2, b: 3 } } })
+  void boardSync.applyGlobal({ lighting: { brightness: 50 } })
+  void boardSync.applyGlobal({ lighting: { brightness: 60 } })
+  boardSync.release()
+  await sleep(150)
+  // The colour survives the two brightness patches that followed it: a drag
+  // must not throw away a value set a moment earlier.
+  eq('one write carrying both fields', calls, ['global:brightness=60,color={"r":1,"g":2,"b":3}'])
+}
+
+// --- an undragged control still goes at once --------------------------------
+{
+  calls.length = 0
+  void boardSync.applyGlobal({ lighting: { colorful: true } })
+  await sleep(150)
+  // A checkbox has nothing to throttle. Making it wait was the first cut's
+  // mistake on the per-key path, and it should not be repeated here.
+  eq('a switch is not delayed', calls, ['global:colorful=true'])
+}
+
+// --- changes during a write leave in the next one, not one write each -------
+{
+  calls.length = 0
+  void boardSync.applyGlobal({ lighting: { brightness: 10 } })
+  // Land these while the write above is in its 30 ms.
+  await sleep(10)
+  void boardSync.applyGlobal({ lighting: { brightness: 20 } })
+  void boardSync.applyGlobal({ lighting: { speed: 2 } })
+  await sleep(300)
+  eq('two writes, and the second carries both later changes', calls, [
+    'global:brightness=10',
+    'global:brightness=20,speed=2',
+  ])
+}
+
+// --- a failed board-wide write keeps the edit -------------------------------
+{
+  calls.length = 0
+  const write = codec.writeGlobalSettings
+  codec.writeGlobalSettings = async () => {
+    throw new Error('board said no')
+  }
+  void boardSync.applyGlobal({ lighting: { brightness: 77 } })
+  await sleep(150)
+  // Left pending on purpose, the same way a failed per-key write leaves its
+  // keys dirty: the board does not have the value, so something still must.
+  ok('the error is reported', boardSync.current().error !== null)
+  eq('and the edit is still pending', pendingLight()?.brightness, 77)
+  codec.writeGlobalSettings = write
+  calls.length = 0
+  await boardSync.flush()
+  await sleep(150)
+  eq('so the retry can send it', calls, ['global:brightness=77'])
+}
+
+// --- a board-wide write never overlaps a per-key one ------------------------
+{
+  calls.length = 0
+  maxOverlap = 0
+  configStore.update([20], (c) => ({ ...c, actuationMm: 1.1 }))
+  void boardSync.applyGlobal({ lighting: { brightness: 5 } })
+  await sleep(350)
+  // Both are read-modify-writes over a whole block. Two at once means one of
+  // them reading a half-written base.
+  eq('one at a time, never two', maxOverlap, 1)
+  ok('and both happened', calls.length >= 2, calls.join(','))
 }
 
 console.log(`${pass} checks passed, ${fails.length} failed`)

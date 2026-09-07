@@ -109,7 +109,7 @@
     },
     "raven61": {
       "label": "Raven61 (performance block and keymap read/write)",
-      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), the global settings read (0x05) and the keymap read (0x08) and write (0x09) are decoded and hardware-verified. Every write is read-modify-write and is read back afterwards to compare the bytes. Lighting, advanced keys and macros are not decoded."
+      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), the global settings read (0x05) and the keymap read (0x08) and write (0x09) are decoded and hardware-verified. Every write is read-modify-write and is read back afterwards to compare the bytes. Advanced keys are decoded from the firmware and both read and write are wired up, but not confirmed on hardware yet. Macros are not decoded."
     },
     "demo": {
       "label": "Demo TKL (simulated)",
@@ -143,7 +143,8 @@
     "writeMismatch_other": "{count} slots read back differently from what was written: {detail}",
     "firmwareEmpty": "The board answered 0x03 with nothing. This firmware appears not to report its build.",
     "resetNak": "The board did not acknowledge the factory reset. It appears not to have started.",
-    "noAnalogMode": "This board’s spec ({board}) names no analog test-mode command, so live travel cannot be started."
+    "noAnalogMode": "This board’s spec ({board}) names no analog test-mode command, so live travel cannot be started.",
+    "advancedRecordRange": "Record {record} does not exist; this board has {max}."
   },
 
   "reset": {
@@ -337,9 +338,85 @@
   },
 
   "advanced": {
-    "title": "Advanced keys (DKS · MT · TGL · RS · SOCD · OKS)",
+    "title": "Advanced keys (DKS · TGL · MT · RS · SOCD · OKS)",
     "what": "advanced keys",
-    "note": "The stock driver stores up to 40 advanced keys per profile and tells the kinds apart by <c>t_magnetic_key_data.macro_type</c>. DKS keeps its four depth-stage actions in <c>t_key_item_data.trigger_state1..4</c>."
+    "note": "A record holds the parameters and a keymap entry says which key runs it, which of the six kinds it is, and for RS, SOCD and OKS which key it is paired with. So applying writes twice: the record first, then the keymap.",
+    "unverified": "The three tables and all six kinds are decoded from the firmware, and every write here is read back and compared — but <b>none of it has been confirmed on hardware</b>. A verified write means the bytes are in the table; whether the key behaves is what you are testing.",
+    "pickKey": "Pick a key on the grid.",
+    "layers": "Layer",
+    "key": "Key",
+    "kind": "Kind",
+    "kindNone": "— none —",
+    "record": "Record",
+    "param": "Argument",
+    "bytes": "Bytes",
+    "apply": "Apply",
+    "applying": "Applying…",
+    "revert": "Revert",
+    "unbind": "Unbind",
+    "unbound": "The key is back to its factory binding, and record #{record} was cleared.",
+    "unboundShared": "The key is back to its factory binding. Record #{record} was left alone — another key still uses it.",
+    "unbindUnavailable": "The board's factory table has no binding for this key, so there is nothing to put back.",
+    "applied": "Record #{record} written, and the key bound to it as {kind}.",
+    "mismatch": "Record #{record} did not read back as written: {wanted} → {got}. The keymap was left alone.",
+    "keymapMismatch": "The record was written, but the keymap entry did not read back as sent: {detail}. The key is not bound to it.",
+    "noFreeRecord": "All {limit} records are in use. Free one by unbinding the key that uses it.",
+    "capLabel": "{kind} · record {record}",
+    "inUse": "Advanced keys on this layer",
+    "noneBound": "No key on this layer is bound to an advanced key.",
+    "orphans": "Records with bytes in them that no layer points at: {records}. Left alone — from here a leftover and a record the stock driver wrote look the same.",
+    "unmappedSlot": "slot {slot}",
+    "holdMs": "{ms} ms",
+    "partnerSlot": "partner slot {slot}",
+    "kinds": {
+      "dks": "DKS",
+      "tgl": "TGL",
+      "mt": "MT",
+      "rs": "RS",
+      "socd": "SOCD",
+      "oks": "OKS"
+    },
+    "dks": {
+      "help": "Four depth points and four bindings. Each binding goes down at one point and comes up at another; setting both to the same point makes it a tap. Points 1 and 2 are tested pressing down, points 3 and 4 coming back up.",
+      "point0": "Point 1 (down)",
+      "point1": "Point 2 (down)",
+      "point2": "Point 3 (up)",
+      "point3": "Point 4 (up)",
+      "binding": "Binding {n}",
+      "pressAt": "Press at",
+      "releaseAt": "Release at",
+      "stage0": "Point 1",
+      "stage1": "Point 2",
+      "stage2": "Point 3",
+      "stage3": "Point 4"
+    },
+    "tgl": {
+      "help": "Press once and the key stays down; press again and it comes up. The board can hold 32 toggles down at a time.",
+      "key": "Key"
+    },
+    "mt": {
+      "help": "Tap for one binding, hold for another. The hold time goes in the keymap entry, in units of 10 ms.",
+      "tap": "Tap",
+      "hold": "Hold",
+      "time": "Hold time"
+    },
+    "rs": {
+      "help": "Two keys, and whichever is pressed deeper wins. Give the other key its own record too, with this key's slot as its partner."
+    },
+    "socd": {
+      "help": "Two keys on the same axis, resolved so they never fight. Give the other key its own record too, with this key's slot as its partner.",
+      "modeNote": "The resolution mode is not in this table — the firmware reads it from the high nibble of this key's performance record, which the input-point tab owns. Set it there."
+    },
+    "oks": {
+      "help": "The key sends one usage while it is held and fires another when it comes up.",
+      "onRelease": "On release"
+    },
+    "pair": {
+      "own": "This key sends",
+      "partner": "Partner sends",
+      "partnerSlot": "Partner slot",
+      "partnerSlotNote": "The other key's slot, as the table below reports it."
+    }
   },
 
   "calibration": {
@@ -538,6 +615,7 @@
       "unread": "The settings block has not been read from the board yet.",
       "unknownMode": "The board reports mode {mode}, which this table has no row for. Left as it is — overwriting it with a value we do know would throw away whatever it was set to.",
       "perKey": "<b>Custom Light</b> is the effect that paints the <b>per-key colours</b> stored on the board. Paint them in the section next to this one.",
+      "held": "· applied when you let go",
       "raw": "<c>payload[16..24]</c> = {bytes} · colorindex {index} (undecoded; the board's own byte is written back)"
     },
     "showsIn": {

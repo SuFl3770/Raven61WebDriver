@@ -173,8 +173,7 @@ export const COMMAND = {
   /** Writes the same blob back. Whole-blob replacement, not per-key. */
   writeKeyPerf: 0xa1,
   /**
-   * Advanced keys (DKS / MT / TGL / RS / SOCD / OKS): 1 KB at flash 0x22100,
-   * 42 records of 24 bytes.
+   * DKS records: 1 KB at flash 0x22100, 42 of 24 bytes.
    *
    * Read out of the firmware rather than the driver, which is why an earlier
    * pass had 0xa3 down as lighting. A keymap entry of type 0x90 indexes this
@@ -182,14 +181,26 @@ export const COMMAND = {
    * matches the driver's "40 advanced keys per profile" limit with two
    * spare. [fw]
    */
-  readAdvancedKeys: 0xa2,
-  writeAdvancedKeys: 0xa3,
-  /** Lighting, 256 bytes at flash 0x224f0. Field layout unconfirmed. [fw] */
-  readLightConfigA: 0xa4,
-  writeLightConfigA: 0xa5,
-  /** Lighting, 256 bytes at flash 0x225f0. Field layout unconfirmed. [fw] */
-  readLightConfigB: 0xa6,
-  writeLightConfigB: 0xa7,
+  readAdvancedDks: 0xa2,
+  writeAdvancedDks: 0xa3,
+  /**
+   * The other half of the advanced keys, **not lighting**: 256 bytes at flash
+   * 0x224f0, 42 records of 6 for MT, RS, SOCD and OKS.
+   *
+   * Two things settle it. The stock driver never sends 0xa5 on its own — all
+   * three of its apply paths (0x429a60, 0x42a740, 0x42b560) send 0xa3, 0xa5 and
+   * 0xa7 in a row. And in the firmware the only code that reads 0x224f0 is the
+   * MT handler at 0x8e72 and the RS/SOCD/OKS handlers at 0x9a52, 0x9c48 and
+   * 0x9d94; no LED path touches it. See `protocol/advancedKeys.ts`. [fw]
+   */
+  readAdvancedPair: 0xa4,
+  writeAdvancedPair: 0xa5,
+  /**
+   * The third advanced-key table: 256 bytes at flash 0x225f0, 42 records of 3,
+   * one keymap record each, read only by the toggle handler at 0x8cca. [fw]
+   */
+  readAdvancedToggle: 0xa6,
+  writeAdvancedToggle: 0xa7,
   /**
    * Analog test mode, confirmed on hardware.
    *
@@ -393,9 +404,9 @@ export const READ_COMMANDS: readonly number[] = [
   COMMAND.readKeyRgb,
   COMMAND.readMacros,
   COMMAND.readKeyPerf,
-  COMMAND.readAdvancedKeys,
-  COMMAND.readLightConfigA,
-  COMMAND.readLightConfigB,
+  COMMAND.readAdvancedDks,
+  COMMAND.readAdvancedPair,
+  COMMAND.readAdvancedToggle,
   COMMAND.readLightRgb,
   COMMAND.readReserved,
   COMMAND.analogTestOff,
@@ -655,6 +666,12 @@ export const DEFAULT_COMMANDS: CommandSpec = {
   writeKeyPerf: COMMAND.writeKeyPerf,
   readKeyRgb: COMMAND.readKeyRgb,
   writeKeyRgb: COMMAND.writeKeyRgb,
+  readAdvancedDks: COMMAND.readAdvancedDks,
+  writeAdvancedDks: COMMAND.writeAdvancedDks,
+  readAdvancedPair: COMMAND.readAdvancedPair,
+  writeAdvancedPair: COMMAND.writeAdvancedPair,
+  readAdvancedToggle: COMMAND.readAdvancedToggle,
+  writeAdvancedToggle: COMMAND.writeAdvancedToggle,
   readLightFrame: COMMAND.readLightRgb,
   readCalibration: COMMAND.readCalibration,
   analogTestOn: COMMAND.analogTestOn,

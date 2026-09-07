@@ -32,6 +32,7 @@ import { mmToCounts } from '../protocol/encoding'
 import { COMMAND, DANGEROUS_COMMANDS, EVENT, sign } from '../protocol/frame'
 import { FACTORY_GLOBAL } from '../protocol/global'
 import { encodeKeyPerfRecord } from '../protocol/keyPerf'
+import { ADVANCED_KEY_BLOCKS } from '../protocol/advancedKeys'
 import { keyRgbBlobSize } from '../protocol/keyRgb'
 import {
   LIGHT_CONTROL,
@@ -99,6 +100,17 @@ export class DemoBoard {
   private keyRgb!: Uint8Array
   /** Never restored by a factory reset — see FACTORY_RESET_DEFAULTS. */
   private calibration!: Uint8Array
+  /**
+   * The three advanced-key tables, zeroed.
+   *
+   * Zero is the factory state here rather than a stand-in: the reset routine
+   * fills 0x22100 with zeros (docs §3.8), and a record of all zeros is one no
+   * keymap entry points at. So the demo starts with no advanced keys and the
+   * panel can create one, which is the flow worth exercising.
+   */
+  private advancedDks!: Uint8Array
+  private advancedPair!: Uint8Array
+  private advancedToggle!: Uint8Array
 
   /** Latched by 0xa8 and never cleared, the way the real board behaves. */
   private reporting = false
@@ -224,6 +236,22 @@ export class DemoBoard {
       // which is the one override this project has decoded (docs §3.3) — and
       // simulating it is what makes the difference between the two blocks
       // visible in the demo instead of only described in the panel.
+      case COMMAND.readAdvancedDks:
+        return this.blockReply(request, command, this.advancedDks)
+      case COMMAND.writeAdvancedDks:
+        this.blockWrite(request, this.advancedDks)
+        return this.ack(request)
+      case COMMAND.readAdvancedPair:
+        return this.blockReply(request, command, this.advancedPair)
+      case COMMAND.writeAdvancedPair:
+        this.blockWrite(request, this.advancedPair)
+        return this.ack(request)
+      case COMMAND.readAdvancedToggle:
+        return this.blockReply(request, command, this.advancedToggle)
+      case COMMAND.writeAdvancedToggle:
+        this.blockWrite(request, this.advancedToggle)
+        return this.ack(request)
+
       case COMMAND.readLightRgb:
         return this.blockReply(request, command, this.ledFrame())
 
@@ -362,6 +390,9 @@ export class DemoBoard {
      * to say.
      */
     this.keyRgb = new Uint8Array(keyRgbBlobSize(this.spec.keyRgb))
+    this.advancedDks = new Uint8Array(ADVANCED_KEY_BLOCKS.dks.blobSize)
+    this.advancedPair = new Uint8Array(ADVANCED_KEY_BLOCKS.pair.blobSize)
+    this.advancedToggle = new Uint8Array(ADVANCED_KEY_BLOCKS.toggle.blobSize)
   }
 
   private buildGlobal(): Uint8Array {
@@ -758,17 +789,11 @@ export class DemoBoard {
 /** Read commands this app does not decode. The board answers; the blob is empty. */
 const UNDECODED_READS: readonly number[] = [
   COMMAND.readMacros,
-  COMMAND.readAdvancedKeys,
-  COMMAND.readLightConfigA,
-  COMMAND.readLightConfigB,
   COMMAND.readReserved,
 ]
 
 const UNDECODED_WRITES: readonly number[] = [
   COMMAND.writeMacros,
-  COMMAND.writeAdvancedKeys,
-  COMMAND.writeLightConfigA,
-  COMMAND.writeLightConfigB,
   COMMAND.writeLightRgb,
   COMMAND.writeReserved,
 ]

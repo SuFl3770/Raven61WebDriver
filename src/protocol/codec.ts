@@ -2,7 +2,9 @@ import type { DeviceSpec } from '../device/spec'
 import type { HidLink } from '../hid/link'
 import { t, type MessageKey } from '../i18n'
 import type { CalRecord } from './calibration'
+import type { AdvancedKeyBlobs, AdvancedRecord } from './advancedKeys'
 import type {
+  AdvancedKeyWriteResult,
   FactoryResetResult,
   FactoryResetStage,
   KeymapWriteResult,
@@ -23,6 +25,7 @@ import type {
   KeySample,
   KeymapEntry,
 } from './types'
+import type { AdvancedKeySnapshot } from './types'
 
 /**
  * How much we trust a codec against real hardware. Surfaced in the UI so a
@@ -234,6 +237,39 @@ export interface KeyboardCodec {
   restoreKeyRgb?(link: HidLink, blob: Uint8Array): Promise<void>
 
   /**
+   * All three advanced-key tables, read together.
+   *
+   * Together because a record number means nothing on its own: which table
+   * holds a record's parameters depends on the kind, and the kind is in the
+   * keymap. A panel that read one table would have to guess for the other two.
+   * See `protocol/advancedKeys.ts`.
+   */
+  readAdvancedKeys?(link: HidLink): Promise<AdvancedKeySnapshot>
+
+  /**
+   * Writes one advanced-key record, and checks that the write took.
+   *
+   * One record rather than a whole table, for the same reason every other write
+   * here is read-modify-write: the tables hold 42 records and this app is
+   * editing one of them. Only the table the record's kind uses is sent.
+   *
+   * A verified write means *the bytes are in the table*. Whether a key runs
+   * that record depends on the keymap entry pointing at it, which is a separate
+   * write — see `writeKeymap`.
+   */
+  writeAdvancedKey?(
+    link: HidLink,
+    record: number,
+    rec: AdvancedRecord,
+  ): Promise<AdvancedKeyWriteResult>
+
+  /**
+   * Puts whole advanced-key tables back, byte for byte — the undo for the write
+   * above, using the bytes the board had rather than this app's idea of them.
+   */
+  restoreAdvancedKeys?(link: HidLink, blobs: AdvancedKeyBlobs): Promise<void>
+
+  /**
    * The LED frame the board is displaying right now, effects and the firmware's
    * calibration overlay included.
    *
@@ -337,6 +373,9 @@ export type Capability =
   | 'readKeyColors'
   | 'writeKeyColors'
   | 'restoreKeyRgb'
+  | 'readAdvancedKeys'
+  | 'writeAdvancedKey'
+  | 'restoreAdvancedKeys'
   | 'readLightFrame'
   | 'watchLightFrame'
   | 'readActiveProfile'

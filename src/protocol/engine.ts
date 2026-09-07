@@ -26,6 +26,19 @@ import { layoutOf } from '../device/layout'
 import type { DeviceSpec } from '../device/spec'
 import type { HidLink } from '../hid/link'
 import { t } from '../i18n'
+import {
+  ADVANCED_BLOCK_OF,
+  ADVANCED_KEY_BLOCKS,
+  advancedBlobSize,
+  encodeAdvancedRecord,
+  isFreeRecord,
+  kindOfType,
+  recordHex as advancedRecordHex,
+  type AdvancedBlock,
+  type AdvancedKeyBlobs,
+  type AdvancedKind,
+  type AdvancedRecord,
+} from './advancedKeys'
 import { parseCalTable, type CalRecord } from './calibration'
 import type { KeyboardCodec } from './codec'
 import {
@@ -68,6 +81,8 @@ import {
 } from './keyRgb'
 import { fallbackSlotMap, slotMapFromKeymap, type SlotMap } from './slotMap'
 import type {
+  AdvancedKeySnapshot,
+  AdvancedKeyUse,
   FirmwareIdentity,
   GlobalSettings,
   KeyConfig,
@@ -230,6 +245,30 @@ export interface KeyRgbWriteResult {
   mismatched: { slot: number; wanted: string; got: string }[]
 }
 
+/**
+ * What one advanced-key record write did.
+ *
+ * Only the table the record's kind uses is touched, so `block` says which one
+ * and `before` / `after` are that table. The stock driver sends all three
+ * tables on every apply (0xa3, 0xa5 and 0xa7 back to back from each of its
+ * three apply paths); this sends the one that changed, because each write
+ * handler is an independent block copy with its own base address and its own
+ * flash write — there is no cross-table commit to satisfy.
+ */
+export interface AdvancedKeyWriteResult {
+  record: number
+  kind: AdvancedKind
+  block: AdvancedBlock
+  /** False when the record already held these bytes and nothing was sent. */
+  sent: boolean
+  /** The table as the board had it before the write — enough to undo it. */
+  before: Uint8Array
+  /** The table read back afterwards. */
+  after: Uint8Array
+  /** Set when the record did not read back as written. */
+  mismatch: { wanted: string; got: string } | null
+}
+
 export interface FactoryResetResult {
   /** Milliseconds waited before reading anything back. */
   waitedMs: number
@@ -288,6 +327,8 @@ export interface ProtocolEngine {
   writeKeymapLayerBlob(link: HidLink, layer: number, blob: Uint8Array): Promise<void>
   readKeyRgbBlob(link: HidLink): Promise<Uint8Array>
   writeKeyRgbBlob(link: HidLink, blob: Uint8Array): Promise<void>
+  readAdvancedKeyBlobs(link: HidLink): Promise<AdvancedKeyBlobs>
+  writeAdvancedKeyBlob(link: HidLink, block: AdvancedBlock, blob: Uint8Array): Promise<void>
   readCalTable(link: HidLink): Promise<CalRecord[]>
   /**
    * Present only when the board's spec names an analog test-mode command.
@@ -1023,6 +1064,160 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     return { layer, slots, keys, unmapped, before, after, mismatched }
   }
 
+  // --- advanced keys -------------------------------------------------------
+
+  /** Command byte for one table's read, or null when the spec names none. */
+  function advancedRead(block: AdvancedBlock): number | null {
+    if (block === 'dks') return cmd.readAdvancedDks
+    if (block === 'pair') return cmd.readAdvancedPair
+    return cmd.readAdvancedToggle
+  }
+
+  function advancedWrite(block: AdvancedBlock): number | null {
+    if (block === 'dks') return cmd.writeAdvancedDks
+    if (block === 'pair') return cmd.writeAdvancedPair
+    return cmd.writeAdvancedToggle
+  }
+
+  /**
+   * All three advanced-key tables, in one transaction.
+   *
+   * One transaction rather than three because that is what the stock driver
+   * does and because the three are one setting: a record number without its
+   * kind's table is not a readable advanced key.
+   */
+  async function readAdvancedKeyBlobs(link: HidLink): Promise<AdvancedKeyBlobs> {
+    const reads: [AdvancedBlock, number][] = (['dks', 'pair', 'toggle'] as const).map((block) => [
+      block,
+      needCommand(advancedRead(block), `readAdvanced${block}`),
+    ])
+    return inTransaction(link, 'advanced keys', async () => {
+      const out: Partial<AdvancedKeyBlobs> = {}
+      for (const [block, command] of reads) {
+        out[block] = await readBlock(link, command, advancedBlobSize(block, spec.advancedKeys), {
+          note: `advanced ${block}`,
+        })
+      }
+      return out as AdvancedKeyBlobs
+    })
+  }
+
+  /** Puts one table back. The firmware's handler caps the transfer at its size. */
+  async function writeAdvancedKeyBlob(
+    link: HidLink,
+    block: AdvancedBlock,
+    blob: Uint8Array,
+  ): Promise<void> {
+    const command = needCommand(advancedWrite(block), `writeAdvanced${block}`)
+    const expected = advancedBlobSize(block, spec.advancedKeys)
+    if (blob.length !== expected) {
+      throw new Error(t('protocol.blobSize', { size: blob.length, expected }))
+    }
+    await inTransaction(link, `advanced ${block} write`, () =>
+      writeBlock(link, command, blob, { label: `advanced ${block} write` }),
+    )
+  }
+
+  /**
+   * The tables, plus every keymap entry across the readable layers that names
+   * one of their records.
+   *
+   * The keymap sweep is not optional decoration. A record carries parameters
+   * and nothing else — not the kind, not the key — so without it the app would
+   * have 42 rows of bytes it cannot even name.
+   */
+  async function readAdvancedKeys(link: HidLink): Promise<AdvancedKeySnapshot> {
+    const { map } = await readSlotMap(link)
+    const blobs = await readAdvancedKeyBlobs(link)
+    const uses: AdvancedKeyUse[] = []
+    const claimed = new Set<number>()
+    for (let layer = 0; layer < spec.keymap.layers; layer++) {
+      const blob = await readKeymapLayerBlob(link, layer)
+      for (let slot = 0; slot < spec.keymap.slots; slot++) {
+        const binding = decodeRecord(blob, slot * spec.keymap.entrySize)
+        if (binding.kind !== 'advanced') continue
+        const kind = kindOfType(binding.type)
+        // `decodeRecord` only calls a record advanced for the six known types,
+        // so this cannot miss — the guard is here because the two tables are
+        // maintained separately and a seventh type would land silently.
+        if (!kind) continue
+        claimed.add(binding.record)
+        const key = map.keyBySlot.get(slot)
+        uses.push({
+          layer,
+          index: key?.index ?? -1,
+          label: key?.label ?? '',
+          slot,
+          kind,
+          record: binding.record,
+          param: binding.param,
+        })
+      }
+    }
+    const orphans: number[] = []
+    for (let record = 0; record < spec.advancedKeys.records; record++) {
+      if (!claimed.has(record) && !isFreeRecord(blobs, record)) orphans.push(record)
+    }
+    return { blobs, slotMap: map, uses, orphans }
+  }
+
+  /**
+   * Writes one record, and reads the table back to check it.
+   *
+   * Read-modify-write over the table the record's kind uses: 41 other records
+   * live in it, and two of them are the spares past the stock driver's limit.
+   * The verify read is the same rule as everywhere else here — an acknowledged
+   * write the firmware ignored reads exactly like one that worked.
+   */
+  async function writeAdvancedKey(
+    link: HidLink,
+    record: number,
+    rec: AdvancedRecord,
+  ): Promise<AdvancedKeyWriteResult> {
+    const kind: AdvancedKind = rec.kind
+    const block = ADVANCED_BLOCK_OF[kind]
+    if (record < 0 || record >= spec.advancedKeys.records) {
+      throw new Error(t('protocol.advancedRecordRange', { record, max: spec.advancedKeys.records }))
+    }
+    const before = (await readAdvancedKeyBlobs(link))[block]
+    const size = ADVANCED_KEY_BLOCKS[block].recordSize
+    const at = record * size
+    const wanted = encodeAdvancedRecord(rec)
+    let same = true
+    for (let i = 0; i < size; i++) if ((before[at + i] ?? 0) !== wanted[i]) same = false
+    if (same) {
+      return { record, kind, block, sent: false, before, after: before, mismatch: null }
+    }
+
+    const next = new Uint8Array(before)
+    next.set(wanted, at)
+    await writeAdvancedKeyBlob(link, block, next)
+    const after = (await readAdvancedKeyBlobs(link))[block]
+    let ok = true
+    for (let i = 0; i < size; i++) if ((after[at + i] ?? 0) !== wanted[i]) ok = false
+    return {
+      record,
+      kind,
+      block,
+      sent: true,
+      before,
+      after,
+      mismatch: ok
+        ? null
+        : {
+            wanted: advancedRecordHex(next, record, kind),
+            got: advancedRecordHex(after, record, kind),
+          },
+    }
+  }
+
+  /** Puts whole tables back — the undo for the write above. */
+  async function restoreAdvancedKeys(link: HidLink, blobs: AdvancedKeyBlobs): Promise<void> {
+    for (const block of ['dks', 'pair', 'toggle'] as const) {
+      await writeAdvancedKeyBlob(link, block, blobs[block])
+    }
+  }
+
   // --- per-key colour ------------------------------------------------------
 
   /**
@@ -1352,7 +1547,9 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
       await new Promise((r) => setTimeout(r, spec.global.settleMs))
       const after = await readGlobalBlock(link)
       const mismatched: GlobalWriteResult['mismatched'] = []
-      for (const offset of writtenOffsets(spec.global)) {
+      // The patch, so the lighting bytes are verified when the patch named one
+      // and left alone when it did not — see `writtenOffsets`.
+      for (const offset of writtenOffsets(spec.global, patch)) {
         const wanted = request[offset] ?? 0
         const got = after.raw[offset] ?? 0
         if (wanted !== got) mismatched.push({ offset, wanted, got })
@@ -1514,6 +1711,8 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     writeKeymapLayerBlob,
     readKeyRgbBlob,
     writeKeyRgbBlob,
+    readAdvancedKeyBlobs,
+    writeAdvancedKeyBlob,
     readCalTable,
     parseEvent,
     decodePerKey,
@@ -1566,6 +1765,25 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     ...(has(cmd.readKeyRgb) &&
       has(cmd.writeKeyRgb) &&
       has(cmd.readKeymapDefaults) && { writeKeyColors, restoreKeyRgb: writeKeyRgbBlob }),
+    /*
+     * The advanced-key read sweeps the keymap for the entries that name a
+     * record, and needs the slot map to say which key each one is — so the same
+     * rule as the colour read applies: no keymap commands, no advanced-key
+     * panel, rather than a panel that reports records nothing can be traced to.
+     */
+    ...(has(cmd.readAdvancedDks) &&
+      has(cmd.readAdvancedPair) &&
+      has(cmd.readAdvancedToggle) &&
+      has(cmd.readKeymapLive) &&
+      has(cmd.readKeymapDefaults) && { readAdvancedKeys }),
+    ...(has(cmd.readAdvancedDks) &&
+      has(cmd.readAdvancedPair) &&
+      has(cmd.readAdvancedToggle) &&
+      has(cmd.writeAdvancedDks) &&
+      has(cmd.writeAdvancedPair) &&
+      has(cmd.writeAdvancedToggle) &&
+      has(cmd.readKeymapLive) &&
+      has(cmd.readKeymapDefaults) && { writeAdvancedKey, restoreAdvancedKeys }),
     ...(has(cmd.readLightFrame) &&
       has(cmd.readKeymapDefaults) && { readLightFrame, watchLightFrame }),
     ...(has(cmd.readCalibration) && { readCalibration: readCalTable }),

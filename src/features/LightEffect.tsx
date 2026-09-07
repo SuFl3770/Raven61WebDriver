@@ -7,6 +7,7 @@ import { hexOf, parseHex } from '../protocol/keyRgb'
 import {
   LIGHT_CONTROL,
   LIGHT_LIMITS,
+  applyLightingPatch,
   effectOf,
   supportsControl,
   type LightingPatch,
@@ -14,7 +15,7 @@ import {
 import { RAVEN61_LIGHT_EFFECT_LABELS } from '../device/boards/raven61/lighting'
 import { useGlobalSettings } from '../state/global'
 import { useCodec, useConnection } from '../state/link'
-import { boardSync } from '../state/sync'
+import { boardSync, useSyncState } from '../state/sync'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { useHeldWrites } from '../ui/useHeldWrites'
 
@@ -61,9 +62,15 @@ export function LightEffect() {
   const { connected } = useConnection()
   const t = useT()
   const global = useGlobalSettings()
-  // Brightness and speed are dragged, so they hold the write until release —
-  // one block rewrite per pixel is what this is for. See useHeldWrites.
+  /*
+   * The controls that move are dragged, so they hold the write until release —
+   * one block rewrite per pixel is what this is for, and a block rewrite here
+   * carries a settle delay. See `useHeldWrites` and `applyGlobal`.
+   */
   const held = useHeldWrites()
+  // What has been dragged but not sent yet. Without it every control would read
+  // its value back out of the board's last reply and refuse to move.
+  const pending = useSyncState().pendingGlobal?.lighting
 
   const canRead = supports(codec, 'readGlobalSettings')
   const canWrite = supports(codec, 'writeGlobalSettings')
@@ -86,7 +93,10 @@ export function LightEffect() {
     )
   }
 
-  const lighting = global?.lighting ?? null
+  // The board's own values with the unsent edit laid over them — which is what
+  // every control below shows, and what the next write will make true.
+  const onBoard = global?.lighting ?? null
+  const lighting = onBoard === null ? null : applyLightingPatch(onBoard, pending)
   const current = lighting === null ? undefined : effectOf(effects, lighting.mode)
   const disabled = !connected || lighting === null || !canWrite
 
@@ -254,8 +264,16 @@ export function LightEffect() {
                 <span className="small dim" style={{ width: 72 }}>
                   {t('light.palette')}
                 </span>
+                {/*
+                  Held like the sliders. The native picker is an OS dialog, so
+                  the release lands when it opens rather than when it closes —
+                  what stops the drag inside it from queueing a write per frame
+                  is the coalescing in `applyGlobal`, not this. Kept anyway,
+                  because it does cover the swatch's own click.
+                */}
                 <input
                   type="color"
+                  {...held}
                   disabled={disabled || lighting.colorful}
                   value={hexOf(lighting.color)}
                   onChange={(e) => {
@@ -289,6 +307,16 @@ export function LightEffect() {
                   k="light.fxPanel.raw"
                   params={{ bytes: rawLighting(global.raw), index: lighting.colorIndex }}
                 />
+                {/*
+                  These are the bytes the *board* holds, so while a control is
+                  being dragged they are one gesture behind the slider above.
+                  Said out loud, because a readout that disagrees with the
+                  control over it otherwise reads as a slider that is not
+                  working.
+                */}
+                {pending && (
+                  <span style={{ color: 'var(--warn)' }}> {t('light.fxPanel.held')}</span>
+                )}
               </div>
             )}
           </Panel>
