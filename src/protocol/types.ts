@@ -13,6 +13,8 @@
 import type { ReportRateSpec, SwitchTypeSpec } from '../device/spec'
 import { t, type MessageKey } from '../i18n'
 import type { KeyBinding } from './keymap'
+import type { Rgb } from './keyRgb'
+import type { LightingSettings } from './lighting'
 
 /**
  * `key_mode` in the stock schema. 0 = off, 1 = rapid trigger, 2 = rapid trigger
@@ -212,8 +214,16 @@ export interface GlobalSettings {
   magnetTest: boolean
   /** `debounce_level`, payload[15] bits 5-6. */
   debounceLevel: number
-  /** Sleep timeout in minutes; 0xff means never. */
-  sleepMinutes: number
+  /**
+   * The lighting effect settings, which share this block — `payload[16..24]`.
+   *
+   * `null` for a board whose spec does not locate them, which is not the same
+   * as a board with the lights off. See `protocol/lighting.ts`.
+   *
+   * These bytes used to be read as a single `sleepMinutes` field. They are not
+   * a timeout: `payload[16]` is the effect the board is running.
+   */
+  lighting: LightingSettings | null
 }
 
 /**
@@ -257,4 +267,31 @@ export interface KeymapEntry {
   binding: KeyBinding
   /** Slot the record came from, when the slot map resolved one for the key. */
   slot?: number
+}
+
+/** One key's stored custom colour. See `protocol/keyRgb.ts`. */
+export interface KeyRgbEntry {
+  color: Rgb
+  /** Slot the record came from, when the slot map resolved one for the key. */
+  slot?: number
+}
+
+/**
+ * A read of a per-key colour block, decoded and raw.
+ *
+ * The raw blob is kept for the same reason the performance snapshot keeps
+ * one — a decode can look right while being indexed wrongly, and this block has
+ * already been misread once as a keymap layer (see keyRgb.ts).
+ *
+ * `live` says which block it is. The stored layer (0x0a) is what a write goes
+ * to and what a verify compares; the live frame (0xde) is a RAM buffer the
+ * effect engine rewrites every frame, so it answers "what is on the keyboard
+ * right now" and nothing else.
+ */
+export interface KeyRgbSnapshot {
+  blob: Uint8Array
+  slotMap: SlotMapInfo
+  /** Decoded per key, in this project's key order. */
+  entries: KeyRgbEntry[]
+  live: boolean
 }

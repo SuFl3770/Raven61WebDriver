@@ -51,6 +51,9 @@ const SECTIONS: Record<string, Record<string, LeafKind>> = {
     writeKeymapLive: 'byte?',
     readKeyPerf: 'byte?',
     writeKeyPerf: 'byte?',
+    readKeyRgb: 'byte?',
+    writeKeyRgb: 'byte?',
+    readLightFrame: 'byte?',
     readCalibration: 'byte?',
     analogTestOn: 'byte?',
     analogTestOff: 'byte?',
@@ -89,6 +92,11 @@ const SECTIONS: Record<string, Record<string, LeafKind>> = {
     'keyMode.rapidTrigger': 'byte',
     'keyMode.fullStroke': 'byte',
   },
+  keyRgb: {
+    recordSize: 'size',
+    slots: 'size',
+    framePollMs: 'size',
+  },
   keymap: {
     entrySize: 'size',
     slots: 'size',
@@ -106,7 +114,13 @@ const SECTIONS: Record<string, Record<string, LeafKind>> = {
     'offsets.deadZone': 'index',
     'offsets.gameLock': 'index',
     'offsets.flags': 'index',
-    'offsets.sleep': 'index',
+    'offsets.lightMode': 'index?',
+    'offsets.brightness': 'index?',
+    'offsets.speed': 'index?',
+    'offsets.direction': 'index?',
+    'offsets.colorful': 'index?',
+    'offsets.colorIndex': 'index?',
+    'offsets.color': 'index?',
     'offsets.activeLayer': 'index?',
     'flags.tachyon': 'byte',
     'flags.bottomOutTrigger': 'byte',
@@ -120,7 +134,10 @@ const SECTIONS: Record<string, Record<string, LeafKind>> = {
     'factoryDefaults.deadZone': 'byte',
     'factoryDefaults.flags': 'byte',
     'factoryDefaults.debounceLevel': 'byte',
-    'factoryDefaults.sleepMinutes': 'byte',
+    'factoryDefaults.lightMode': 'byte',
+    'factoryDefaults.brightness': 'byte',
+    'factoryDefaults.speedWire': 'byte',
+    'factoryDefaults.colorful': 'byte',
   },
   monitor: { rearmMs: 'size', ackMs: 'size' },
   factoryReset: { firstWaitMs: 'count', secondWaitMs: 'count' },
@@ -148,6 +165,7 @@ const TOP_LEVEL = new Set([
   'layout',
   'switchTypes',
   'reportRates',
+  'lightEffects',
   'requestTimeoutMs',
   ...Object.keys(SECTIONS),
 ])
@@ -328,6 +346,8 @@ const SWITCH_FIELDS = new Set([
 ])
 const RATE_FIELDS = new Set(['value', 'hz'])
 
+const EFFECT_FIELDS = new Set(['mode', 'name', 'supports', 'selectable'])
+
 function checkRowFields(
   row: Record<string, unknown>,
   allowed: Set<string>,
@@ -373,6 +393,26 @@ function checkTables(raw: Record<string, unknown>, at: (f: string) => string, er
         checkRowFields(r, RATE_FIELDS, where, errors)
         checkLeaf(r.value, 'byte', `${where}.value`, errors)
         checkLeaf(r.hz, 'size', `${where}.hz`, errors)
+      })
+  }
+  if (raw.lightEffects !== undefined) {
+    if (!Array.isArray(raw.lightEffects)) errors.push(at('lightEffects must be a list'))
+    else
+      raw.lightEffects.forEach((e, i) => {
+        const where = at(`lightEffects[${i}]`)
+        if (!isObject(e)) return void errors.push(`${where} must be an object`)
+        checkRowFields(e, EFFECT_FIELDS, where, errors)
+        checkLeaf(e.mode, 'byte', `${where}.mode`, errors)
+        // `supports` is a ten-bit mask, so it is not a byte. Checked as a size
+        // rather than left alone: a mask that came through as a string would
+        // hide every control on that effect and look like a decision.
+        checkLeaf(e.supports, 'count', `${where}.supports`, errors)
+        if (typeof e.name !== 'string') errors.push(`${where}.name must be text`)
+        // Optional here, unlike a switch row's: absent means selectable, which
+        // is the normal case, and only an effect nobody may send says so.
+        if (e.selectable !== undefined && typeof e.selectable !== 'boolean') {
+          errors.push(`${where}.selectable must be true/false`)
+        }
       })
   }
 }

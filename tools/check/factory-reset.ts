@@ -50,7 +50,12 @@ interface BoardOpts {
   /** Do not answer the 0x05 that follows. */
   silentRead?: boolean
   /** Values the block comes back with. Defaults to the firmware's own. */
-  block?: Partial<Record<'rate' | 'deadZone' | 'gameLock' | 'flags' | 'sleep', number>>
+  block?: Partial<
+    Record<
+      'rate' | 'deadZone' | 'gameLock' | 'flags' | 'lightMode' | 'brightness' | 'speed' | 'colorful',
+      number
+    >
+  >
 }
 
 class FakeBoard {
@@ -82,7 +87,12 @@ class FakeBoard {
       reply[GLOBAL.deadZone] = b.deadZone ?? 0x01
       reply[GLOBAL.gameLock] = b.gameLock ?? 0x00
       reply[GLOBAL.flags] = b.flags ?? 0x03
-      reply[GLOBAL.sleep] = b.sleep ?? 6
+      // The lighting bytes are part of that table too — a reset puts the board
+      // back on effect 6 at full brightness, and the check reports them.
+      reply[GLOBAL.lightMode] = b.lightMode ?? 6
+      reply[GLOBAL.brightness] = b.brightness ?? 100
+      reply[GLOBAL.speed] = b.speed ?? 0
+      reply[GLOBAL.colorful] = b.colorful ?? 1
       return reply
     }
     return null

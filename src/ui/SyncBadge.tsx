@@ -1,5 +1,6 @@
 import { useT } from '../i18n'
 import { codecLabel, supports } from '../protocol/codec'
+import { useDemo } from '../state/demo'
 import { useCodec, useConnection } from '../state/link'
 import { boardSync, useSyncState } from '../state/sync'
 
@@ -21,10 +22,19 @@ import { boardSync, useSyncState } from '../state/sync'
  * retry is not a second "apply": it is the only way out of a state the user
  * cannot otherwise leave, and the detail the panel used to list goes in the
  * tooltip.
+ *
+ * The demo board takes over the steady state, and only that one. "In step with
+ * the board" is still true when the board is software — it holds every byte
+ * that has been written to it — but "connected", said in a corner about a
+ * keyboard that is not there, is not. The states either side of it are about an
+ * exchange in flight and say something this cannot: replacing those would hide
+ * a read or a failed write behind a label that never changes. Which board it is
+ * is on the device card in the rail throughout.
  */
 export function SyncBadge() {
   const { connected } = useConnection()
   const codec = useCodec()
+  const demo = useDemo()
   const { phase, error, appliedAt, mismatch } = useSyncState()
   const t = useT()
 
@@ -71,17 +81,20 @@ export function SyncBadge() {
     )
   }
 
+  const applied = appliedAt
+    ? t('apply.appliedAt', { time: appliedAt.toLocaleTimeString() })
+    : t('apply.upToDate')
+
   return (
     <div
       className="sync-badge"
-      title={
-        appliedAt
-          ? t('apply.appliedAt', { time: appliedAt.toLocaleTimeString() })
-          : t('apply.upToDate')
-      }
+      // Both halves for the demo: what the badge would have said, and what it
+      // is saying instead. A tooltip that dropped the first would take away the
+      // only place the last write is timestamped.
+      title={demo ? `${t('demo.tooltip')}\n${applied}` : applied}
     >
-      <span className="dot on" />
-      {t('app.connected')}
+      <span className={demo ? 'dot demo' : 'dot on'} />
+      {demo ? t('demo.badge') : t('app.connected')}
     </div>
   )
 }

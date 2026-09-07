@@ -58,6 +58,14 @@ import {
   recordHex,
   toKeyConfig,
 } from './keyPerf'
+import {
+  changedRgbSlots,
+  decodeKeyRgb,
+  encodeKeyRgb,
+  keyRgbBlobSize,
+  rgbRecordHex,
+  type Rgb,
+} from './keyRgb'
 import { fallbackSlotMap, slotMapFromKeymap, type SlotMap } from './slotMap'
 import type {
   FirmwareIdentity,
@@ -65,6 +73,8 @@ import type {
   KeyConfig,
   KeymapEntry,
   KeyPerfSnapshot,
+  KeyRgbEntry,
+  KeyRgbSnapshot,
   KeySample,
 } from './types'
 
@@ -197,6 +207,29 @@ export interface KeymapWriteResult {
   mismatched: { slot: number; wanted: string; got: string }[]
 }
 
+/**
+ * What a per-key colour write did.
+ *
+ * Shaped like `KeymapWriteResult` and reported for the same reason: the panel
+ * says what happened rather than assuming it. `mismatched` is the part that
+ * matters — an acknowledged write the firmware ignored is indistinguishable
+ * from one that worked until the bytes are read back.
+ */
+export interface KeyRgbWriteResult {
+  /** Slots whose record changed. Empty means nothing was sent. */
+  slots: number[]
+  /** Keys that were written, with the slot each landed in. */
+  keys: { index: number; label: string; slot: number }[]
+  /** Keys the slot map has no slot for, so they could not be written. */
+  unmapped: { index: number; label: string }[]
+  /** The block as the board had it before the write — enough to undo it. */
+  before: Uint8Array
+  /** The block read back afterwards. */
+  after: Uint8Array
+  /** Slots that did not read back as written. Empty on a verified write. */
+  mismatched: { slot: number; wanted: string; got: string }[]
+}
+
 export interface FactoryResetResult {
   /** Milliseconds waited before reading anything back. */
   waitedMs: number
@@ -253,6 +286,8 @@ export interface ProtocolEngine {
   readKeymapBlob(link: HidLink): Promise<Uint8Array>
   readKeymapLayerBlob(link: HidLink, layer: number): Promise<Uint8Array>
   writeKeymapLayerBlob(link: HidLink, layer: number, blob: Uint8Array): Promise<void>
+  readKeyRgbBlob(link: HidLink): Promise<Uint8Array>
+  writeKeyRgbBlob(link: HidLink, blob: Uint8Array): Promise<void>
   readCalTable(link: HidLink): Promise<CalRecord[]>
   /**
    * Present only when the board's spec names an analog test-mode command.
@@ -671,7 +706,7 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
   async function readCalTable(link: HidLink): Promise<CalRecord[]> {
     const command = needCommand(cmd.readCalibration, 'readCalibration')
     const blob = await readBlock(link, command, calBytes, { note: 'calibration table' })
-    return parseCalTable(blob)
+    return parseCalTable(blob, spec.calibration.records)
   }
 
   /**
@@ -988,6 +1023,238 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     return { layer, slots, keys, unmapped, before, after, mismatched }
   }
 
+  // --- per-key colour ------------------------------------------------------
+
+  /**
+   * The stored per-key colour block — 384 bytes at flash 0x20f00.
+   *
+   * A plain block read, wrapped in the driver's transaction the way every other
+   * block read is. The stock driver reads it on connect and on a profile
+   * switch; nothing about it needs a mode or a preceding write.
+   */
+  async function readKeyRgbBlob(link: HidLink): Promise<Uint8Array> {
+    const command = needCommand(cmd.readKeyRgb, 'readKeyRgb')
+    return inTransaction(link, 'key rgb', () =>
+      readBlock(link, command, keyRgbBlobSize(spec.keyRgb), { note: 'key rgb' }),
+    )
+  }
+
+  /**
+   * Puts the block back, chunk for chunk — six of 56 bytes and a last of 48.
+   *
+   * The whole block goes out even when one record changed, which is what the
+   * block protocol offers: the transfer is addressed by offset into the blob,
+   * and the firmware's write handler caps it at 0x180. What keeps that from
+   * being destructive is where the other records come from — see
+   * `writeKeyColors`, which patches the bytes the board itself just returned.
+   */
+  async function writeKeyRgbBlob(link: HidLink, blob: Uint8Array): Promise<void> {
+    const command = needCommand(cmd.writeKeyRgb, 'writeKeyRgb')
+    const expected = keyRgbBlobSize(spec.keyRgb)
+    if (blob.length !== expected) {
+      throw new Error(t('protocol.blobSize', { size: blob.length, expected }))
+    }
+    await inTransaction(link, 'key rgb write', () =>
+      writeBlock(link, command, blob, { label: 'key rgb write' }),
+    )
+  }
+
+  /**
+   * Decodes a colour block against a slot map, in this project's key order.
+   *
+   * Takes only the half of a slot map it uses, so a caller that already holds
+   * one — a panel with a snapshot, a watcher that read the map once — can
+   * decode a fresh blob without asking the board who is in which slot again.
+   */
+  function decodeKeyColors(
+    blob: ArrayLike<number>,
+    map: { slotByKey: Map<number, number> },
+  ): KeyRgbEntry[] {
+    return layout.keys.map((key) => {
+      const slot = map.slotByKey.get(key.index)
+      // A key with no slot gets no colour rather than slot 0's: the block is
+      // addressed by slot, and guessing one is how settings land on the wrong
+      // key. The panel shows those keys as unmapped.
+      if (slot === undefined) return { color: { r: 0, g: 0, b: 0 } }
+      return { slot, color: decodeKeyRgb(blob, slot, spec.keyRgb) }
+    })
+  }
+
+  /**
+   * The stored custom colours, decoded and raw.
+   *
+   * `live: false` is the whole point of the field. This is the layer a write
+   * goes to; what the LEDs are showing is `readLightFrame`, and on a board
+   * running an effect the two do not agree — nor should they.
+   */
+  async function readKeyColors(link: HidLink): Promise<KeyRgbSnapshot> {
+    const { map } = await readSlotMap(link)
+    const blob = await readKeyRgbBlob(link)
+    return { blob, slotMap: map, entries: decodeKeyColors(blob, map), live: false }
+  }
+
+  /**
+   * The LED frame the board is displaying right now — RAM, not flash.
+   *
+   * 0xde reads the buffer the effect engine has just filled, one stage before
+   * the one 0xdd writes, so it includes whatever animation is running and the
+   * firmware's own calibration overlay (docs §3.3: an uncalibrated key is
+   * painted red or amber over everything else). That makes it the only way to
+   * answer "is my colour actually on the keyboard", and a poor way to answer
+   * "what did I save" — which is why it is a separate method rather than a
+   * flag on the read above.
+   *
+   * No transaction: it reads a buffer the firmware maintains for itself, and
+   * there is no stock-driver write for it to bracket.
+   */
+  async function readLightFrame(link: HidLink): Promise<KeyRgbSnapshot> {
+    const command = needCommand(cmd.readLightFrame, 'readLightFrame')
+    const { map } = await readSlotMap(link)
+    const blob = await readBlock(link, command, keyRgbBlobSize(spec.keyRgb), {
+      note: 'led frame',
+    })
+    return { blob, slotMap: map, entries: decodeKeyColors(blob, map), live: true }
+  }
+
+  /**
+   * Keeps reading that frame, so a panel can show which keys are lit *now*.
+   *
+   * This is what the stock driver does, and it is the reason a capture of this
+   * app once contained 62 replies to a command it never sends: the driver's
+   * worker thread, whenever its job queue is empty, alternates the event poll
+   * at 0x42c8a0 with a frame read at 0x428c20 (docs §3.0). There is no timer
+   * behind it — it simply reads the frame every time it has nothing else to do.
+   *
+   * Three things this does that a naive `setInterval` around `readLightFrame`
+   * would not:
+   *
+   *   - **The slot map is read once.** It is the expensive half — a 768-byte
+   *     keymap block and a transaction around it, against 384 bytes for the
+   *     frame — and it cannot change while the board stays plugged in. Reading
+   *     it per frame would triple the traffic to learn nothing.
+   *   - **One read at a time.** A frame is seven packets, and two overlapping
+   *     reads would interleave their chunks: `readBlock` does not trust the
+   *     echoed offset, so it would file the other read's chunks at its own
+   *     cursor. The next read is scheduled after the previous one lands, not on
+   *     a fixed beat, so a slow board slows the poll instead of stacking it.
+   *   - **It stops on failure.** A board that has stopped answering must not be
+   *     asked ten times a second forever; the caller is told once and offers a
+   *     retry. Nothing here retries by itself.
+   */
+  function watchLightFrame(
+    link: HidLink,
+    onFrame: (snapshot: KeyRgbSnapshot) => void,
+    opts: { intervalMs?: number; onError?: (message: string) => void } = {},
+  ): Promise<() => void> {
+    const command = needCommand(cmd.readLightFrame, 'readLightFrame')
+    const interval = opts.intervalMs ?? spec.keyRgb.framePollMs
+    const bytes = keyRgbBlobSize(spec.keyRgb)
+
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      if (timer !== undefined) clearTimeout(timer)
+      window.removeEventListener('pagehide', stop)
+    }
+    // A reload unloads the page without unmounting anything. Nothing is written
+    // here, so this only stops the traffic — but a poll that outlives its panel
+    // is a poll nobody can turn off.
+    window.addEventListener('pagehide', stop)
+
+    /*
+     * The map is read before the first frame rather than alongside it, so the
+     * cost and the one thing that can go wrong with it land once, at the point
+     * the watch is started.
+     *
+     * `readSlotMap` falls back to the layout-order guess rather than failing, so
+     * a board whose keymap cannot be read still gets a watch — the colours land
+     * on the wrong caps and `slotMap.source` says `fallback`, which is a view
+     * the UI can label. That is the difference between this and a write: a
+     * wrong-looking read is recoverable by reading again, and a write on a
+     * guessed map is not.
+     */
+    return readSlotMap(link).then(({ map }) => {
+      const tick = async () => {
+        if (stopped) return
+        try {
+          const blob = await readBlock(link, command, bytes, { note: 'led frame' })
+          if (stopped) return
+          onFrame({ blob, slotMap: map, entries: decodeKeyColors(blob, map), live: true })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e)
+          stop()
+          opts.onError?.(message)
+          return
+        }
+        if (!stopped) timer = setTimeout(() => void tick(), interval)
+      }
+      void tick()
+      return stop
+    })
+  }
+
+  /**
+   * Sets the custom colour of named keys, and checks that it took.
+   *
+   * Read-modify-write, for the reason every block write here is: 128 slots for
+   * 61 keys, and the rest of the block holds whatever the firmware put there.
+   * A blob built from this app's model would zero all of it — and this is the
+   * block a stray write has already damaged once, when an early probe sweep
+   * landed in the lighting area and left the board's LEDs stuck until the stock
+   * driver reapplied a profile (findings.md #4). So: patch the bytes the board
+   * just returned, send, read back, compare.
+   *
+   * `null` for a key leaves that key alone. Three zero bytes is not "leave
+   * alone" — it is the board's own way of saying *no custom colour*, so it is a
+   * value a caller can deliberately write to clear a key.
+   */
+  async function writeKeyColors(
+    link: HidLink,
+    colors: readonly (Rgb | null)[],
+  ): Promise<KeyRgbWriteResult> {
+    const { map } = await readSlotMap(link)
+    // A read can fall back to the layout-order guess and stay useful — the
+    // colours land on the wrong caps and nothing breaks. A write on that guess
+    // would paint the wrong keys of the actual board, and the guess is known
+    // wrong (see slotMap.ts). So this refuses rather than degrades.
+    if (map.source !== 'keymap') throw new Error(t('protocol.writeNeedsKeymap'))
+
+    const before = await readKeyRgbBlob(link)
+    const next = new Uint8Array(before)
+    const keys: KeyRgbWriteResult['keys'] = []
+    const unmapped: KeyRgbWriteResult['unmapped'] = []
+    for (const key of layout.keys) {
+      const color = colors[key.index]
+      if (!color) continue
+      const slot = map.slotByKey.get(key.index)
+      if (slot === undefined) {
+        unmapped.push({ index: key.index, label: key.label })
+        continue
+      }
+      encodeKeyRgb(next, slot, color, spec.keyRgb)
+      keys.push({ index: key.index, label: key.label, slot })
+    }
+
+    const slots = changedRgbSlots(before, next, spec.keyRgb)
+    if (slots.length === 0) {
+      // Nothing to send. Saying so beats a write that does nothing and still
+      // reports success.
+      return { slots, keys, unmapped, before, after: before, mismatched: [] }
+    }
+
+    await writeKeyRgbBlob(link, next)
+    const after = await readKeyRgbBlob(link)
+    const mismatched = changedRgbSlots(next, after, spec.keyRgb).map((slot) => ({
+      slot,
+      wanted: rgbRecordHex(next, slot, spec.keyRgb),
+      got: rgbRecordHex(after, slot, spec.keyRgb),
+    }))
+    return { slots, keys, unmapped, before, after, mismatched }
+  }
+
   /**
    * Asks the board which firmware it is running.
    *
@@ -1057,7 +1324,7 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
    * field independently. Neither call site ever sends a mostly-zero block, so
    * there was never any evidence for that — and `enableAnalogReport` was built on
    * it, which means it had been zeroing the report rate, the dead zone, the
-   * game-lock bits and the sleep timeout every time it ran.
+   * game-lock bits and the lighting effect every time it ran.
    */
   async function writeGlobalSettings(
     link: HidLink,
@@ -1139,7 +1406,21 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     check('tickRate', after.tickRate)
     check('deadZone', after.deadZone)
     check('flags', after.raw[spec.global.offsets.flags] ?? 0)
-    check('sleepMinutes', after.sleepMinutes)
+    /*
+     * The lighting fields, from the same defaults table.
+     *
+     * `speedWire` is checked as stored rather than as the panel shows it: the
+     * decode flips the byte, and a reset check should report the byte the
+     * firmware wrote. `lightMode` is the field this used to check under the
+     * name `sleepMinutes` — same offset, and it is an effect index.
+     */
+    const light = after.lighting
+    if (light) {
+      check('lightMode', light.mode)
+      check('brightness', light.brightness)
+      check('speedWire', after.raw[spec.global.offsets.speed ?? 0] ?? 0)
+      check('colorful', light.colorful ? 1 : 0)
+    }
     return { waitedMs, after, unexpected }
   }
 
@@ -1231,6 +1512,8 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     readKeymapBlob,
     readKeymapLayerBlob,
     writeKeymapLayerBlob,
+    readKeyRgbBlob,
+    writeKeyRgbBlob,
     readCalTable,
     parseEvent,
     decodePerKey,
@@ -1274,6 +1557,17 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
       has(cmd.readKeymapLive) &&
       has(cmd.readKeymapDefaults) && { writeKeymap: writeKeymapLayer }),
     ...(has(cmd.readKeymapDefaults) && { readKeymapDefaults: readKeymapDefaultsLayer }),
+    /*
+     * The colour read needs the slot map, which comes from the keymap block —
+     * so a board with no keymap command gets no colour panel either, rather
+     * than one that paints slot 0 for every key.
+     */
+    ...(has(cmd.readKeyRgb) && has(cmd.readKeymapDefaults) && { readKeyColors }),
+    ...(has(cmd.readKeyRgb) &&
+      has(cmd.writeKeyRgb) &&
+      has(cmd.readKeymapDefaults) && { writeKeyColors, restoreKeyRgb: writeKeyRgbBlob }),
+    ...(has(cmd.readLightFrame) &&
+      has(cmd.readKeymapDefaults) && { readLightFrame, watchLightFrame }),
     ...(has(cmd.readCalibration) && { readCalibration: readCalTable }),
     ...(has(cmd.factoryReset) && { factoryReset }),
   }

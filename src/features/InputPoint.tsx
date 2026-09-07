@@ -47,31 +47,26 @@ const SECTIONS: SubTab[] = [
   {
     id: 'overview',
     labelKey: 'inputPoint.section.overview',
-    hintKey: 'inputPoint.section.overviewHint',
     render: () => <PerfOverview />,
   },
   {
     id: 'trigger',
     labelKey: 'inputPoint.section.trigger',
-    hintKey: 'inputPoint.section.triggerHint',
     render: () => <Actuation />,
   },
   {
     id: 'rt',
     labelKey: 'inputPoint.section.rt',
-    hintKey: 'inputPoint.section.rtHint',
     render: () => <RapidTrigger />,
   },
   {
     id: 'deadzone',
     labelKey: 'inputPoint.section.deadzone',
-    hintKey: 'inputPoint.section.deadzoneHint',
     render: () => <DeadZone />,
   },
   {
     id: 'switch',
     labelKey: 'inputPoint.section.switch',
-    hintKey: 'inputPoint.section.switchHint',
     render: () => <SwitchType />,
   },
 ]

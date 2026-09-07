@@ -34,6 +34,9 @@
     "readKeymapDefaults": 7,
     "readKeymapLive": 8,
     "writeKeymapLive": 9,
+    "readKeyRgb": 10,
+    "writeKeyRgb": 11,
+    "readLightFrame": 222,
     "analogTestOn": 168,
     "analogTestOff": 169,
     "readCalibration": 170,
@@ -42,6 +45,8 @@
   },
 
   "keyPerf": { "slots": 16 },
+  "//keyRgb": "The stored per-key colour block. recordSize is the family's 3 (R, G, B) and there is nothing else in it; slots is how wide your board's block is.",
+  "keyRgb": { "recordSize": 3, "slots": 16, "framePollMs": 100 },
   "keymap": { "slots": 16, "layers": 1, "layerBytes": 64, "defaultsBlobSize": 64 },
   "calibration": { "records": 16, "recordSize": 8 },
   "slotMap": { "unusedSlots": [], "resolveTolerance": 1 },

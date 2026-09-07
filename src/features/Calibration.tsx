@@ -331,7 +331,7 @@ export function CalibrationGuide({ run }: { run: CalibrationRun }) {
   const lit = run.records.filter((r) => r && ledColor(r.state) !== undefined).length
 
   return (
-    <Panel title={t('calibration.title')}>
+    <Panel title={t('calibration.title')} framed>
       {run.error && (
         <div style={{ marginBottom: 10 }}>
           <Notice kind="err">{run.error}</Notice>

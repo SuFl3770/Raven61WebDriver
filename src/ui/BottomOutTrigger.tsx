@@ -14,7 +14,7 @@ import { NotDecoded, Panel } from './Panel'
  * write (`0x05` / `0x06`) rather than riding along with the per-key apply.
  *
  * That block is shared with settings that belong to other screens — the report
- * rate, the dead zone, the game-lock bits, the sleep timeout — and with the
+ * rate, the dead zone, the game-lock bits, the lighting effect — and with the
  * analog-test bits that stop the board typing. So the write is a patch: read
  * the block, flip one bit, write it back, read it again to check. Which is what
  * the stock driver does at both of its own `0x06` call sites.

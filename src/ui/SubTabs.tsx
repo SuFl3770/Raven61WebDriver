@@ -20,8 +20,6 @@ export interface SubTab {
    * the bundles cannot carry a name for a layer nobody knew about.
    */
   label?: string
-  /** One line under the strip saying what this section is for. Optional. */
-  hintKey?: MessageKey
   render: () => ReactNode
 }
 
@@ -75,17 +73,10 @@ export function SubTabs({
         ))}
       </nav>
       {/*
-        The hint travels with the section it describes, so the two arrive as
-        one thing rather than the caption changing under a panel that is still
-        sliding. Keyed by the section for the same reason as the tab above.
+        Keyed by the section for the same reason as the tab above: a new key is
+        a new element, which is what replays the slide.
       */}
       <div key={current.id} className={`section-in${back ? ' back' : ''}`}>
-        {current.hintKey && (
-          <div className="small dim" style={{ padding: '6px 2px 10px' }}>
-            {t(current.hintKey)}
-          </div>
-        )}
-
         {current.render()}
       </div>
     </>

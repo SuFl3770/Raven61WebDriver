@@ -153,6 +153,24 @@ export function Keymap() {
   const layerEdits = edits[layer] ?? {}
   const dirty = Object.keys(layerEdits).length
 
+  /*
+   * What the line under the grid says: the cap that is picked, and what it is
+   * set to send.
+   *
+   * It used to say "reading" or "applying", which is the one thing the bars
+   * already show — the apply button goes dead while either runs, and a failure
+   * lands in `error` beside this. What was missing is the pair this tab is
+   * entirely about, and which the grid can only half say: the cap carries its
+   * own legend, and the second line appears only when the binding differs from
+   * it, so a key rebound to what it already says shows nothing at all.
+   *
+   * `edited` is kept separate from the binding so the arrow's right-hand side
+   * can be marked as pending in the same colour the cap uses for it.
+   */
+  const pickedKey = selected === null ? undefined : keys.find((k) => k.index === selected)
+  const pickedBinding = selected === null ? undefined : shownBinding(read, layerEdits, selected)
+  const pickedEdited = selected !== null && layerEdits[selected] !== undefined
+
   const readLayer = useCallback(
     async (which: number) => {
       if (!codec.readKeymap) return
@@ -492,7 +510,6 @@ export function Keymap() {
       return {
         id: '0',
         labelKey: 'keymap.layer.main' as const,
-        hintKey: 'keymap.layer.mainHint' as const,
         render: () => picker,
       }
     }
@@ -500,7 +517,6 @@ export function Keymap() {
       return {
         id: '1',
         labelKey: 'keymap.layer.fn1' as const,
-        hintKey: 'keymap.layer.fnHint' as const,
         render: () => picker,
       }
     }
@@ -508,7 +524,6 @@ export function Keymap() {
       id: String(i),
       labelKey: 'keymap.layer.fn1' as const,
       label: `FN${i}`,
-      hintKey: 'keymap.layer.fnHint' as const,
       render: () => picker,
     }
   })
@@ -543,7 +558,23 @@ export function Keymap() {
         }
         foot={
           <>
-            {busy && <span>{busy === 'read' ? t('apply.reading') : t('apply.writing')}</span>}
+            <span>
+              {pickedKey ? (
+                <>
+                  {t('keymap.picked', { key: pickedKey.label })}
+                  {pickedBinding && (
+                    <>
+                      {' → '}
+                      <span className={pickedEdited ? 'pending' : undefined}>
+                        {bindingLabel(pickedBinding, keycodeLabel)}
+                      </span>
+                    </>
+                  )}
+                </>
+              ) : (
+                t('keymap.pickNone')
+              )}
+            </span>
             {error && <span className="err">{error}</span>}
             {mismatch && <span className="err">{mismatch}</span>}
             {status && !mismatch && !error && <span>{status}</span>}

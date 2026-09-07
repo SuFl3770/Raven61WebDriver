@@ -15,6 +15,7 @@ import { RAVEN61_PROFILE_SUPPORT } from '../../../protocol/layers'
 import type { DeviceSpec, ReportRateSpec } from '../../spec'
 import { RAVEN61_LAYOUT } from './layout'
 import { RAVEN61_PROTOCOL } from './protocol'
+import { RAVEN61_LIGHT_EFFECTS } from './lighting'
 import { RAVEN61_SWITCH_TYPES } from './switches'
 
 /**
@@ -104,6 +105,7 @@ export const raven61Spec: DeviceSpec = {
   ...RAVEN61_PROTOCOL,
   switchTypes: RAVEN61_SWITCH_TYPES,
   reportRates: RAVEN61_REPORT_RATES,
+  lightEffects: RAVEN61_LIGHT_EFFECTS,
   /**
    * Layers, not profiles — two of them, keymap only, no host-side switch.
    * Declared so a future profile panel can ask instead of assuming. See

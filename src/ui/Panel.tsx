@@ -2,9 +2,24 @@ import type { ReactNode } from 'react'
 import { useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
 
-export function Panel({ title, children }: { title?: string; children: ReactNode }) {
+export function Panel({
+  title,
+  framed = false,
+  children,
+}: {
+  title?: string
+  /**
+   * Whether to draw the edge round this panel — see `.panel.framed`.
+   *
+   * Off everywhere but the calibration guide. A panel is normally one section
+   * of a page of them, told apart by its heading and the space above it; the
+   * flag is for the one that is not one of a run, and is on screen alone.
+   */
+  framed?: boolean
+  children: ReactNode
+}) {
   return (
-    <section className="panel">
+    <section className={framed ? 'panel framed' : 'panel'}>
       {title && <h2>{title}</h2>}
       {children}
     </section>

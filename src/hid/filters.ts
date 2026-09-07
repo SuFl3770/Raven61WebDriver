@@ -1,4 +1,4 @@
-import { allSpecs, specForDevice } from '../device/registry'
+import { hardwareSpecs, specForDevice } from '../device/registry'
 import { t, type MessageKey } from '../i18n'
 import { inputReports, isVendorPage, outputReports } from './reportInfo'
 
@@ -10,14 +10,20 @@ import { inputReports, isVendorPage, outputReports } from './reportInfo'
  * to the ranking below — see `src/device/spec.ts`.
  */
 
-/** Vendor ids any registered board answers to, de-duplicated. */
+/**
+ * Vendor ids any registered board answers to, de-duplicated.
+ *
+ * Hardware specs only — the demo board's ids belong to no device, and putting
+ * them in the chooser's filter would be offering to open something that cannot
+ * be there.
+ */
 export function knownVendorIds(): number[] {
-  return [...new Set(allSpecs().map((s) => s.usb.vendorId))]
+  return [...new Set(hardwareSpecs().map((s) => s.usb.vendorId))]
 }
 
 /** Payload sizes the registered boards use; the report-shape signal below. */
 function knownPayloadLengths(): number[] {
-  return [...new Set(allSpecs().map((s) => s.frame.payloadLength))]
+  return [...new Set(hardwareSpecs().map((s) => s.frame.payloadLength))]
 }
 
 /**
@@ -28,7 +34,7 @@ function knownPayloadLengths(): number[] {
  * look equally identified.
  */
 export function isKnownDevice(device: HIDDevice): boolean {
-  return allSpecs().some(
+  return hardwareSpecs().some(
     (s) => s.usb.vendorId === device.vendorId && s.usb.productIds.includes(device.productId),
   )
 }

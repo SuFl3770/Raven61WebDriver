@@ -192,15 +192,16 @@ const FLAGS = GLOBAL_FLAGS.actuationCheck | (1 << GLOBAL_FLAGS.debounceShift)
   reply[GLOBAL.deadZone] = 7
   reply[GLOBAL.gameLock] = 0x03
   reply[GLOBAL.flags] = FLAGS
-  reply[GLOBAL.sleep] = 0xff
+  reply[GLOBAL.lightMode] = 0xff
   const req = globalWriteRequest(reply, { bottomOutTrigger: true })
   eq('magic and command replaced', [req[OFFSET.magic], req[OFFSET.command]], [MAGIC, 0x06])
   eq('checksum recomputed', req[OFFSET.checksum], checksum(req))
   eq('flag set', req[GLOBAL.flags], FLAGS | GLOBAL_FLAGS.bottomOutTrigger)
-  // The whole point: the fields belonging to other screens come back untouched.
+  // The whole point: the fields belonging to other screens come back untouched
+  // — including the lighting effect, which shares this block.
   eq(
     'other fields preserved',
-    [req[GLOBAL.rate], req[GLOBAL.deadZone], req[GLOBAL.gameLock], req[GLOBAL.sleep]],
+    [req[GLOBAL.rate], req[GLOBAL.deadZone], req[GLOBAL.gameLock], req[GLOBAL.lightMode]],
     [0x21, 7, 0x03, 0xff],
   )
   eq('length field preserved', req[BLOCK.length], GLOBAL.length)
@@ -218,7 +219,7 @@ class FakeGlobal {
     this.block[GLOBAL.deadZone] = 7
     this.block[GLOBAL.gameLock] = 0x03
     this.block[GLOBAL.flags] = flags
-    this.block[GLOBAL.sleep] = 0xff
+    this.block[GLOBAL.lightMode] = 0xff
   }
 
   handle(payload: Uint8Array): Uint8Array {
@@ -262,7 +263,7 @@ function fakeLink(board: FakeGlobal): HidLink {
   eq('command order', board.sent, [0x01, 0x05, 0x06, 0x05, 0x02])
   eq(
     'nothing else moved',
-    [board.block[GLOBAL.rate], board.block[GLOBAL.deadZone], board.block[GLOBAL.gameLock], board.block[GLOBAL.sleep]],
+    [board.block[GLOBAL.rate], board.block[GLOBAL.deadZone], board.block[GLOBAL.gameLock], board.block[GLOBAL.lightMode]],
     [0x21, 7, 0x03, 0xff],
   )
   eq('and the read-back agrees', decodeGlobalSettings(board.block).deadZone, 7)
