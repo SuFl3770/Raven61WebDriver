@@ -114,6 +114,15 @@ export interface CommandSpec {
   writeKeymapLive: number | null
   readKeyPerf: number | null
   writeKeyPerf: number | null
+  /** The stored per-key custom colour layer. See `protocol/keyRgb.ts`. */
+  readKeyRgb: number | null
+  writeKeyRgb: number | null
+  /**
+   * The LED frame the board is displaying right now, effects included — a RAM
+   * buffer, not the stored layer above. Read-only: it is what the effect engine
+   * is about to push out, so writing it would be overwritten on the next frame.
+   */
+  readLightFrame: number | null
   readCalibration: number | null
   /** Enters analog test mode: travel is reported, typing stops. */
   analogTestOn: number | null
@@ -169,6 +178,28 @@ export interface KeyPerfSpec {
   keyMode: { off: number; rapidTrigger: number; fullStroke: number }
 }
 
+/**
+ * Geometry of the per-key custom colour block. See `protocol/keyRgb.ts`.
+ *
+ * Only a shape — three bytes a slot, 128 slots — because that is all the
+ * firmware gives it. There is nothing to encode: the record *is* R, G and B.
+ */
+export interface KeyRgbSpec {
+  recordSize: number
+  slots: number
+  /**
+   * How often the live LED frame is re-read while a panel is watching it.
+   *
+   * **This number is this app's, not the stock driver's.** The driver has no
+   * interval at all: its worker reads the frame whenever the job queue is empty
+   * (docs §3.0), so it goes as fast as the loop turns — a capture caught 62
+   * frame replies with nothing else on the wire. A browser has other things to
+   * do with the link, so the poll gets a ceiling instead, and it lives here so
+   * a board that answers more slowly can raise it.
+   */
+  framePollMs: number
+}
+
 /** Geometry of the keymap blocks. See `protocol/keymap.ts` and `protocol/slotMap.ts`. */
 export interface KeymapSpec {
   entrySize: number
@@ -199,9 +230,33 @@ export interface GlobalSpec {
     deadZone: number
     gameLock: number
     flags: number
-    sleep: number
     /** Byte holding the active layer, if the board has one. */
     activeLayer: number | null
+    /**
+     * The lighting effect settings, which share this block. See
+     * `protocol/lighting.ts` for the layout and the evidence for it.
+     *
+     * `null` for a board whose lighting has not been decoded — the panel then
+     * says so rather than reading nine bytes it cannot name. They are separate
+     * fields rather than one base offset because nothing says a sibling board
+     * has to keep them adjacent.
+     *
+     * ⚠ `lightMode` is the byte an earlier pass of this project recorded as a
+     * **sleep timeout**. It is not: the stock driver looks its effect row up by
+     * this value, and the clamp that made it look like a timeout — anything
+     * `>= 23` rewritten to `0xff` — is the effect table's own range. See
+     * findings.md.
+     */
+    lightMode: number | null
+    brightness: number | null
+    /** Stored inverted; `protocol/lighting.ts` flips it. */
+    speed: number | null
+    direction: number | null
+    colorful: number | null
+    /** Undecoded. Located so a write can put the board's own byte back. */
+    colorIndex: number | null
+    /** First of three bytes: R, then G, then B. */
+    color: number | null
   }
   flags: {
     tachyon: number
@@ -224,7 +279,18 @@ export interface GlobalSpec {
     deadZone: number
     flags: number
     debounceLevel: number
-    sleepMinutes: number
+    /**
+     * The effect the board lights up with after a reset.
+     *
+     * This is the field the old `sleepMinutes` was: same offset, same value,
+     * wrong name. The firmware's defaults table holds 6 here, which is an
+     * effect index, not a number of minutes.
+     */
+    lightMode: number
+    brightness: number
+    /** As stored — inverted, so 0 is the fastest. */
+    speedWire: number
+    colorful: number
   } | null
 }
 
@@ -268,6 +334,35 @@ export interface EncodingSpec {
  * binary, which carries neither — so leaving one out is the normal case, and
  * the UI prints "—" for it rather than a guess.
  */
+/**
+ * One lighting effect the board can run.
+ *
+ * `mode` is what goes on the wire, and it is also the key the stock driver
+ * looks its own row up by — so it is a value, not an index, and the table is
+ * allowed holes (this board's runs 0..22, then 128, then 255).
+ *
+ * `supports` is the stock table's `config_func`: a bitmask of which of the
+ * effect controls this effect actually uses, so a page does not offer a speed
+ * slider for a static colour. The bits are `LIGHT_CONTROL` in
+ * `protocol/lighting.ts`, and where each one's meaning came from is in
+ * `device/boards/raven61/lighting.ts`. An effect whose mask is not known should
+ * carry every control it plainly has rather than 0 — 0 reads as "this effect
+ * has no settings", which for anything but the off row is a claim.
+ */
+export interface LightEffectSpec {
+  mode: number
+  /** The vendor's own name for it. Overridden by a built-in table's label key. */
+  name: string
+  /** `config_func` — see LIGHT_CONTROL. */
+  supports: number
+  /**
+   * False for an effect that decodes but must never be written — one the stock
+   * driver itself cannot reach, or that drives a layer this app has not
+   * decoded. Defaults to true when absent.
+   */
+  selectable?: boolean
+}
+
 export interface SwitchTypeSpec {
   value: number
   name: string
@@ -352,6 +447,7 @@ export interface ProtocolSpec {
   commands: CommandSpec
   event: EventSpec
   keyPerf: KeyPerfSpec
+  keyRgb: KeyRgbSpec
   keymap: KeymapSpec
   global: GlobalSpec
   monitor: MonitorSpec
@@ -432,5 +528,16 @@ export interface DeviceSpec extends ProtocolSpec {
   switchTypes: readonly SwitchTypeSpec[]
   /** Which polling rates it accepts. */
   reportRates: readonly ReportRateSpec[]
+  /**
+   * The lighting effects it has, and which controls each one uses.
+   *
+   * Optional, and absent rather than empty for a board nobody has looked at —
+   * the panel needs to tell "this board has no effects" apart from "nobody has
+   * read its effect table", and an empty array says the first.
+   *
+   * Built-in boards keep the rows in a `lighting.json` beside the spec, the
+   * way `switchTypes` does.
+   */
+  lightEffects?: readonly LightEffectSpec[]
   profileSupport: ProfileSupport
 }

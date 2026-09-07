@@ -188,7 +188,7 @@
   "board": {
     "title": "Board settings",
     "what": "reading global settings (0x05)",
-    "hint": "The polling rate and the debounce level are the two board-wide settings this keyboard has. Both live in the <c>0x05</c> block — the rate in the low nibble of <c>payload[12]</c>, debounce in bits 5-6 of <c>payload[15]</c> — and everything else sharing that block (lighting, the game-mode locks, the sleep timeout) is written back exactly as it was read.",
+    "hint": "The polling rate and the debounce level are the two board-wide settings this keyboard has. Both live in the <c>0x05</c> block — the rate in the low nibble of <c>payload[12]</c>, debounce in bits 5-6 of <c>payload[15]</c> — and everything else sharing that block (the lighting effect, the game-mode locks) is written back exactly as it was read.",
     "applied": "Read the global block back after applying, and it matches.",
     "mismatch": "Read back differently from what was written: {detail}",
     "raw": "payload[12] = {rate} (tick_rate {tick}) · payload[15] = {flags}",
@@ -514,7 +514,105 @@
   },
 
   "light": {
-    "todo": "This tab is a placeholder — the feature has not been built yet."
+    "title": "Per-key colour",
+    "sections": "Lighting sections",
+    "section": {
+      "effect": "Effect",
+      "perKey": "Per-key colour"
+    },
+    "brightness": "Brightness",
+    "speed": "Speed",
+    "direction": "Direction",
+    "palette": "Palette",
+    "colorful": "Cycle colours",
+    "colorfulHint": "The effect walks the hue wheel instead of using one colour. With this on, the palette below is ignored.",
+    "colorOverridden": "not used while colours are cycling",
+    "dir": {
+      "a": "Forward",
+      "b": "Reverse",
+      "note": "The stock page renames this pair per effect (within/outside, clockwise/anticlockwise, and two more). Which bit selects which pair is not established, so these are neutral — the byte is the same either way."
+    },
+    "fxPanel": {
+      "title": "Lighting effect",
+      "params": "Effect settings",
+      "unread": "The settings block has not been read from the board yet.",
+      "unknownMode": "The board reports mode {mode}, which this table has no row for. Left as it is — overwriting it with a value we do know would throw away whatever it was set to.",
+      "perKey": "<b>Custom Light</b> is the effect that paints the <b>per-key colours</b> stored on the board. Paint them in the section next to this one.",
+      "raw": "<c>payload[16..24]</c> = {bytes} · colorindex {index} (undecoded; the board's own byte is written back)"
+    },
+    "showsIn": {
+      "title": "When these colours show",
+      "active": "The effect is <b>Custom Light</b> right now, so what you paint here is what the LEDs show.",
+      "body": "Exactly one effect reads this block: <b>Custom Light</b> (mode 0). Every other effect generates its own colours and never looks at this layer — so with another effect running, painting here and applying changes nothing on the keyboard. That is not a failed write; it is the wrong effect to see it with.",
+      "switch": "Switch to Custom Light",
+      "current": "Effect now: {mode}"
+    },
+    "fx": {
+      "custom": "Custom Light",
+      "spectrum": "Spectrum",
+      "staircase": "Staircase",
+      "static": "Static",
+      "breathing": "Breathing",
+      "flowers": "Hundred Flowers",
+      "wave": "Wave",
+      "updown": "Up and down wave",
+      "fountain": "Fountain",
+      "galaxy": "Galaxy",
+      "rotation": "Rotation",
+      "tide": "Tide",
+      "seawave": "Sea wave",
+      "ripple": "Ripple",
+      "constantRipple": "Constant Ripple",
+      "singlePoint": "Single point",
+      "grid": "Grid",
+      "piano": "Piano",
+      "flowing": "Flowing light",
+      "rain": "Falling rain",
+      "starlight": "Starlight",
+      "fireworks": "Fireworks",
+      "waveBand": "Wave Band",
+      "music": "Musical Rhythm",
+      "off": "Off"
+    },
+    "unread": "Not read from the board yet. Until it is, there is nothing to say which colours are stored.",
+    "color": "Colour",
+    "hex": "Hex",
+    "hexInvalid": "Write it as <c>#rrggbb</c>.",
+    "preset": "Presets",
+    "clear": "Clear the custom colour",
+    "clearHint": "Puts the three bytes back to zero — which to the board means <b>no custom colour</b>, not <b>black</b>. Nothing in this app can tell those two apart.",
+    "apply": "Apply to board",
+    "applyCount": "Apply {count} keys",
+    "revert": "Discard edits",
+    "applied": "Wrote {count} keys and read the bytes back to check",
+    "noChange": "The board already holds these colours, so nothing was sent.",
+    "mismatch": "{count} slots did not read back as written: {detail}",
+    "unmapped": "{count} keys have no slot, so they could be neither read nor written: {keys}",
+    "picked": "{key} — {color}",
+    "pickedUnlit": "{key} — no custom colour",
+    "hoverNone": "Point at a cap to read its colour",
+    "hoveredOff": "{key} — off",
+    "pickNone": "Drag across the caps to pick keys, then choose a colour",
+    "lit": "{count} of {total} keys lit",
+    "view": {
+      "label": "Showing",
+      "stored": "Stored colours",
+      "live": "On the board now",
+      "watch": "Live",
+      "refresh": "Read again"
+    },
+    "live": {
+      "title": "The frame the board is displaying",
+      "body": "<c>0xde</c> does not read the stored layer in flash — it reads <b>the RAM buffer the firmware has just filled</b>, so it carries whatever effect is running plus the firmware's calibration overlay (an under-calibrated key painted red or amber, spec §3.3). Disagreeing with the stored colours is therefore <b>normal</b>, and this is also the only way to check whether a stored colour is actually reaching the LEDs.",
+      "poll": "With <b>Live</b> on, the frame is re-read every {ms} ms — the stock driver reads the same command every time its job queue empties (spec §3.0). It has no interval of its own, only idle time, so this one is <b>this app's ceiling</b> rather than something copied. Turn it off to hold a single frame still.",
+      "starting": "Reading the first frame.",
+      "unread": "Not read yet. Press <b>Read again</b>.",
+      "waiting": "Waiting for a frame"
+    },
+    "effect": {
+      "what": "Lighting mode, brightness, speed, direction",
+      "body": "The effect settings live in <c>payload[17..24]</c> of the global block and in the two 256-byte blocks behind <c>0xa4</c> / <c>0xa6</c>. Which byte is which has not been recovered from the stock driver or from the firmware (spec §9). Filling them in from guesses corrupts the lighting blocks — this project has done exactly that once (findings.md #4) — so this panel stays empty."
+    }
   },
 
   "gesture": {
@@ -844,7 +942,7 @@
     "title": "Always trigger on bottom-out (global)",
     "what": "global settings write (0x06)",
     "enable": "Always trigger when the key bottoms out",
-    "hint": "The <b>only</b> rapid-trigger setting that is not per key. It sits in the 32-byte global block at <c>payload[15]</c> bit 1, so it has its own read and write (<c>0x05</c> / <c>0x06</c>). That block also holds settings belonging to other screens — polling rate, dead zone, game lock, sleep timeout — so the block is read, this one bit is flipped, and it is written back. Same as the stock driver does.",
+    "hint": "The <b>only</b> rapid-trigger setting that is not per key. It sits in the 32-byte global block at <c>payload[15]</c> bit 1, so it has its own read and write (<c>0x05</c> / <c>0x06</c>). That block also holds settings belonging to other screens — polling rate, dead zone, game lock, the lighting effect — so the block is read, this one bit is flipped, and it is written back. Same as the stock driver does.",
     "applied": "Applied, and the global block was read back to confirm.",
     "noChange": "The board already held this value, so nothing was sent.",
     "mismatch": "The byte read back differently from what was written: {detail}",

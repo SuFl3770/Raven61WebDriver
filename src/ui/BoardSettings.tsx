@@ -21,8 +21,8 @@ import { Select } from './Select'
  * together here because the write is one read-modify-write either way. Sending
  * two separate patches would mean two round trips over the same block.
  *
- * Everything else in the block belongs to screens this app does not have
- * (lighting, the game-mode locks, the sleep timeout) and is carried through
+ * Everything else in the block belongs to other screens — the lighting effect
+ * (see features/LightEffect.tsx), the game-mode locks — and is carried through
  * untouched, which is what `writeGlobalSettings` is for.
  *
  * Opening the tab reads the block, so there is no read button — see the note

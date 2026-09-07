@@ -23,20 +23,27 @@ import { DEFAULT_COMMANDS, DEFAULT_EVENT, DEFAULT_FRAME } from '../../../protoco
 import { DEFAULT_GLOBAL } from '../../../protocol/global'
 import { DEFAULT_KEYMAP } from '../../../protocol/keymap'
 import { DEFAULT_KEY_PERF } from '../../../protocol/keyPerf'
+import { KEY_RGB } from '../../../protocol/keyRgb'
 import { UNUSED_SLOTS } from '../../../protocol/slotMap'
 import type { ProtocolSpec } from '../../spec'
 
 /**
  * Confirmed on hardware for the framing, the per-key performance block, the
- * keymap and the analog stream. The lighting, macro and advanced-key blocks
- * are not decoded, so no command names them — a panel that would need one says
- * so rather than sending a byte nobody has read.
+ * keymap and the analog stream.
+ *
+ * `keyRgb` is the one lighting block that is named, and it is named from the
+ * *firmware* rather than from hardware: the LED path loads its three bytes
+ * straight into the colour registers (docs §3.8). The lighting **effect**
+ * settings — mode, brightness, speed, direction — are still not decoded, so no
+ * command names them and the panel says so rather than sending a byte nobody
+ * has read. Same for the macro and advanced-key blocks.
  */
 export const RAVEN61_PROTOCOL: ProtocolSpec = {
   frame: DEFAULT_FRAME,
   commands: DEFAULT_COMMANDS,
   event: DEFAULT_EVENT,
   keyPerf: DEFAULT_KEY_PERF,
+  keyRgb: KEY_RGB,
   keymap: DEFAULT_KEYMAP,
   global: DEFAULT_GLOBAL,
   monitor: { ...MONITOR_DEFAULTS },

@@ -10,6 +10,13 @@
 
 import type { FrameSpec, GlobalSpec } from '../device/spec'
 import { COMMAND, DEFAULT_FRAME, sign } from './frame'
+import {
+  decodeLighting,
+  emptyLightingPatch,
+  lightingOffsets,
+  patchLighting,
+  type LightingPatch,
+} from './lighting'
 import type { GlobalSettings } from './types'
 
 /** Byte offsets inside the 0x05 / 0x06 payload. See GlobalSettings. */
@@ -20,7 +27,23 @@ export const GLOBAL = {
   deadZone: 13,
   gameLock: 14,
   flags: 15,
-  sleep: 16,
+  /**
+   * The lighting effect settings, which share this block — see
+   * `protocol/lighting.ts` for the layout and where it came from.
+   *
+   * ⚠ `lightMode` is byte 16, which an earlier pass of this project recorded
+   * as a **sleep timeout**. It is not one: the stock driver looks its effect
+   * row up by this value, and the `>= 23 -> 0xff` clamp that made it look like
+   * a timeout is the effect table's own range. Nothing in this block is known
+   * to hold a sleep time.
+   */
+  lightMode: 16,
+  brightness: 17,
+  speed: 18,
+  direction: 19,
+  colorful: 20,
+  colorIndex: 21,
+  color: 22,
 } as const
 
 /** Bits of `payload[15]`. */
@@ -83,12 +106,19 @@ export const ANALOG_REPORT = {
  * that comes back with something else is reported as exactly that, rather than
  * as a failure.
  *
- * Two of these are worth reading twice. `reportRate: 4` is 1000 Hz under
+ * Three of these are worth reading twice. `reportRate: 4` is 1000 Hz under
  * REPORT_RATES, which is the sane thing for a factory default to be and so is
- * independent support for that table. And `flags: 0x03` has both Tachyon and
+ * independent support for that table. `flags: 0x03` has both Tachyon and
  * "always trigger when bottoming" *on*, where the stock driver's own database
  * defaults them off — the firmware and the driver disagree about what default
  * means, and the firmware is the one that wins a reset.
+ *
+ * And the lighting four are what corrected the field this file used to call
+ * `sleepMinutes`. The table reads `06 64 00 00 01` at those offsets, and the
+ * stock database's own defaults for the same row are mode 6, brightness 100,
+ * **speed 4**, colorful 1 — the speed disagreeing by exactly the `4 - x`
+ * inversion, which is what makes two tables that know nothing about each other
+ * into a check on the layout rather than two copies of one guess.
  */
 export const FACTORY_GLOBAL = {
   /** `reporte_rate` 4 — 1000 Hz. */
@@ -98,7 +128,13 @@ export const FACTORY_GLOBAL = {
   /** `payload[15]`: Tachyon and bottom-out trigger on, debounce level 0. */
   flags: 0x03,
   debounceLevel: 0,
-  sleepMinutes: 6,
+  /** Effect 6 — Wave on this board's table. Not a number of minutes. */
+  lightMode: 6,
+  /** Percent. */
+  brightness: 100,
+  /** As stored: 0 is the fastest, and the database's own default is speed 4. */
+  speedWire: 0,
+  colorful: 1,
 } as const
 
 /**
@@ -115,8 +151,14 @@ export const DEFAULT_GLOBAL: GlobalSpec = {
     deadZone: GLOBAL.deadZone,
     gameLock: GLOBAL.gameLock,
     flags: GLOBAL.flags,
-    sleep: GLOBAL.sleep,
     activeLayer: 1,
+    lightMode: GLOBAL.lightMode,
+    brightness: GLOBAL.brightness,
+    speed: GLOBAL.speed,
+    direction: GLOBAL.direction,
+    colorful: GLOBAL.colorful,
+    colorIndex: GLOBAL.colorIndex,
+    color: GLOBAL.color,
   },
   flags: { ...GLOBAL_FLAGS },
   settleMs: ANALOG_REPORT.settleMs,
@@ -145,7 +187,7 @@ export function decodeGlobalSettings(
     actuationCheck: (flags & f.actuationCheck) !== 0,
     magnetTest: (flags & f.magnetTest) !== 0,
     debounceLevel: (flags >> f.debounceShift) & f.debounceMask,
-    sleepMinutes: payload[o.sleep] ?? 0,
+    lighting: decodeLighting(payload, spec),
   }
 }
 
@@ -179,6 +221,14 @@ export interface GlobalPatch {
    * the WebHID handle outright — before it shows.
    */
   reportRate?: number
+  /**
+   * The lighting effect settings, which live in the same block.
+   *
+   * Nested rather than flattened in, because they are one screen's worth of
+   * settings and because `protocol/lighting.ts` owns their encoding — the
+   * speed inversion and the firmware's own limits are there, not here.
+   */
+  lighting?: LightingPatch
 }
 
 /**
@@ -239,6 +289,7 @@ export function globalWriteRequest(
   out[frame.offsets.command] = command
   out[spec.offsets.rate] = patchGlobalRate(out[spec.offsets.rate] ?? 0, patch)
   out[spec.offsets.flags] = patchGlobalFlags(out[spec.offsets.flags] ?? 0, patch, spec)
+  if (patch.lighting) patchLighting(out, patch.lighting, spec)
   return sign(out, frame)
 }
 
@@ -249,8 +300,18 @@ export function globalWriteRequest(
  * alone was copied out of the board's own reply, so reading it back different
  * is worth hearing about too.
  */
-export function writtenOffsets(spec: GlobalSpec = DEFAULT_GLOBAL): readonly number[] {
-  return [spec.offsets.rate, spec.offsets.flags]
+export function writtenOffsets(
+  spec: GlobalSpec = DEFAULT_GLOBAL,
+  patch?: GlobalPatch,
+): readonly number[] {
+  const base = [spec.offsets.rate, spec.offsets.flags]
+  // Only when the patch named a lighting field. Verifying nine bytes a write
+  // never touched would turn a board that disagrees about `colorIndex` — the
+  // one byte here nobody has decoded — into a mismatch report on every write.
+  if (patch?.lighting && !emptyLightingPatch(patch.lighting)) {
+    base.push(...lightingOffsets(spec))
+  }
+  return base
 }
 
 /**

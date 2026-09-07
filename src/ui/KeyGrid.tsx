@@ -48,6 +48,20 @@ export interface KeyGridProps {
    */
   stripe?: (key: KeyDef) => string | undefined
   /**
+   * The whole cap painted a colour, with a legend colour to read it against.
+   *
+   * For the lighting tab, where the colour *is* the setting: a stripe along the
+   * bottom edge says "this key is in category blue", and what a lighting tab
+   * has to show is a keyboard that looks the way the keyboard looks. So this
+   * covers the cap.
+   *
+   * The caller supplies `fg` rather than the grid deriving it, because only the
+   * caller knows the colour as numbers — a CSS string can be anything, and a
+   * legend that guesses wrong is white text on yellow. See `luminanceOf` in
+   * protocol/keyRgb.ts.
+   */
+  tint?: (key: KeyDef) => { color: string; fg: string } | undefined
+  /**
    * The key under the pointer, or undefined on the way out.
    *
    * Only a report. The grid does not draw anything differently for it — the
@@ -81,6 +95,7 @@ export function KeyGrid({
   sub,
   subClass,
   stripe,
+  tint,
   onHover,
   label,
   status,
@@ -230,6 +245,7 @@ export function KeyGrid({
         }
         const amount = fill?.(k) ?? 0
         const band = stripe?.(k)
+        const paint = tint?.(k)
         const subText = sub?.(k)
         const state = status?.(k)
         const stateClass = state ? ` ${state}` : ''
@@ -239,8 +255,17 @@ export function KeyGrid({
             key={k.index}
             type="button"
             data-key={k.index}
-            className={`keycap${isSelected ? ' selected' : ''}${stateClass}`}
-            style={style}
+            className={`keycap${isSelected ? ' selected' : ''}${stateClass}${
+              paint ? ' tinted' : ''
+            }`}
+            /*
+              The tint goes on the cap itself rather than on a layer inside it,
+              so a selected cap keeps its accent edge and the legend inherits a
+              colour that can be read against the paint. A layer would have had
+              to sit under the label and above the fill, and there is nothing
+              for it to be under here — a lit key has no travel bar.
+            */
+            style={paint ? { ...style, background: paint.color, color: paint.fg } : style}
             aria-pressed={isSelected}
             title={`#${k.index} ${k.label}`}
             onPointerDown={onToggle ? (e) => startPaint(e, k.index) : undefined}

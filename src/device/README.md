@@ -151,7 +151,8 @@ In the order that stops you wasting effort:
    the codec is then built without that capability and the panel says so,
    instead of sending a byte that means something else on your board.
 4. **Block geometry.** How many slots the per-key block has, how wide a keymap
-   layer is. A wrong size here reads short or writes off the end.
+   layer is, how wide a colour record is. A wrong size here reads short or
+   writes off the end.
 5. **The tables.** `switchTypes` (a built-in board keeps it in
    `switches.json`, loaded by the `switches.ts` beside it)
    and `reportRates` are per board; the defaults are the Raven61's list and
@@ -169,7 +170,10 @@ it is what the UI shows the user before they let it write to their keyboard.
 
 The record layouts. The 8-byte performance record's bit packing and the 3-byte
 keymap record are the family's, recovered from the stock driver's encoder and
-decoder being exact inverses. A board that packs them differently is not a spec
+decoder being exact inverses. The 3-byte colour record is the family's too, and
+for a stronger reason: the firmware's LED path loads its bytes straight into the
+R, G and B registers, so there is no encoding to differ over — only `recordSize`
+and `slots`, which is all `keyRgb` holds. A board that packs them differently is not a spec
 change: it needs its own `KeyboardCodec` (see `src/protocol/codec.ts`), which
 registers the same way.
 

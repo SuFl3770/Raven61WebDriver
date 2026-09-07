@@ -27,11 +27,20 @@
 
 import { layoutOf, type Layout } from '../device/layout'
 import type { KeyDef } from '../device/spec'
-import { CAL, CAL_STATE } from '../protocol/calibration'
+import { CAL, CAL_STATE, ledColor } from '../protocol/calibration'
 import { mmToCounts } from '../protocol/encoding'
 import { COMMAND, DANGEROUS_COMMANDS, EVENT, sign } from '../protocol/frame'
 import { FACTORY_GLOBAL } from '../protocol/global'
 import { encodeKeyPerfRecord } from '../protocol/keyPerf'
+import { keyRgbBlobSize } from '../protocol/keyRgb'
+import {
+  LIGHT_CONTROL,
+  LIGHT_LIMITS,
+  LIGHT_MODE_OFF,
+  decodeLighting,
+  effectOf,
+  supportsControl,
+} from '../protocol/lighting'
 import { encodeRecord, factoryBinding } from '../protocol/keymap'
 import { fallbackSlotMap } from '../protocol/slotMap'
 import { demoSpec } from './spec'
@@ -86,6 +95,8 @@ export class DemoBoard {
   private keyPerf!: Uint8Array
   private keymapLive!: Uint8Array
   private keymapDefaults!: Uint8Array
+  /** The stored per-key custom colour layer — see protocol/keyRgb.ts. */
+  private keyRgb!: Uint8Array
   /** Never restored by a factory reset — see FACTORY_RESET_DEFAULTS. */
   private calibration!: Uint8Array
 
@@ -201,6 +212,20 @@ export class DemoBoard {
       case COMMAND.writeKeyPerf:
         this.blockWrite(request, this.keyPerf)
         return this.ack(request)
+
+      case COMMAND.readKeyRgb:
+        return this.blockReply(request, command, this.keyRgb)
+      case COMMAND.writeKeyRgb:
+        this.blockWrite(request, this.keyRgb)
+        return this.ack(request)
+
+      // The live frame is a different memory: the stored layer with whatever
+      // the firmware paints over it. Here that is the calibration overlay,
+      // which is the one override this project has decoded (docs §3.3) — and
+      // simulating it is what makes the difference between the two blocks
+      // visible in the demo instead of only described in the panel.
+      case COMMAND.readLightRgb:
+        return this.blockReply(request, command, this.ledFrame())
 
       case COMMAND.readCalibration:
         return this.blockReply(request, command, this.calibration)
@@ -328,6 +353,15 @@ export class DemoBoard {
     this.keyPerf = this.buildKeyPerf()
     this.keymapDefaults = this.buildKeymapDefaults()
     this.keymapLive = this.buildKeymapLive()
+    /*
+     * Zeroed, which on this block means *no custom colour* rather than black.
+     *
+     * The real reset copies a defaults table out of code flash (0x175f4) whose
+     * contents nobody has dumped, so a demo that invented colours there would
+     * be inventing evidence. An empty layer is the one thing the block is known
+     * to say.
+     */
+    this.keyRgb = new Uint8Array(keyRgbBlobSize(this.spec.keyRgb))
   }
 
   private buildGlobal(): Uint8Array {
@@ -344,7 +378,25 @@ export class DemoBoard {
     out[o.deadZone] = d.deadZone
     out[o.gameLock] = 0
     out[o.flags] = d.flags
-    out[o.sleep] = d.sleepMinutes
+    /*
+     * The lighting bytes, from the same defaults table the real reset copies.
+     *
+     * Written here rather than left zero because zero is a real effect —
+     * Custom Light — and a demo board that came up claiming that while showing
+     * no colours would be its own small lie. `colorIndex` stays 0: nothing is
+     * known about what it selects, so there is nothing to simulate.
+     */
+    if (o.lightMode !== null) out[o.lightMode] = d.lightMode
+    if (o.brightness !== null) out[o.brightness] = d.brightness
+    if (o.speed !== null) out[o.speed] = d.speedWire
+    if (o.direction !== null) out[o.direction] = 0
+    if (o.colorful !== null) out[o.colorful] = d.colorful
+    if (o.color !== null) {
+      // The firmware's own default: full red.
+      out[o.color] = 0xff
+      out[o.color + 1] = 0
+      out[o.color + 2] = 0
+    }
     return sign(out, f)
   }
 
@@ -430,6 +482,81 @@ export class DemoBoard {
    * scale with the firmware's latched `done` state. The AA BB FF tag is what
    * the boot path checks before trusting a record, so every record carries it.
    */
+  /**
+   * What the LEDs are showing: the stored layer, with the firmware's
+   * calibration overlay painted over it.
+   *
+   * The overlay is the real rule, not a flourish — 0x13974 indexes the status
+   * palette with the calibration state byte and paints only states 0 and 1, so
+   * a key that has never been bottomed out shows red whatever colour is stored
+   * for it. That is exactly why 0xde cannot stand in for a verify read, and the
+   * demo would be misleading if its two blocks always agreed.
+   *
+   * No effect animation. The demo runs no lighting mode because none has been
+   * decoded, so an unlit key comes back unlit rather than carrying a pattern
+   * this project would be inventing.
+   */
+  private ledFrame(): Uint8Array {
+    const rgb = this.spec.keyRgb
+    const cal = this.spec.calibration
+    const light = decodeLighting(this.global, this.spec.global)
+    const frame = new Uint8Array(rgb.recordSize * rgb.slots)
+
+    /*
+     * The base layer, from whichever effect the settings block names.
+     *
+     * Only two of the board's effects are simulated, and both because their
+     * rule is *known* rather than guessed: Custom Light paints the stored
+     * per-key block (that is the effect the `perKey` bit marks, and the block
+     * is decoded), and the off row lights nothing. Everything else on the real
+     * board is an animation this project has not decoded, so it comes back as
+     * the effect's single colour on every key — which is honest about being a
+     * placeholder and still lets the panel be exercised.
+     */
+    if (light && light.mode !== LIGHT_MODE_OFF) {
+      const custom = supportsControl(effectOf(this.spec.lightEffects, light.mode), LIGHT_CONTROL.perKey)
+      for (let slot = 0; slot < rgb.slots; slot++) {
+        if (!this.keyBySlot.has(slot)) continue
+        const at = slot * rgb.recordSize
+        if (custom) {
+          frame[at] = this.keyRgb[at] ?? 0
+          frame[at + 1] = this.keyRgb[at + 1] ?? 0
+          frame[at + 2] = this.keyRgb[at + 2] ?? 0
+        } else {
+          frame[at] = light.color.r
+          frame[at + 1] = light.color.g
+          frame[at + 2] = light.color.b
+        }
+      }
+      // Brightness is a percentage and the firmware scales the channels by it,
+      // so a demo that ignored it would show a slider that does nothing.
+      if (light.brightness < LIGHT_LIMITS.brightnessMax) {
+        for (let i = 0; i < frame.length; i++) {
+          frame[i] = Math.round(((frame[i] ?? 0) * light.brightness) / LIGHT_LIMITS.brightnessMax)
+        }
+      }
+    }
+
+    /*
+     * Then the firmware's calibration overlay, over the top of whatever the
+     * effect produced — 0x13974 paints states 0 and 1 and nothing else, and it
+     * is the one override this project has decoded (docs §3.3). Simulating it
+     * is what makes the difference between the stored layer and the live frame
+     * visible in the demo instead of only described in the panel.
+     */
+    for (let slot = 0; slot < rgb.slots; slot++) {
+      const state = this.calibration[slot * cal.recordSize + 4] ?? CAL_STATE.done
+      const color = ledColor(state)
+      if (!color) continue
+      const at = slot * rgb.recordSize
+      const n = Number.parseInt(color.slice(1), 16)
+      frame[at] = (n >> 16) & 0xff
+      frame[at + 1] = (n >> 8) & 0xff
+      frame[at + 2] = n & 0xff
+    }
+    return frame
+  }
+
   private buildCalibration(): Uint8Array {
     const { records, recordSize } = this.spec.calibration
     const out = new Uint8Array(records * recordSize)
@@ -630,17 +757,14 @@ export class DemoBoard {
 
 /** Read commands this app does not decode. The board answers; the blob is empty. */
 const UNDECODED_READS: readonly number[] = [
-  COMMAND.readKeyRgb,
   COMMAND.readMacros,
   COMMAND.readAdvancedKeys,
   COMMAND.readLightConfigA,
   COMMAND.readLightConfigB,
-  COMMAND.readLightRgb,
   COMMAND.readReserved,
 ]
 
 const UNDECODED_WRITES: readonly number[] = [
-  COMMAND.writeKeyRgb,
   COMMAND.writeMacros,
   COMMAND.writeAdvancedKeys,
   COMMAND.writeLightConfigA,

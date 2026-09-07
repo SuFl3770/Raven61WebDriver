@@ -7,8 +7,10 @@ import type {
   FactoryResetStage,
   KeymapWriteResult,
   KeyPerfWriteResult,
+  KeyRgbWriteResult,
 } from './engine'
 import type { GlobalPatch, GlobalWriteResult } from './global'
+import type { Rgb } from './keyRgb'
 import type { ProfileSupport } from './layers'
 import type { SlotMap } from './slotMap'
 import type {
@@ -17,6 +19,7 @@ import type {
   GlobalSettings,
   KeyConfig,
   KeyPerfSnapshot,
+  KeyRgbSnapshot,
   KeySample,
   KeymapEntry,
 } from './types'
@@ -202,6 +205,62 @@ export interface KeyboardCodec {
   readKeymapDefaults?(link: HidLink, layer: number): Promise<(KeymapEntry | null)[]>
 
   /**
+   * The stored per-key custom colours — the only lighting block this project
+   * has decoded. See `protocol/keyRgb.ts`.
+   *
+   * Separate from `readLightFrame` because they are different memories with
+   * different answers: this is the layer that survives a power cycle, that one
+   * is what the LEDs are showing this instant.
+   */
+  readKeyColors?(link: HidLink): Promise<KeyRgbSnapshot>
+
+  /**
+   * Sets the colour of named keys, and checks that the write took.
+   *
+   * `null` for a key leaves it alone — the block is wider than the board's
+   * keys, so a write built from this app's model would zero everything else.
+   * Read-modify-write, like every other block here.
+   *
+   * A verified write means *the bytes are in the block*. Whether the key lights
+   * up depends on the lighting mode, and no command for that has been decoded,
+   * so a codec cannot promise it and a panel must not imply it.
+   */
+  writeKeyColors?(link: HidLink, colors: readonly (Rgb | null)[]): Promise<KeyRgbWriteResult>
+
+  /**
+   * Puts a whole colour block back, byte for byte — the undo for the write
+   * above, using the bytes the board had rather than this app's idea of them.
+   */
+  restoreKeyRgb?(link: HidLink, blob: Uint8Array): Promise<void>
+
+  /**
+   * The LED frame the board is displaying right now, effects and the firmware's
+   * calibration overlay included.
+   *
+   * Read-only, and not a settings read: it is a RAM buffer the effect engine
+   * rewrites every frame. It exists so the app can show whether a stored colour
+   * is actually reaching the LEDs, which is the one thing a verified write to
+   * the stored layer cannot say.
+   */
+  readLightFrame?(link: HidLink): Promise<KeyRgbSnapshot>
+
+  /**
+   * The same frame, over and over, so a panel can show which keys are lit as it
+   * happens. Resolves to a function that stops it.
+   *
+   * Shaped like `startMonitor` because it is the same kind of thing — a stream
+   * a panel subscribes to and must be able to stop — and separate from
+   * `readLightFrame` because a watch reads the slot map once and a one-shot
+   * read cannot. It is what the stock driver does with its idle time; see
+   * `watchLightFrame` in engine.ts.
+   */
+  watchLightFrame?(
+    link: HidLink,
+    onFrame: (snapshot: KeyRgbSnapshot) => void,
+    opts?: { intervalMs?: number; onError?: (message: string) => void },
+  ): Promise<() => void>
+
+  /**
    * What this board's layers or profiles actually are — how many, what they
    * carry, and whether the host can switch them. See protocol/layers.ts.
    *
@@ -275,6 +334,11 @@ export type Capability =
   | 'readKeymap'
   | 'writeKeymap'
   | 'readKeymapDefaults'
+  | 'readKeyColors'
+  | 'writeKeyColors'
+  | 'restoreKeyRgb'
+  | 'readLightFrame'
+  | 'watchLightFrame'
   | 'readActiveProfile'
   | 'writeActiveProfile'
   | 'commit'

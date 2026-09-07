@@ -42,6 +42,24 @@ export const writeKeymapLayer = (
   entries: Parameters<NonNullable<EngineCodec['writeKeymap']>>[2],
 ) => raven61Codec.writeKeymap!(link, layer, entries)
 
+/** The stored per-key colour layer. */
+export const readKeyColors = (link: HidLink) => raven61Codec.readKeyColors!(link)
+
+export const writeKeyColors = (
+  link: HidLink,
+  colors: Parameters<NonNullable<EngineCodec['writeKeyColors']>>[1],
+) => raven61Codec.writeKeyColors!(link, colors)
+
+/** What the LEDs are showing right now — a RAM buffer, not the stored layer. */
+export const readLightFrame = (link: HidLink) => raven61Codec.readLightFrame!(link)
+
+/** The same, polled — what the stock driver does with its idle time. */
+export const watchLightFrame = (
+  link: HidLink,
+  onFrame: Parameters<NonNullable<EngineCodec['watchLightFrame']>>[1],
+  opts?: Parameters<NonNullable<EngineCodec['watchLightFrame']>>[2],
+) => raven61Codec.watchLightFrame!(link, onFrame, opts)
+
 export const writeKeyPerfConfigs = (
   link: HidLink,
   configs: Parameters<NonNullable<EngineCodec['writeKeyPerf']>>[1],
@@ -77,7 +95,13 @@ export {
   type GlobalPatch,
   type GlobalWriteResult,
 } from './global'
-export type { FactoryResetResult, FactoryResetStage, KeymapWriteResult, KeyPerfWriteResult } from './engine'
+export type {
+  FactoryResetResult,
+  FactoryResetStage,
+  KeymapWriteResult,
+  KeyPerfWriteResult,
+  KeyRgbWriteResult,
+} from './engine'
 
 /** The Raven61's analog-mode commands, for a panel that shows what it sends. */
 export const MONITOR = {

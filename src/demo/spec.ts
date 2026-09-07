@@ -34,6 +34,7 @@
 import { DEFAULT_PROTOCOL } from '../device/protocols/default'
 import { RAVEN61_PROFILE_SUPPORT } from '../protocol/layers'
 import { RAVEN61_REPORT_RATES } from '../device/boards/raven61/index'
+import { RAVEN61_LIGHT_EFFECTS } from '../device/boards/raven61/lighting'
 import { RAVEN61_SWITCH_TYPES } from '../device/boards/raven61/switches'
 import type { DeviceSpec } from '../device/spec'
 import { DEMO_TKL_LAYOUT } from './layout'
@@ -74,5 +75,6 @@ export const demoSpec: DeviceSpec = {
   slotMap: { ...DEFAULT_PROTOCOL.slotMap, unusedSlots: [] },
   switchTypes: RAVEN61_SWITCH_TYPES,
   reportRates: RAVEN61_REPORT_RATES,
+  lightEffects: RAVEN61_LIGHT_EFFECTS,
   profileSupport: RAVEN61_PROFILE_SUPPORT,
 }
