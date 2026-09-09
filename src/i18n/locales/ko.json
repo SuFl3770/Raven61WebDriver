@@ -504,6 +504,7 @@
   },
 
   "keymap": {
+    "categories": "버튼 분류",
     "apply": "보드에 적용",
     "applyCount": "{count}개 키 적용",
     "revert": "편집 취소",
@@ -529,8 +530,30 @@
       "unassign": "없음",
       "modifiers": "함께 누를 수정자"
     },
+    "section": {
+      "playback": "재생",
+      "volume": "소리",
+      "display": "화면",
+      "web": "웹",
+      "apps": "앱 실행",
+      "unbound": "해제 · 넘김",
+      "fkeys": "확장 기능키",
+      "international": "국제 · 입력기",
+      "layer": "레이어",
+      "input": "입력 잠금",
+      "board": "보드",
+      "mode": "효과",
+      "brightness": "밝기",
+      "speed": "속도",
+      "direction": "방향",
+      "color": "색",
+      "buttons": "버튼",
+      "wheel": "휠"
+    },
+
     "group": {
       "basic": "기본 키",
+      "symbols": "기호",
       "multimedia": "멀티미디어",
       "special": "특수 키",
       "function": "기능",
@@ -543,20 +566,13 @@
       "momentary": "레이어 {layer}",
       "action": "동작 0x{code}"
     },
+    "trnsNote": "<c>KC_TRNS</c> 는 이 보드의 레코드가 아닙니다. 이 보드 펌웨어에는 투명 키가 없어서, 이 버튼은 기본 레이어의 값을 이 칸에 <b>복사</b>합니다. 연결이 아니라 복사라, 나중에 기본 레이어를 바꿔도 따라오지 않습니다.",
     "writeWhat": "키맵 쓰기",
     "writeNote": "키맵 명령은 대개 길이가 길어 여러 리포트로 쪼개져 전송됩니다. 순정 드라이버에서 <b>한 키만</b> 바꿔 저장한 뒤 캡처를 비교하면, 바뀐 바이트 위치가 곧 그 키의 인덱스입니다 — 매트릭스 순서를 역산하는 가장 확실한 방법입니다."
   },
 
   "keycode": {
-    "group": {
-      "letters": "문자",
-      "digits": "숫자 · 기호",
-      "function": "기능키",
-      "editing": "편집 · 이동",
-      "modifiers": "수정자",
-      "special": "특수"
-    },
-    "none": "없음",
+        "none": "없음",
     "error": "오류"
   },
 

@@ -18,6 +18,7 @@ import { useCodec, useConnection } from '../state/link'
 import { boardSync, useSyncState } from '../state/sync'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { useHeldWrites } from '../ui/useHeldWrites'
+import { Slider } from '../ui/Slider'
 
 /**
  * The board-wide lighting effect: which one runs, and its four parameters.
@@ -173,8 +174,7 @@ export function LightEffect() {
                 <span className="small dim" style={{ width: 72 }}>
                   {t('light.brightness')}
                 </span>
-                <input
-                  type="range"
+                <Slider
                   {...held}
                   disabled={disabled}
                   min={0}
@@ -200,8 +200,7 @@ export function LightEffect() {
                   a period and rejects anything above 4 (it rewrites it to 2),
                   so a finer slider would offer values the board would not keep.
                 */}
-                <input
-                  type="range"
+                <Slider
                   {...held}
                   disabled={disabled}
                   min={0}

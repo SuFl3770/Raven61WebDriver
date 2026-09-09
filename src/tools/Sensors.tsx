@@ -334,7 +334,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           </>
         }
       >
-        <LiveGrid current={current} selected={sel} running={listening} />
+        <LiveGrid current={current} selected={sel} running={listening} physical={analysis} />
       </GridFrame>
 
       <Panel title={t('sensors.title')}>
@@ -966,12 +966,20 @@ function LiveGrid({
   current,
   selected,
   running,
-}: LiveProps & { selected: ReadonlySet<number> }) {
+  physical,
+}: LiveProps & { selected: ReadonlySet<number>; physical?: boolean }) {
   useDisplayClock(running)
   // The cap fill is a fraction of full travel, which is the board's own.
   const travelMm = useLayout().travelMm
   return (
     <KeyGrid
+      /*
+        On its own tab this is a monitor — press a key, watch its cap — so the
+        caps read what the keys now send. Inside the debug tab it is analysis of
+        the hardware, where a key is a sensor at a position and a binding is
+        somebody else's business.
+      */
+      physical={physical}
       selected={selected}
       onToggle={(i, on) => selection.setSelected(i, on)}
       fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / travelMm}

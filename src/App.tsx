@@ -34,6 +34,7 @@ import { TabActionSlot } from './ui/TabActions'
 import { useExit } from './ui/useExit'
 import { VersionBadge } from './ui/VersionBadge'
 import { selection } from './state/selection'
+import { useLegendSync } from './state/legends'
 import { useCodecAutoSelect, useConnection } from './state/link'
 import { useSettings } from './state/settings'
 
@@ -106,6 +107,9 @@ const DEBUG_TABS: Tab[] = [
 
 export default function App() {
   useCodecAutoSelect()
+  // Reads the base layer on connect, so every grid's caps say what its keys
+  // actually send rather than what is printed on them — see state/legends.ts.
+  useLegendSync()
   const [active, setActive] = useState(TOP_TABS[0]!.id)
   /*
    * Whether the left column is showing, which only means anything on a narrow

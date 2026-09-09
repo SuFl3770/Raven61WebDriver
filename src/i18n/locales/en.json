@@ -526,6 +526,7 @@
   },
 
   "keymap": {
+    "categories": "Button categories",
     "apply": "Apply to board",
     "applyCount": "Apply {count} keys",
     "revert": "Discard edits",
@@ -551,8 +552,30 @@
       "unassign": "None",
       "modifiers": "Held modifiers"
     },
+    "section": {
+      "playback": "Playback",
+      "volume": "Volume",
+      "display": "Display",
+      "web": "Web",
+      "apps": "Launch",
+      "unbound": "Unbound · pass-through",
+      "fkeys": "Extra function keys",
+      "international": "International · IME",
+      "layer": "Layer",
+      "input": "Input locks",
+      "board": "Board",
+      "mode": "Effect",
+      "brightness": "Brightness",
+      "speed": "Speed",
+      "direction": "Direction",
+      "color": "Colour",
+      "buttons": "Buttons",
+      "wheel": "Wheel"
+    },
+
     "group": {
       "basic": "Basic",
+      "symbols": "Symbols",
       "multimedia": "Multimedia",
       "special": "Special",
       "function": "Function",
@@ -565,20 +588,13 @@
       "momentary": "Layer {layer}",
       "action": "Action 0x{code}"
     },
+    "trnsNote": "<c>KC_TRNS</c> is not a record this board has. Its firmware has no transparent key, so this button <b>copies</b> the base layer's binding into this key. It is a copy and not a link: a later edit to the base layer does not follow it.",
     "writeWhat": "keymap write",
     "writeNote": "The keymap command is usually long enough to be split across several reports. Change <b>one key</b> in the stock driver, save, and diff the captures: the byte that moved is that key's index — the most reliable way to work out the matrix order."
   },
 
   "keycode": {
-    "group": {
-      "letters": "Letters",
-      "digits": "Digits · symbols",
-      "function": "Function keys",
-      "editing": "Editing · navigation",
-      "modifiers": "Modifiers",
-      "special": "Special"
-    },
-    "none": "None",
+        "none": "None",
     "error": "Error"
   },
 

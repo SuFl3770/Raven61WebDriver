@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
-import { KEYCODE_GROUPS, keycodeDefLabel, keycodeLabel } from '../keyboard/keycodes'
+import { KEYBOARD_ROWS, keycodeLabel } from '../keyboard/keycodes'
 import { useDeviceSpec, useLayout } from '../device/active'
 import type { KeyDef } from '../device/spec'
 import { supports } from '../protocol/codec'
 import {
   BINDING_GROUPS,
   MODIFIERS,
+  RECORD_TYPE,
   bindingGroups,
   bindingLabel,
   decodeRecord,
@@ -17,6 +18,7 @@ import {
   type KeyBinding,
 } from '../protocol/keymap'
 import type { KeymapEntry } from '../protocol/types'
+import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
 import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
@@ -69,6 +71,16 @@ import { SubTabs, type SubTab } from '../ui/SubTabs'
  * one group whose members are already named everywhere else in this app.
  */
 const BASIC = 'keymap.group.basic'
+/** The section KC_NO is in, and where the KC_TRNS button joins it. */
+const UNBOUND = 'keymap.section.unbound'
+
+/**
+ * A key width in grid columns.
+ *
+ * The picker's keyboard is a grid of quarter-units — 22.5u a row, so 90 columns
+ * — because that is the smallest step any standard key width lands on.
+ */
+const span = (u: number) => Math.round(u * 4)
 const CATEGORIES: { id: string; nameKey: MessageKey }[] = [
   { id: BASIC, nameKey: 'keymap.group.basic' },
   ...BINDING_GROUPS.map((g) => ({ id: g.nameKey as string, nameKey: g.nameKey })),
@@ -101,16 +113,34 @@ function hex(binding: KeyBinding): string {
  * So the line appears when the binding is *not* what the legend says — which on
  * the Fn layer is nearly everything, since that is what an Fn layer is.
  *
- * An unbound key on a higher layer stays blank rather than showing a dash, for
- * the same reason. A pending edit always shows, in the warning colour, because
- * "this is not what the board holds yet" is the one thing the grid cannot say
- * any other way.
+ * A pending edit always shows, in the warning colour, because "this is not what
+ * the board holds yet" is the one thing the grid cannot say any other way.
+ *
+ * Unbound splits in two. `KC_NO` — the record an unassign writes — is a setting
+ * like any other and shows wherever it is set, which matters more here than
+ * anywhere else: its entire visible effect on the keyboard is that the key
+ * stopped doing anything, so a cap that says nothing about it is a cap that
+ * makes the feature look broken. The factory's never-set marker is the other
+ * one, and it is most of an Fn layer straight out of the box; a dash on all of
+ * those would be the noise this function exists to avoid, so it shows only on
+ * the base layer, where every key has a factory binding and empty means someone
+ * emptied it.
  */
-function capBinding(key: KeyDef, binding: KeyBinding | undefined, edited: boolean): ReactNode {
+function capBinding(
+  key: KeyDef,
+  binding: KeyBinding | undefined,
+  edited: boolean,
+  baseLayer: boolean,
+): ReactNode {
   if (!binding) return undefined
   const label = bindingLabel(binding, keycodeLabel)
   if (edited) return <span className="pending">{label}</span>
-  if (binding.kind === 'none') return undefined
+  // An explicit `KC_NO` shows on every layer: it is a setting, and one whose
+  // whole visible effect is that the key stopped working. Only the factory's
+  // never-set marker is hidden, and only off the base layer — see bindingLabel.
+  if (binding.kind === 'none') {
+    return binding.raw === RECORD_TYPE.key || baseLayer ? label : undefined
+  }
   if (sameBinding(binding, factoryBinding(key.code))) return undefined
   return label
 }
@@ -181,6 +211,10 @@ export function Keymap() {
       try {
         const entries = await codec.readKeymap(link, which)
         setReads((prev) => ({ ...prev, [which]: { entries } }))
+        // Every other grid in the app reads its caps off the base layer. This
+        // is the tab that has it, so this is where it is handed over — see
+        // state/legends.ts.
+        if (which === 0) legends.set(entries)
         setEdits((prev) => ({ ...prev, [which]: {} }))
         setStatus(null)
       } catch (e) {
@@ -264,17 +298,16 @@ export function Keymap() {
       const result = await codec.writeKeymap(link, layer, entries)
       // The write already read the layer back; decoding those bytes saves a
       // third read of the same block just to show what the board now holds.
-      setReads((prev) => ({
-        ...prev,
-        [layer]: {
-          entries: (prev[layer]?.entries ?? []).map((entry) => {
-            const slot = entry.slot
-            if (slot === undefined) return entry
-            const binding = decodeFrom(result.after, slot * entrySize, entrySize)
-            return binding ? { slot, binding } : entry
-          }),
-        },
-      }))
+      const applied = (reads[layer]?.entries ?? []).map((entry) => {
+        const slot = entry.slot
+        if (slot === undefined) return entry
+        const binding = decodeFrom(result.after, slot * entrySize, entrySize)
+        return binding ? { slot, binding } : entry
+      })
+      setReads((prev) => ({ ...prev, [layer]: { entries: applied } }))
+      // Applied, so the rest of the app's caps follow. Pending edits never get
+      // this far: until the write lands they are this tab's business alone.
+      if (layer === 0) legends.set(applied)
       setEdits((prev) => ({ ...prev, [layer]: {} }))
       setStatus(
         result.slots.length === 0
@@ -323,6 +356,29 @@ export function Keymap() {
     }
   }
 
+  /**
+   * "KC_TRNS" — the base layer's binding, copied into this key on this layer.
+   *
+   * The name is QMK's and the behaviour is not. This board has no transparent
+   * record: the firmware fetches one record at `0x20b00 + layer * 512 + slot * 3`
+   * and hands it straight to its dispatch, which has no branch for 0x00 or 0xff
+   * and no second look at layer 0 — an unbound key on a higher layer does
+   * nothing at all. See docs/protocol.md §7.3.
+   *
+   * So this button writes a **copy**, not a link: the record it stores is
+   * whatever the base layer holds right now, and a later edit to the base layer
+   * does not follow it. That is the whole of the difference, and the note under
+   * the row says so.
+   *
+   * It reads what the base layer *shows* rather than what the board holds, so
+   * copying from a layer with edits waiting gives what the grid is showing
+   * there — the alternative is a button whose result contradicts the tab it was
+   * pressed on.
+   */
+  const baseBinding =
+    selected === null ? undefined : shownBinding(reads[0], edits[0] ?? {}, selected)
+  const canTrns = layer !== 0 && baseBinding !== undefined
+
   const selectedKey = selected === null ? undefined : keys[selected]
   const current = selected === null ? undefined : shownBinding(read, layerEdits, selected)
   const modifiers = current?.kind === 'key' ? current.modifiers : 0
@@ -368,7 +424,10 @@ export function Keymap() {
           <b>{current ? bindingLabel(current, keycodeLabel) : '—'}</b>
           {current && <span className="mono small dim">{hex(current)}</span>}
           <span style={{ flex: 1 }} />
-          <button disabled={none} onClick={() => assign({ kind: 'none', raw: 0 })}>
+          <button
+            disabled={none}
+            onClick={() => assign({ kind: 'none', raw: RECORD_TYPE.key })}
+          >
             {t('keymap.picker.unassign')}
           </button>
           <button
@@ -414,69 +473,95 @@ export function Keymap() {
           ))}
         </div>
 
-        {/*
-          The categories are a strip inside this panel rather than a panel each.
-          Seven stacked panels was the whole stock catalog on one page, and the
-          layer strip above already owns the vertical space — this is the same
-          shape the stock driver's own remap tab uses, and only the open
-          category's keys are drawn.
-        */}
-        <div className="row" style={{ gap: 4, marginTop: 14 }}>
-          {CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              className={c.id === category ? 'primary' : ''}
-              onClick={() => setCategory(c.id)}
-            >
-              {t(c.nameKey)}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 14 }}>
           {category === BASIC ? (
-            KEYCODE_GROUPS.map((g) => (
-              <div key={g.nameKey} style={{ marginBottom: 10 }}>
-                <div className="small dim" style={{ marginBottom: 4 }}>
-                  {t(g.nameKey)}
-                </div>
-                <div className="row" style={{ gap: 4 }}>
-                  {g.codes
-                    // 0x00 and 0x01 are "no key" and the HID rollover error,
-                    // neither of which is something to bind; unassigning has
-                    // its own button. 0xff is Fn, which is an action record
-                    // rather than a usage and is in the Function group.
-                    .filter((c) => c.code > 0x01 && c.code !== 0xff)
-                    .map((c) => (
-                      <button
-                        key={c.code}
-                        disabled={none}
-                        className={
-                          current?.kind === 'key' && current.usage === c.code ? 'primary' : ''
-                        }
-                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.8125rem' }}
-                        onClick={() => assign({ kind: 'key', usage: c.code, modifiers })}
-                      >
-                        {keycodeDefLabel(c)}
-                      </button>
-                    ))}
-                </div>
+            /*
+             * A keyboard, not a list of groups. See KEYBOARD_ROWS: a remap is
+             * "make this key send Home", and the hand knows where Home is.
+             *
+             * The cap wins over the long name where the position already says
+             * which key it is — the keypad reads `7`, not `Num 7` — and the
+             * long name is on the button's tooltip and in the readout under the
+             * grid, which is where the two `/` keys are told apart.
+             */
+            <div className="kbpick-scroll">
+              <div className="kbpick">
+                {KEYBOARD_ROWS.map((row, r) => (
+                  <div className="kbpick-row" key={r}>
+                    {row.map((slot, i) =>
+                      'gap' in slot ? (
+                        <span key={`gap${i}`} style={{ gridColumn: `span ${span(slot.gap)}` }} />
+                      ) : (
+                        <button
+                          key={slot.code}
+                          disabled={none}
+                          title={keycodeLabel(slot.code)}
+                          className={
+                            current?.kind === 'key' && current.usage === slot.code ? 'primary' : ''
+                          }
+                          style={{ gridColumn: `span ${span(slot.u ?? 1)}` }}
+                          onClick={() => assign({ kind: 'key', usage: slot.code, modifiers })}
+                        >
+                          {slot.cap ?? keycodeLabel(slot.code)}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                ))}
               </div>
-            ))
-          ) : (
-            <div className="row" style={{ gap: 4 }}>
-              {(groups.find((g) => g.nameKey === category)?.choices ?? []).map((choice) => (
-                <button
-                  key={choice.label}
-                  disabled={none}
-                  className={current && sameBinding(current, choice.binding) ? 'primary' : ''}
-                  style={{ padding: '0.2rem 0.5rem', fontSize: '0.8125rem' }}
-                  onClick={() => assign(choice.binding)}
-                >
-                  {choice.label}
-                </button>
-              ))}
             </div>
+          ) : (
+            /*
+             * The rest are lists, split into the sets a person looks for — see
+             * BindingSection. A group that is one set has no header, because it
+             * would repeat the tab above it.
+             */
+            <>
+              <div className="picker-sections">
+                {(groups.find((g) => g.nameKey === category)?.sections ?? []).map((s, i) => (
+                  <div className="picker-section" key={s.nameKey ?? i}>
+                    {s.nameKey && <div className="small dim">{t(s.nameKey)}</div>}
+                    <div className="row" style={{ gap: 4 }}>
+                      {s.choices.map((choice) => (
+                        <button
+                          key={choice.label}
+                          disabled={none}
+                          className={`picker-choice${
+                            current && sameBinding(current, choice.binding) ? ' primary' : ''
+                          }`}
+                          onClick={() => assign(choice.binding)}
+                        >
+                          {choice.label}
+                        </button>
+                      ))}
+                      {/* KC_TRNS sits with KC_NO because that is where someone
+                          looking for the triangle will look, and because the two
+                          are the same question — what this key does on *this*
+                          layer. It is not a `BindingChoice`: what it writes
+                          depends on the base layer, so it cannot be in a
+                          catalog. */}
+                      {s.nameKey === UNBOUND && (
+                        <button
+                          className="picker-choice"
+                          disabled={none || !canTrns}
+                          onClick={() => baseBinding && assign(baseBinding)}
+                        >
+                          KC_TRNS
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Under the whole row rather than under its own section: the
+                  sections are columns now, and a paragraph in one of them would
+                  be a two-word-wide wall of text. */}
+              {category === 'keymap.group.special' && (
+                <div className="small dim" style={{ marginTop: 10 }}>
+                  <T k="keymap.trnsNote" />
+                </div>
+              )}
+            </>
           )}
         </div>
       </Panel>
@@ -497,36 +582,36 @@ export function Keymap() {
   )
 
   /**
-   * One tab per layer the board has storage for.
+   * One tab per category of thing that can be bound.
+   *
+   * These were a row of buttons inside the panel, under the strip that chose
+   * the layer. Swapping the two puts the frequent choice in the frequent place:
+   * a session on this tab switches category constantly and the layer once or
+   * twice, and the strip under the grid is the app's own place for "which of
+   * these am I looking at". The layer moved up into the grid's own bar, which is
+   * where the things that act on the grid live — and the grid is what follows
+   * the layer.
+   */
+  const categories: SubTab[] = CATEGORIES.map((c) => ({
+    id: c.id,
+    labelKey: c.nameKey,
+    render: () => picker,
+  }))
+
+  /**
+   * The layer names, for the pair of buttons in the grid's bar.
    *
    * The first two keep the names they had — the base layer and Fn — and a board
-   * with more gets numbered tabs, because the bundles cannot name a layer this
+   * with more gets numbered ones, because the bundles cannot name a layer this
    * app has never seen. A layer with no storage behind it is not offered at
    * all: on the Raven61 those addresses hold the RGB blob and the macro table,
    * and reading them as a keymap is what layers.ts warns about.
    */
-  const layers: SubTab[] = Array.from({ length: spec.keymap.layers }, (_, i) => {
-    if (i === 0) {
-      return {
-        id: '0',
-        labelKey: 'keymap.layer.main' as const,
-        render: () => picker,
-      }
-    }
-    if (i === 1) {
-      return {
-        id: '1',
-        labelKey: 'keymap.layer.fn1' as const,
-        render: () => picker,
-      }
-    }
-    return {
-      id: String(i),
-      labelKey: 'keymap.layer.fn1' as const,
-      label: `FN${i}`,
-      render: () => picker,
-    }
-  })
+  const layerName = (i: number) => {
+    if (i === 0) return t('keymap.layer.main')
+    if (i === 1) return t('keymap.layer.fn1')
+    return `FN${i}`
+  }
 
   return (
     <>
@@ -541,6 +626,24 @@ export function Keymap() {
         selectable={false}
         top={
           <>
+            {/*
+              Which layer the grid is showing, and so what everything below it
+              edits. In the bar rather than on a strip of its own because it is
+              the grid's own state — the same place the input-point tab keeps
+              what acts on its grid.
+            */}
+            <div className="row" style={{ gap: 4 }} role="group" aria-label={t('keymap.layers')}>
+              {Array.from({ length: spec.keymap.layers }, (_, i) => (
+                <button
+                  key={i}
+                  className={i === layer ? 'primary' : ''}
+                  onClick={() => setLayer(i)}
+                >
+                  {layerName(i)}
+                </button>
+              ))}
+            </div>
+            <hr className="sep" />
             <button
               className="primary"
               disabled={!connected || !canWrite || busy !== null || dirty === 0}
@@ -581,7 +684,15 @@ export function Keymap() {
           </>
         }
       >
+        {/*
+          The one grid that keeps the board's printing on the cap whatever the
+          keymap says. It is the tab where a key is remapped *from* its legend,
+          and `capBinding` below is written around that: the second line appears
+          only when the binding differs from the cap, which is a comparison that
+          says nothing at all once the cap has been made to agree.
+        */}
         <KeyGrid
+          physical
           selected={selected === null ? undefined : new Set([selected])}
           onSelect={(i) => setSelected(i)}
           sub={(k) =>
@@ -589,16 +700,17 @@ export function Keymap() {
               k,
               shownBinding(read, layerEdits, k.index),
               layerEdits[k.index] !== undefined,
+              layer === 0,
             )
           }
         />
       </GridFrame>
 
       <SubTabs
-        tabs={layers}
-        label={t('keymap.layers')}
-        active={String(layer)}
-        onActive={(id) => setLayer(Number(id))}
+        tabs={categories}
+        label={t('keymap.categories')}
+        active={category}
+        onActive={setCategory}
       />
     </>
   )

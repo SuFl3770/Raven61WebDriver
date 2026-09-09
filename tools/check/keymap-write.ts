@@ -21,9 +21,14 @@ import { RAVEN61_KEYS } from '../../src/device/boards/raven61/layout'
 import { raven61Spec } from '../../src/device/boards/raven61/index'
 import { layoutOf } from '../../src/device/layout'
 import { BLOCK, MAGIC, OFFSET, checksum } from '../../src/protocol/frame'
+import { KEYBOARD_ROWS, KEYCODES, keycodeLabel } from '../../src/keyboard/keycodes'
 import {
   BINDING_GROUPS,
+  EXTRA_KEYS,
+  groupChoices,
   KEYMAP_BLOCK,
+  SHIFTED_KEYS,
+  bindingLabel,
   decodeRecord,
   encodeRecord,
   sameBinding,
@@ -43,6 +48,9 @@ const ok = (name: string, cond: boolean, extra = '') => {
   if (cond) pass++
   else fails.push(`${name}${extra ? ' — ' + extra : ''}`)
 }
+
+/** `[lo, hi]` inclusive, for spelling a run of usages out once. */
+const seq = (lo: number, hi: number) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i)
 
 /** The three channels the real board leaves unused inside 0..63. */
 const HOLES = [12, 20, 53]
@@ -138,7 +146,7 @@ const record = (blob: Uint8Array, layer: number, slot: number) =>
 // --- the record codec round-trips everything the picker can produce ---
 {
   for (const group of BINDING_GROUPS) {
-    for (const choice of group.choices) {
+    for (const choice of groupChoices(group)) {
       const bytes = encodeRecord(choice.binding)
       const back = decodeRecord(bytes)
       ok(
@@ -163,6 +171,153 @@ const record = (blob: Uint8Array, layer: number, slot: number) =>
     kind: 'consumer',
     usage: 0x183,
   })
+}
+
+// --- the picker covers every plain key the stock driver can produce ---
+{
+  /*
+   * The stock remap tab has no list of ordinary keys: it captures a keypress
+   * and converts it, so what it can produce is its VK-to-usage table at
+   * 0x45d240 rather than any of the six catalog lists. That is the set below,
+   * and it is the one this app's picker has to cover — the numeric keypad went
+   * missing from it once, because a 61-key layout has no cap to suggest it and
+   * no catalog list to name it. See docs/protocol.md §7.3.
+   *
+   * `0xf8`, the last item of the driver's "Special" list, is deliberately not
+   * here: it is not a HID usage. See EXTRA_KEYS.
+   */
+  const fromDriver: number[] = [
+    ...seq(0x04, 0x27), // A-Z, 1-0
+    ...seq(0x28, 0x39), // Enter .. Caps
+    ...seq(0x3a, 0x45), // F1-F12
+    ...seq(0x46, 0x52), // editing and arrows
+    ...seq(0x53, 0x63), // the numeric keypad
+    0x64, // NUBS
+    0x65, // App
+    ...seq(0x68, 0x73), // F13-F24
+    ...seq(0xe0, 0xe7), // modifiers
+  ]
+  /*
+   * What the *picker* offers, not what the name table knows. The two came apart
+   * once already — the numeric keypad was nameable and unpickable — and the
+   * name table is the wrong side of that to measure.
+   */
+  const offered = new Set<number>()
+  for (const row of KEYBOARD_ROWS) {
+    for (const slot of row) if (!('gap' in slot)) offered.add(slot.code)
+  }
+  for (const group of BINDING_GROUPS) {
+    for (const choice of groupChoices(group)) {
+      // Modifiers make it a different record: `!` is Shift+1, not usage 0x1e.
+      if (choice.binding.kind === 'key' && choice.binding.modifiers === 0) {
+        offered.add(choice.binding.usage)
+      }
+    }
+  }
+  const missing = fromDriver.filter((u) => !offered.has(u))
+  ok(
+    'picker offers every usage the stock driver can produce',
+    missing.length === 0,
+    missing.map((u) => '0x' + u.toString(16)).join(' '),
+  )
+  // A usage with no name shows as its own hex, which is honest but useless on a
+  // cap — an entry added without a legend fails here. It is `bindingLabel` and
+  // not `keycodeLabel` because the catalog names some of these (F13-F24 and the
+  // international keys live in EXTRA_KEYS, not in the keycode table).
+  const unnamed = fromDriver.filter((u) =>
+    /^0x[0-9a-f]{2}$/.test(bindingLabel({ kind: 'key', usage: u, modifiers: 0 }, keycodeLabel)),
+  )
+  ok('and names all of them', unnamed.length === 0, unnamed.map((u) => u.toString(16)).join(' '))
+}
+
+// --- the picker's keyboard is a keyboard ---
+{
+  /*
+   * Every row is the same width or the rows do not line up, and a row that is
+   * short by a quarter unit is the kind of thing that looks like a rendering
+   * bug rather than a table typo. 22.5u is a full-size ANSI board: 15u of main
+   * block, 3u of navigation and 4u of keypad, with a quarter between.
+   */
+  for (const [i, row] of KEYBOARD_ROWS.entries()) {
+    const width = row.reduce((sum, slot) => sum + ('gap' in slot ? slot.gap : (slot.u ?? 1)), 0)
+    eq(`row ${i} is 22.5u wide`, width, 22.5)
+  }
+  // A key drawn twice is a key whose two caps disagree about being selected.
+  const codes = KEYBOARD_ROWS.flat()
+    .filter((slot): slot is Extract<typeof slot, { code: number }> => !('gap' in slot))
+    .map((slot) => slot.code)
+  eq('and draws each key once', codes.length, new Set(codes).size)
+  eq('and is a 104-key board', codes.length, 104)
+  // Every cap has something written on it, whether its own name or a short one.
+  const blank = KEYBOARD_ROWS.flat().filter(
+    (slot) => !('gap' in slot) && (slot.cap ?? keycodeLabel(slot.code)) === '',
+  )
+  ok('and every cap has a legend', blank.length === 0)
+}
+
+// --- KC_NO is the driver's "unassigned", not the factory's empty marker ---
+{
+  /*
+   * The two are not interchangeable. `0xff` is what the factory keymap leaves in
+   * a slot, and the boot check at 0xa7ae reads slot 0's type byte to decide
+   * whether the live keymap is worth keeping — writing the factory marker back
+   * as an edit is how a keymap gets rewritten from the factory tables under
+   * someone. `10 00 00` is a key record with no usage, which is what the stock
+   * encoder emits for macro_type 1.
+   */
+  const kcNo = EXTRA_KEYS.find((c) => c.label === 'KC_NO')
+  ok('KC_NO is in the Special list', kcNo !== undefined)
+  eq('and writes the driver "unassigned" record', encodeRecord(kcNo!.binding), [0x10, 0, 0])
+  ok(
+    'and reads back as the same binding',
+    sameBinding(decodeRecord([0x10, 0, 0]), kcNo!.binding),
+  )
+  /*
+   * The name has to survive the round trip, or the setting is invisible: the
+   * board answers with the three bytes, and if those decode to something the
+   * label renders as a bare dash then a key that was deliberately switched off
+   * looks exactly like a slot nobody ever wrote.
+   */
+  eq('and is named on the way back', bindingLabel(decodeRecord([0x10, 0, 0]), keycodeLabel), 'KC_NO')
+  eq('and the same before it is written', bindingLabel(kcNo!.binding, keycodeLabel), 'KC_NO')
+  // The factory's own empty marker is the case with no name to give.
+  eq('factory empty stays a dash', bindingLabel(decodeRecord([0xff, 0xff, 0xff]), keycodeLabel), '—')
+  eq('and so does a zeroed slot', bindingLabel(decodeRecord([0, 0, 0]), keycodeLabel), '—')
+  /*
+   * And the two are not the same binding. They encode alike — this app never
+   * writes 0xff back — so a bytes-only comparison called them equal, and the
+   * remap tab dropped `KC_NO` on a factory-empty slot as an edit back to what
+   * the board already held. Most of the Fn layer is factory-empty.
+   */
+  ok(
+    'KC_NO differs from the factory empty marker',
+    !sameBinding(kcNo!.binding, decodeRecord([0xff, 0xff, 0xff])),
+  )
+  ok(
+    'and from a zeroed slot',
+    !sameBinding(kcNo!.binding, decodeRecord([0, 0, 0])),
+  )
+}
+
+// --- the shifted symbols are the Shift bit and an ordinary usage ---
+{
+  /*
+   * "!" is not a HID usage and never was. Each of these has to come out as a
+   * plain key record carrying the Shift bit and the *unshifted* key's usage, or
+   * the board would send a keycode nothing types. The unshifted key also has to
+   * be one the picker already offers, since that is where the usage comes from.
+   */
+  const offered = new Set<number>()
+  for (const def of KEYCODES) offered.add(def.code)
+  for (const choice of SHIFTED_KEYS) {
+    const [type, mods, usage] = encodeRecord(choice.binding)
+    ok(
+      `${choice.label} is Shift + a plain key`,
+      type === 0x10 && mods === 0x02 && offered.has(usage!),
+      [type, mods, usage].map((b) => b!.toString(16)).join(' '),
+    )
+  }
+  eq('and the label follows the record', bindingLabel(SHIFTED_KEYS[1]!.binding, keycodeLabel), '!')
 }
 
 // --- reading a layer ---

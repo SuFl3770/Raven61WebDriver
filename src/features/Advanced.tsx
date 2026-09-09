@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDeviceSpec, useLayout } from '../device/active'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
-import { KEYCODE_GROUPS, keycodeDefLabel } from '../keyboard/keycodes'
+import { KEYCODES, keycodeDefLabel } from '../keyboard/keycodes'
 import {
   ADVANCED_KINDS,
   ADVANCED_TYPE,
@@ -31,7 +31,7 @@ import {
   type ToggleRecord,
 } from '../protocol/advancedKeys'
 import { supports } from '../protocol/codec'
-import { BINDING_GROUPS, encodeRecord, type KeyBinding } from '../protocol/keymap'
+import { BINDING_GROUPS, encodeRecord, groupChoices, type KeyBinding } from '../protocol/keymap'
 import type { AdvancedKeySnapshot, AdvancedKeyUse, KeymapEntry } from '../protocol/types'
 import { link, useCodec, useConnection } from '../state/link'
 import { GridFrame } from '../ui/GridFrame'
@@ -39,6 +39,7 @@ import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { Select, type SelectOption } from '../ui/Select'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
+import { Slider } from '../ui/Slider'
 
 /**
  * Advanced keys — DKS, TGL, MT, RS, SOCD and OKS.
@@ -112,13 +113,11 @@ function bindingOptions(): { options: SelectOption[]; byValue: Map<string, KeyBi
     options.push({ value, label })
   }
   add('—', { kind: 'none', raw: 0 })
-  for (const group of KEYCODE_GROUPS) {
-    for (const def of group.codes) {
-      add(keycodeDefLabel(def), { kind: 'key', usage: def.code, modifiers: 0 })
-    }
+  for (const def of KEYCODES) {
+    add(keycodeDefLabel(def), { kind: 'key', usage: def.code, modifiers: 0 })
   }
   for (const group of BINDING_GROUPS) {
-    for (const choice of group.choices) add(choice.label, choice.binding)
+    for (const choice of groupChoices(group)) add(choice.label, choice.binding)
   }
   return { options, byValue }
 }
@@ -132,10 +131,8 @@ function bindingValue(binding: KeyBinding): string {
 /** Plain HID usages, for the kinds whose records hold a bare usage byte. */
 function usageOptions(): SelectOption[] {
   const out: SelectOption[] = [{ value: '0', label: '—' }]
-  for (const group of KEYCODE_GROUPS) {
-    for (const def of group.codes) {
-      out.push({ value: String(def.code), label: keycodeDefLabel(def) })
-    }
+  for (const def of KEYCODES) {
+    out.push({ value: String(def.code), label: keycodeDefLabel(def) })
   }
   return out
 }
@@ -422,7 +419,10 @@ export function Advanced() {
         }}
         label={(key) => {
           const u = useByKey.get(key.index)
-          return u ? t('advanced.capLabel', { kind: t(kindKey(u.kind)), record: u.record }) : ''
+          // `undefined`, not `''`: a key with no advanced record has nothing
+          // this tab wants to say about it, so it keeps the legend the rest of
+          // the app gives it rather than being blanked.
+          return u ? t('advanced.capLabel', { kind: t(kindKey(u.kind)), record: u.record }) : undefined
         }}
       />
     </GridFrame>
@@ -641,8 +641,7 @@ function Editor({
         </div>
         {Array.from({ length: DKS_STAGES }, (_, i) => (
           <Row key={i} label={t(DKS_POINT_KEYS[i] ?? DKS_POINT_KEYS[0])}>
-            <input
-              type="range"
+            <Slider
               min={0}
               max={dksMmToSteps(DKS_MAX_MM, countsPerMm)}
               step={1}

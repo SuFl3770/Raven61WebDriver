@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from 'react'
 import { useActiveDevice, useLayout } from '../device/active'
 import type { KeyDef } from '../device/spec'
 import { useT } from '../i18n'
+import { legendFor, useLegends } from '../state/legends'
 import { useConnection } from '../state/link'
 
 export interface KeyGridProps {
@@ -82,7 +83,25 @@ export interface KeyGridProps {
    * distinguishable. Outside a pass nothing passes `done`.
    */
   status?: (key: KeyDef) => 'done' | 'marginal' | 'bad' | undefined
-  label?: (key: KeyDef) => string
+  /**
+   * Replaces the cap's legend.
+   *
+   * Return `undefined` for a key with nothing of the caller's own to say, and
+   * the cap falls back to the legend every other grid shows — the binding, or
+   * the board's printing when the two agree. Returning `''` blanks the cap,
+   * which is a different thing and almost never the one wanted.
+   */
+  label?: (key: KeyDef) => string | undefined
+  /**
+   * Draw the board's own printing, ignoring the keymap.
+   *
+   * For the grids that are about the key as a piece of hardware rather than as
+   * something that types: the debug tab's event grid binds a sensor to a
+   * physical key, and the remap tab carries the binding on the cap's second
+   * line so that the first can stay the thing being remapped *from*. See
+   * `state/legends.ts` for what the rest of the app shows instead.
+   */
+  physical?: boolean
 }
 
 const PAD = 0.06 // gap between caps, in keyboard units
@@ -99,12 +118,16 @@ export function KeyGrid({
   onHover,
   label,
   status,
+  physical,
 }: KeyGridProps) {
   // The board's own key table and size in units. A different keyboard is a
   // different grid, and nothing here knows which one it is drawing.
   const { keys, units } = useLayout()
   const { matched, forced } = useActiveDevice()
   const { device, connected } = useConnection()
+  /* The base layer, so a remapped key reads as what it now sends. Empty until
+     something has read it, and on every board that cannot be asked. */
+  const entries = useLegends()
   const t = useT()
   /** What the in-progress drag is painting, or null when none is running. */
   const painting = useRef<boolean | null>(null)
@@ -250,6 +273,13 @@ export function KeyGrid({
         const state = status?.(k)
         const stateClass = state ? ` ${state}` : ''
         const isSelected = selected?.has(k.index) ?? false
+        /*
+          The caller's legend wins outright — including the decision that a cap
+          should be blank — and only a cap it had nothing to say about asks what
+          the key sends.
+        */
+        const given = label?.(k)
+        const legend = given === undefined && !physical ? legendFor(k, entries) : undefined
         return (
           <button
             key={k.index}
@@ -257,7 +287,7 @@ export function KeyGrid({
             data-key={k.index}
             className={`keycap${isSelected ? ' selected' : ''}${stateClass}${
               paint ? ' tinted' : ''
-            }`}
+            }${legend?.remapped ? ' remapped' : ''}`}
             /*
               The tint goes on the cap itself rather than on a layer inside it,
               so a selected cap keeps its accent edge and the legend inherits a
@@ -267,6 +297,9 @@ export function KeyGrid({
             */
             style={paint ? { ...style, background: paint.color, color: paint.fg } : style}
             aria-pressed={isSelected}
+            /* The printing stays in the tooltip whatever the cap reads, because
+               it is how the key is pointed at out loud — "the one where Caps
+               Lock is". */
             title={`#${k.index} ${k.label}`}
             onPointerDown={onToggle ? (e) => startPaint(e, k.index) : undefined}
             onPointerEnter={onHover ? () => onHover(k.index) : undefined}
@@ -290,7 +323,7 @@ export function KeyGrid({
           >
             {amount > 0 && <span className="fill" style={{ height: `${Math.min(1, amount) * 100}%` }} />}
             {band && <span className="stripe" style={{ background: band }} />}
-            <span className="cap-label">{label?.(k) ?? k.label}</span>
+            <span className="cap-label">{given ?? legend?.text ?? k.label}</span>
             {subText && (
               <span className={`sub cap-label${subClass ? ` ${subClass}` : ''}`}>{subText}</span>
             )}
