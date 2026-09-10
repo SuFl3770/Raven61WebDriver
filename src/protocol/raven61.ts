@@ -1,91 +1,112 @@
-import { RAVEN_PRODUCT_IDS, RAVEN_VENDOR_ID } from '../hid/filters'
+/**
+ * The Raven61's codec, and the module the hardware checks drive.
+ *
+ * Everything that used to be here is now in two places: the *behaviour* in
+ * `engine.ts`, which works from a spec, and the *board* in
+ * `device/boards/raven61/index.ts`. What is left is the binding of the two, plus
+ * function-shaped wrappers for the callers that want to talk to a Raven61
+ * specifically rather than to whatever is attached — which is what
+ * `tools/check` is for.
+ *
+ * **Application code should not import this.** A panel wants the codec for the
+ * board in front of the user, which is `useCodec()`; reaching for these would
+ * work today only because there is one board.
+ */
+
+import { raven61Spec } from '../device/boards/raven61/index'
 import type { HidLink } from '../hid/link'
-import type { Raven61Codec } from './codec'
-import type { KeySample } from './types'
-import { ACK, MAGIC, PAYLOAD_LENGTH, REPORT_ID, buildPacket, isAck, parseKeyEvent } from './frame'
+import { createCodec, type EngineCodec } from './engine'
 
-/**
- * Framing is decoded; the per-command data layouts are not. This codec
- * therefore identifies the device and provides `transact`, but implements no
- * capability yet — the feature panels stay honest about that.
- */
-export const raven61Codec: Raven61Codec = {
-  id: 'raven61-v1',
-  label: 'Raven61 (프레임 해독됨)',
-  confidence: 'partial',
-  notes:
-    '패킷 프레임과 아날로그 키 이벤트는 해독되었습니다. 모니터는 동작하며, ' +
-    '설정 쓰기는 명령별 데이터 배치가 아직 미해독이라 비활성 상태입니다.',
+export const raven61Codec: EngineCodec = createCodec(raven61Spec)
 
-  async probe(link: HidLink) {
-    const d = link.device
-    if (!d) return false
-    // Identification only — a probe runs on every connect and must not write.
-    return d.vendorId === RAVEN_VENDOR_ID
-  },
+export { raven61Spec }
 
-  /**
-   * The board streams analog key events on its own, so this only listens.
-   * Nothing is written to the device, which makes the monitor safe to run
-   * while the rest of the protocol is still unknown.
-   */
-  async startMonitor(link: HidLink, onSample: (samples: KeySample[]) => void) {
-    const off = link.onInput((_reportId, data) => {
-      const event = parseKeyEvent(data)
-      if (!event) return
-      onSample([
-        {
-          usage: event.usage,
-          fingerprint: event.fingerprint,
-          sensorId: event.sensorId,
-          adcBaseline: event.adcBaseline,
-          usageIsReal: event.usageIsReal,
-          depthMm: event.depthMm,
-          raw: event.adc,
-          pressed: event.pressed,
-        },
-      ])
-    })
-    return async () => {
-      off()
-    }
-  },
-}
+/** Enters analog test mode, and leaves it when the returned function runs. */
+export const armAnalogStream = (link: HidLink, opts?: { keepAlive?: boolean }) =>
+  raven61Codec.armAnalogStream!(link, opts)
 
-export function isKnownProduct(device: HIDDevice): boolean {
-  return (
-    device.vendorId === RAVEN_VENDOR_ID &&
-    (RAVEN_PRODUCT_IDS as readonly number[]).includes(device.productId)
-  )
-}
+/** The board's calibration table. */
+export const readCalTable = (link: HidLink) => raven61Codec.readCalTable(link)
 
-export interface TransactResult {
-  request: Uint8Array
-  reply?: Uint8Array
-  ack: boolean
-}
+/** Which key sits in which slot, read off the board. */
+export const readSlotMap = (link: HidLink) => raven61Codec.readSlotMap(link)
 
-/**
- * Sends one framed command and waits for the reply, mirroring what the stock
- * driver does: write 65 bytes, then read with a short timeout and check that
- * the first byte is 0xAA.
- */
-export async function transact(
+export const readFirmware = (link: HidLink) => raven61Codec.readFirmware!(link)
+
+export const readKeymapLayer = (link: HidLink, layer: number) =>
+  raven61Codec.readKeymap!(link, layer)
+
+export const writeKeymapLayer = (
   link: HidLink,
-  command: number,
-  opts: { data?: ArrayLike<number>; magic?: number; timeoutMs?: number; note?: string } = {},
-): Promise<TransactResult> {
-  const request = buildPacket(command, { data: opts.data, magic: opts.magic ?? MAGIC })
-  try {
-    const { data } = await link.request(request, {
-      reportId: REPORT_ID,
-      timeoutMs: opts.timeoutMs ?? 300,
-      note: opts.note ?? `cmd 0x${command.toString(16).padStart(2, '0')}`,
-    })
-    return { request, reply: data, ack: isAck(data) }
-  } catch {
-    return { request, ack: false }
-  }
-}
+  layer: number,
+  entries: Parameters<NonNullable<EngineCodec['writeKeymap']>>[2],
+) => raven61Codec.writeKeymap!(link, layer, entries)
 
-export const FRAME_INFO = { ACK, MAGIC, PAYLOAD_LENGTH, REPORT_ID } as const
+/** The stored per-key colour layer. */
+export const readKeyColors = (link: HidLink) => raven61Codec.readKeyColors!(link)
+
+export const writeKeyColors = (
+  link: HidLink,
+  colors: Parameters<NonNullable<EngineCodec['writeKeyColors']>>[1],
+) => raven61Codec.writeKeyColors!(link, colors)
+
+/** What the LEDs are showing right now — a RAM buffer, not the stored layer. */
+export const readLightFrame = (link: HidLink) => raven61Codec.readLightFrame!(link)
+
+/** The same, polled — what the stock driver does with its idle time. */
+export const watchLightFrame = (
+  link: HidLink,
+  onFrame: Parameters<NonNullable<EngineCodec['watchLightFrame']>>[1],
+  opts?: Parameters<NonNullable<EngineCodec['watchLightFrame']>>[2],
+) => raven61Codec.watchLightFrame!(link, onFrame, opts)
+
+export const writeKeyPerfConfigs = (
+  link: HidLink,
+  configs: Parameters<NonNullable<EngineCodec['writeKeyPerf']>>[1],
+) => raven61Codec.writeKeyPerf!(link, configs)
+
+export const readGlobalSettings = (link: HidLink) => raven61Codec.readGlobalSettings!(link)
+
+export const writeGlobalSettings = (
+  link: HidLink,
+  patch: Parameters<NonNullable<EngineCodec['writeGlobalSettings']>>[1],
+) => raven61Codec.writeGlobalSettings!(link, patch)
+
+/** ⚠⚠ Throws the board's settings away. See `factoryReset` in engine.ts. */
+export const factoryReset = (
+  link: HidLink,
+  onStage?: Parameters<NonNullable<EngineCodec['factoryReset']>>[1],
+) => raven61Codec.factoryReset!(link, onStage)
+
+/**
+ * Re-exports of what moved, so an old import path still resolves to the same
+ * value rather than to a subtly different one.
+ */
+export { decodeFirmwareIdentity, FACTORY_RESET_DEFAULTS as FACTORY_RESET } from './engine'
+export {
+  ANALOG_REPORT,
+  FACTORY_GLOBAL,
+  GLOBAL,
+  GLOBAL_FLAGS,
+  decodeGlobalSettings,
+  globalWriteRequest,
+  patchGlobalFlags,
+  patchGlobalRate,
+  type GlobalPatch,
+  type GlobalWriteResult,
+} from './global'
+export type {
+  FactoryResetResult,
+  FactoryResetStage,
+  KeymapWriteResult,
+  KeyPerfWriteResult,
+  KeyRgbWriteResult,
+} from './engine'
+
+/** The Raven61's analog-mode commands, for a panel that shows what it sends. */
+export const MONITOR = {
+  arm: raven61Spec.commands.analogTestOn!,
+  disarm: raven61Spec.commands.analogTestOff!,
+  rearmMs: raven61Spec.monitor.rearmMs,
+  ackMs: raven61Spec.monitor.ackMs,
+} as const

@@ -6,3 +6,11 @@ captures/
 
 # Stock driver, kept locally for reverse engineering — not ours to redistribute.
 Raven Driver/
+
+# Stock firmware updater, same reason. FW.exe carries the RISC-V firmware image
+# as resource BIN/134; docs/protocol.md §3.2 records what was read out of it.
+Raven FW/
+
+# Python bytecode from the analysis tools.
+__pycache__/
+*.pyc

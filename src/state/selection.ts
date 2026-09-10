@@ -1,7 +1,15 @@
 import { useSyncExternalStore } from 'react'
-import { KEY_COUNT } from '../keyboard/raven61'
+import { activeLayout } from '../device/active'
 
-/** Key selection is shared across tabs so switching panels keeps your context. */
+/**
+ * Which keys the per-key panels act on.
+ *
+ * Cleared when the main tab changes. It used to be kept, on the reasoning that
+ * carrying a selection between panels saves re-picking it — but the panels that
+ * share it are all inside one tab now, and a selection made three tabs ago is
+ * invisible context that the next write silently obeys. Leaving a tab is the
+ * clearest "I am done with those keys" there is.
+ */
 class SelectionStore {
   private set: ReadonlySet<number> = new Set()
   private listeners = new Set<() => void>()
@@ -10,21 +18,62 @@ class SelectionStore {
     return this.set
   }
 
-  toggle(index: number, additive: boolean): void {
-    const next = new Set(additive ? this.set : [])
-    if (additive && this.set.has(index)) next.delete(index)
+  /**
+   * Flips one key.
+   *
+   * Plain, with no "additive" flag. It used to take one: an unmodified click
+   * replaced the whole selection and only Shift or Ctrl added to it, which is
+   * the convention for lists of files, not for a keyboard. Picking out the WASD
+   * cluster is the normal case here, not the exception, and it should not need
+   * a second hand — so every click is additive and the grid paints on drag.
+   */
+  toggle(index: number): void {
+    const next = new Set(this.set)
+    if (next.has(index)) next.delete(index)
     else next.add(index)
     this.set = next
     this.emit()
   }
 
+  /** Sets one key to a given state. What a drag across the grid uses. */
+  setSelected(index: number, on: boolean): void {
+    if (this.set.has(index) === on) return
+    const next = new Set(this.set)
+    if (on) next.add(index)
+    else next.delete(index)
+    this.set = next
+    this.emit()
+  }
+
   selectAll(): void {
-    this.set = new Set(Array.from({ length: KEY_COUNT }, (_, i) => i))
+    this.set = new Set(activeLayout().keys.map((k) => k.index))
+    this.emit()
+  }
+
+  /**
+   * Every key that is not selected, and none of the ones that are.
+   *
+   * Built from the layout rather than from the current set, the way
+   * `selectAll` is: what "not selected" means is the board's own list of keys,
+   * and a set that somehow held an index the layout does not have should come
+   * out of this empty-handed rather than carried over.
+   */
+  invert(): void {
+    this.set = new Set(activeLayout().keys.map((k) => k.index).filter((i) => !this.set.has(i)))
     this.emit()
   }
 
   clear(): void {
+    if (this.set.size === 0) return
     this.set = new Set()
+    this.emit()
+  }
+
+  /** Replaces the whole selection. What a marquee drag rewrites as it moves. */
+  replace(indices: Iterable<number>): void {
+    const next = new Set(indices)
+    if (next.size === this.set.size && [...next].every((i) => this.set.has(i))) return
+    this.set = next
     this.emit()
   }
 
@@ -47,7 +96,15 @@ export function useSelection(): ReadonlySet<number> {
   )
 }
 
-/** Falls back to "all keys" so an edit with nothing selected still means something. */
+/**
+ * The keys an edit applies to. Empty when nothing is selected.
+ *
+ * It used to fall back to every key, so that an edit with no selection still
+ * did something. What it did was change all 61 — and now that a change is
+ * written to the board the moment it is made, brushing a slider with nothing
+ * selected rewrote the whole keyboard. The panels disable their controls on an
+ * empty selection instead.
+ */
 export function targetKeys(sel: ReadonlySet<number>): number[] {
-  return sel.size > 0 ? [...sel] : Array.from({ length: KEY_COUNT }, (_, i) => i)
+  return [...sel]
 }

@@ -1,0 +1,30 @@
+{
+  "//": "The Raven61's lighting effect table, as data. Where each number came from — the stock driver's own t_light_data rows, its config_func consumer, and the firmware's effect renderers — is in lighting.ts beside this file. Same shape as the lightEffects list in a src/device/user/*.device.json, so a row copies either way.",
+  "lightEffects": [
+    { "mode": 0, "name": "Custom Light", "supports": 273 },
+    { "mode": 1, "name": "Spectrum", "supports": 3 },
+    { "mode": 2, "name": "Staircase", "supports": 49 },
+    { "mode": 3, "name": "Static", "supports": 49 },
+    { "mode": 4, "name": "Breathing", "supports": 51 },
+    { "mode": 5, "name": "Hundred Flowers", "supports": 3 },
+    { "mode": 6, "name": "Wave", "supports": 55 },
+    { "mode": 7, "name": "Up and down wave", "supports": 59 },
+    { "mode": 8, "name": "Fountain", "supports": 115 },
+    { "mode": 9, "name": "Galaxy", "supports": 51 },
+    { "mode": 10, "name": "Rotation", "supports": 179 },
+    { "mode": 11, "name": "Tide", "supports": 51 },
+    { "mode": 12, "name": "Sea wave", "supports": 51 },
+    { "mode": 13, "name": "Ripple", "supports": 51 },
+    { "mode": 14, "name": "Constant Ripple", "supports": 51 },
+    { "mode": 15, "name": "Single point", "supports": 51 },
+    { "mode": 16, "name": "Grid", "supports": 51 },
+    { "mode": 17, "name": "Piano", "supports": 51 },
+    { "mode": 18, "name": "Flowing light", "supports": 51 },
+    { "mode": 19, "name": "Falling rain", "supports": 51 },
+    { "mode": 20, "name": "Starlight", "supports": 51 },
+    { "mode": 21, "name": "Fireworks", "supports": 51 },
+    { "mode": 22, "name": "Wave Band", "supports": 51 },
+    { "mode": 128, "name": "Musical Rhythm", "supports": 512, "selectable": false },
+    { "mode": 255, "name": "Off", "supports": 0 }
+  ]
+}

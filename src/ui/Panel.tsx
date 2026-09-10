@@ -1,26 +1,53 @@
 import type { ReactNode } from 'react'
+import { useT, type MessageKey } from '../i18n'
+import { T } from '../i18n/T'
 
-export function Panel({ title, children }: { title?: string; children: ReactNode }) {
+export function Panel({
+  title,
+  framed = false,
+  children,
+}: {
+  title?: string
+  /**
+   * Whether to draw the edge round this panel — see `.panel.framed`.
+   *
+   * Off everywhere but the calibration guide. A panel is normally one section
+   * of a page of them, told apart by its heading and the space above it; the
+   * flag is for the one that is not one of a run, and is on screen alone.
+   */
+  framed?: boolean
+  children: ReactNode
+}) {
   return (
-    <section className="panel">
+    <section className={framed ? 'panel framed' : 'panel'}>
       {title && <h2>{title}</h2>}
       {children}
     </section>
   )
 }
 
-export function Notice({ kind = 'info', children }: { kind?: 'info' | 'warn' | 'err'; children: ReactNode }) {
-  return <div className={`notice${kind === 'info' ? ' info' : kind === 'err' ? ' err' : ''}`}>{children}</div>
+export type NoticeKind = 'info' | 'warn' | 'err' | 'ok'
+
+const NOTICE_CLASS: Record<NoticeKind, string> = {
+  // Warn is the bare style, since it is what the un-decoded panels use.
+  warn: '',
+  info: ' info',
+  err: ' err',
+  ok: ' ok',
+}
+
+export function Notice({ kind = 'info', children }: { kind?: NoticeKind; children: ReactNode }) {
+  return <div className={`notice${NOTICE_CLASS[kind]}`}>{children}</div>
 }
 
 /** Shown by every feature panel whose capability the active codec lacks. */
-export function NotDecoded({ what }: { what: string }) {
+export function NotDecoded({ what }: { what: MessageKey }) {
+  const t = useT()
   return (
     <Notice kind="warn">
-      <strong>{what} — 프로토콜 미해독</strong>
+      <strong>{t('panel.notDecoded.title', { what: t(what) })}</strong>
       <div className="small dim" style={{ marginTop: 4 }}>
-        이 패널은 코덱이 해당 명령을 구현하면 자동으로 활성화됩니다. 먼저 <b>탐색기 → 콘솔 → 프로버</b>로
-        명령을 찾아 <span className="mono">src/protocol/</span> 에 코덱을 추가하세요.
+        <T k="panel.notDecoded.body" />
       </div>
     </Notice>
   )

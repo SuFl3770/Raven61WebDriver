@@ -1,4 +1,15 @@
 /**
+ * FALLBACK ONLY. Modifier identification no longer needs this.
+ *
+ * The events do name every key after all: `payload[2]` carries the HID modifier
+ * bitmask, and the stock driver resolves the eight unnamed keys from it
+ * (0x426050 — see docs/protocol.md §3.2). `parseKeyEvent` now does the same, so
+ * `usageIsReal` is true for all 61 keys and nothing below is consulted.
+ *
+ * It is kept because it costs nothing and covers a board that leaves
+ * `payload[2]` at zero. Do not extend it: both fields it matches on are
+ * calibration outputs, and a stale entry resolves to the *wrong* key.
+ *
  * Identities for the keys whose analog events do not name themselves.
  *
  * The board reports each key's HID usage in `payload[3]`, except for the seven
@@ -9,8 +20,10 @@
  * Neither field is unique on its own: 0x0806 is shared by Esc, LAlt and RAlt,
  * and 0x0805 by LCtrl and LShift. The pair is what separates them.
  *
- * Measured on hardware. Kept in its own file because src/keyboard/raven61.ts is
- * regenerated from the stock driver's layout XML and would lose these.
+ * Measured on hardware, on a Raven61. Kept in its own file because
+ * src/device/boards/raven61/layout.ts is regenerated from the stock driver's
+ * layout XML and would lose these — and because they are one board's sensors,
+ * not a fact about the protocol.
  */
 export interface KeyFingerprint {
   /** payload[12..13]. */

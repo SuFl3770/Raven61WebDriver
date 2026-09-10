@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { matchFingerprint } from '../keyboard/fingerprints'
-import { RAVEN61_KEYS, keyByUsage } from '../keyboard/raven61'
+import { activeLayout } from '../device/active'
 /** The fields needed to identify a key, common to events and samples. */
 export interface KeyIdentity {
   usage: number
@@ -11,6 +11,7 @@ export interface KeyIdentity {
 }
 
 const STORAGE_KEY = 'raven61.sensorMap.v2'
+const IGNORE_KEY = 'raven61.sensorMap.ignoreBuiltIn'
 
 /**
  * Identity of the key an analog event came from.
@@ -30,6 +31,15 @@ export function identityOf(event: KeyIdentity): string {
 /** Fingerprint -> key index, for the keys that do not name themselves. */
 class SensorMap {
   private map = new Map<string, number>()
+  /**
+   * When set, the built-in fingerprint table is not consulted at all.
+   *
+   * The table pairs a sensor value with a resting ADC, and calibration moves
+   * *both* — a key has been seen changing its sensor value outright. A stale
+   * table then does not merely fail to match, it matches the wrong key, which
+   * is worse than no match. This exists so that can be switched off.
+   */
+  private ignoreBuiltIn = false
   private listeners = new Set<() => void>()
   private snapshot: ReadonlyMap<string, number> = new Map()
 
@@ -40,10 +50,11 @@ class SensorMap {
 
   private load(): void {
     try {
+      this.ignoreBuiltIn = localStorage.getItem(IGNORE_KEY) === '1'
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) return
       for (const [fp, index] of JSON.parse(raw) as [string, number][]) {
-        if (RAVEN61_KEYS[index]) this.map.set(fp, index)
+        if (activeLayout().byIndex(index)) this.map.set(fp, index)
       }
     } catch {
       // A corrupt or unavailable store just means we start empty.
@@ -69,15 +80,34 @@ class SensorMap {
    * re-taught without editing the built-in table.
    */
   resolve(event: KeyIdentity): number | undefined {
-    if (event.usageIsReal) return keyByUsage(event.usage)?.index
+    if (event.usageIsReal) return activeLayout().byUsage(event.usage)?.index
     const bound = this.map.get(event.fingerprint)
     if (bound !== undefined) return bound
+    if (this.ignoreBuiltIn) return undefined
     return matchFingerprint(event.sensorId, event.adcBaseline)?.keyIndex
+  }
+
+  get builtInIgnored(): boolean {
+    return this.ignoreBuiltIn
+  }
+
+  setIgnoreBuiltIn(on: boolean): void {
+    this.ignoreBuiltIn = on
+    try {
+      localStorage.setItem(IGNORE_KEY, on ? '1' : '0')
+    } catch {
+      // Same as the bindings: a blocked store only costs persistence.
+    }
+    this.commit()
   }
 
   /** True when the built-in table already covers this event. */
   isBuiltIn(event: KeyIdentity): boolean {
-    return !event.usageIsReal && matchFingerprint(event.sensorId, event.adcBaseline) !== undefined
+    return (
+      !this.ignoreBuiltIn &&
+      !event.usageIsReal &&
+      matchFingerprint(event.sensorId, event.adcBaseline) !== undefined
+    )
   }
 
   bind(fingerprint: string, keyIndex: number): void {
@@ -110,7 +140,7 @@ class SensorMap {
   toSource(): string {
     const rows = [...this.map]
       .sort((a, b) => a[1] - b[1])
-      .map(([fp, index]) => `  ['${fp}', ${index}], // ${RAVEN61_KEYS[index]?.label ?? '?'}`)
+      .map(([fp, index]) => `  ['${fp}', ${index}], // ${activeLayout().byIndex(index)?.label ?? '?'}`)
     return `export const KEY_FINGERPRINTS = new Map<string, number>([\n${rows.join('\n')}\n])`
   }
 }

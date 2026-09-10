@@ -1,163 +1,1834 @@
+/*
+ * The wordmark's face — Cafe24 Lovingu, a free display font from Cafe24
+ * (https://fonts.cafe24.com/), vendored at src/assets/fonts rather than
+ * pulled from a CDN so the app still draws its own mark offline and on a
+ * file:// build.
+ *
+ * woff2 only. Every browser that can run this app can read it: the whole
+ * thing is built on WebHID, which no engine without woff2 support ships.
+ *
+ * One weight, and it is `normal` — the family has no bold cut, so asking for
+ * one would get a synthesised smear of the real thing rather than a heavier
+ * face. Weight on the mark comes from its size, not from the browser.
+ */
+@font-face {
+  font-family: "Cafe24 Lovingu";
+  src: url("./assets/fonts/Cafe24Lovingu.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  /* The mark is chrome, not content: show the fallback immediately and swap
+     when the file lands, rather than holding the top bar empty. */
+  font-display: swap;
+}
+
 :root {
-  --bg: #0e1116;
-  --bg-1: #161b22;
-  --bg-2: #1c2430;
-  --line: #2a3441;
-  --fg: #e6edf3;
-  --fg-dim: #8b98a8;
-  --accent: #4c9aff;
-  --accent-dim: #1f3b5c;
-  --ok: #46c07a;
-  --warn: #e3b341;
-  --err: #f2696a;
+  /*
+   * Flat: a ladder of fills, with a hairline where two of them meet.
+   *
+   * Nothing is lit and nothing is raised. What depth used to say is said by
+   * position on the ladder instead — the page at the bottom, what sits on it a
+   * step up, what is set into it a step down — and the hairline is there
+   * because three steps this close together are a difference you can miss.
+   *
+   * The steps are close together on purpose. A dark interface that separates
+   * its surfaces by brightness alone ends up with a bright panel glowing on a
+   * dark page; the border does the separating, and the fill only has to agree
+   * with it.
+   */
+  --bg: #161616;
+  /* A step up: panels, cards, the sidebar, the top bar. */
+  --surface: #181818;
+  /* A step further, for what sits *on* a surface — a button, a keycap — and
+     for the hover shade of things that are already there. */
+  --surface-hi: #303131;
+  /* A step down: fields, logs, dumps. Things you put something into. */
+  --sunk: #20242a;
+  /*
+   * The same step down with a hint of the point colour in it.
+   *
+   * For the two sunk surfaces that are about *choosing* rather than about
+   * holding text: a dropdown, and the notice that carries the accent on its
+   * edge. 8% is enough to read as tinted next to a plain field and not enough
+   * to compete with anything drawn on it — the accent still has to do its real
+   * work elsewhere on the same screen.
+   */
+  --sunk-accent: color-mix(in srgb, var(--accent) 8%, var(--sunk));
+  /* Off the ladder entirely. The grid is a picture of the keyboard rather than
+     a panel of controls, so its caps are the colour of keycaps, not the colour
+     of the surface they happen to be drawn on. */
+  --keycap: #000;
+  /* The scrollbar under the pointer: one step past `--surface-hi`, which is
+     what it is at rest. Mixed rather than picked so it follows the ladder. */
+  --thumb-hi: color-mix(in srgb, var(--fg) 22%, var(--surface-hi));
+  /*
+   * The hairline every surface wears, tinted by the point colour.
+   *
+   * A neutral dark grey with a little of the accent stirred in, rather than a
+   * fixed colour: with borders doing all the separating in a flat interface,
+   * an edge that stayed green while everything else turned yellow would read
+   * as a leftover. 15% is the amount that reproduces the hand-picked `#3a4d41`
+   * exactly for the green accent, so switching this on changed nothing about
+   * how the app looks today.
+   *
+   * Custom properties resolve at computed-value time, so this may name
+   * `--accent` before the line that declares it — including the inline
+   * override state/accent.ts writes on the same element.
+   */
+  --line-base: #2f3138;
+  --line: color-mix(in srgb, var(--accent) 15%, var(--line-base));
+  /*
+   * "Known to be unknown", as a fill.
+   *
+   * One definition, because it has to mean the same thing in both places it
+   * appears: the swatch beside a switch with no colour on file, and the band on
+   * a cap wearing that switch. Built out of `--line`, so it follows the theme
+   * and never reads as a colour a switch could actually be.
+   */
+  --hatch: repeating-linear-gradient(-45deg, var(--line) 0 2px, transparent 2px 4px);
+  --fg: #e8edf4;
+  --fg-dim: #99a3b2;
+  /*
+   * The point colour, and the fill derived from it.
+   *
+   * Everything interactive is this one hue: focus, hover, the open tab, the
+   * keys you have picked, a packet on its way out. `--accent-dim` is the same
+   * colour knocked back into the surface, for the two places the accent is a
+   * fill rather than a line — a selected tab, a selected key. It is mixed
+   * rather than picked so that changing the line above changes both, and they
+   * cannot drift apart.
+   */
+  --accent-src: #77ec77;
+  /*
+   * What the app paints with, which in this theme is the choice itself.
+   *
+   * The indirection exists for the light theme, where the same choice has to
+   * be knocked down before it can be ink on a white panel — see the
+   * `[data-theme="light"]` block at the foot of this section. state/accent.ts
+   * writes `--accent-src` inline for exactly that reason: an inline `--accent`
+   * would beat the rule that derives it.
+   */
+  --accent: var(--accent-src);
+  /* What any of these colours becomes when it has to be a fill: knocked back
+     into a near-black so a label can still be read on it. */
+  --dim-base: #232830;
+  --accent-dim: color-mix(in srgb, var(--accent) 18%, var(--dim-base));
+  /*
+   * Moved away from green, which is now the accent.
+   *
+   * These three are states of a thing, not places to click, and the one that
+   * used to be green now sits next to an interface where green means "you
+   * chose this". A selected key and a calibrated key are both a coloured edge
+   * on the same cap, so the two colours have to be tellable apart at a glance;
+   * teal keeps the "this is fine" reading without being the accent.
+   */
+  --ok: #3fc9a8;
+  --warn: #e8bd52;
+  /*
+   * The two halves of a rapid-trigger setting, where both are on one keycap.
+   *
+   * Deliberately not derived from the accent, and deliberately not `--ok` or
+   * `--err`: press and release are a pair whose whole job is to be told apart
+   * from each other at a glance, on a cap 60 pixels wide. Tying either to the
+   * point colour would put them one theme change away from being the same
+   * colour as each other or as everything else on the board.
+   */
+  --press: #6ea8ff;
+  --release: #ff6b6b;
+  /*
+   * The travel trace on the sensors tab, which is drawn into a canvas rather
+   * than laid out — see tools/Sensors.tsx.
+   *
+   * Plain colours, and the only two in this block that are not allowed to be
+   * mixed from anything: a canvas context takes a colour *string*, and what
+   * `getComputedStyle` hands back for a derived token is the `color-mix()`
+   * expression itself. Kept apart from `--press` for the same reason the
+   * rapid-trigger pair is kept apart from the accent — a graph line and half a
+   * keycap setting are not the same fact, and one theme change should not be
+   * able to make them the same colour.
+   */
+  --trace-grid: #2a3441;
+  --trace-line: #4c9aff;
+  --err: #f4787a;
+  /* The one other colour that has to fill something: a destructive control
+     under the pointer, which must not go green like everything else does. */
+  --err-dim: color-mix(in srgb, var(--err) 18%, var(--dim-base));
+  /*
+   * What covers the chrome while calibration owns the window — see `.blocked`.
+   *
+   * The page's own colour, not a grey. It was a fixed mid-grey, chosen when the
+   * surface it dimmed was mid-grey too; against a near-black interface that
+   * veil *lightens* what it covers, and the disabled half of the window ended
+   * up brighter than the live half. Mixed from `--bg` so it always veils
+   * towards the page, whatever the page becomes.
+   */
+  --backdrop: color-mix(in srgb, var(--bg) 72%, transparent);
+
+  /* Cards and controls. Kept from the soft-UI pass this replaced: the corners
+     were never the part that read as depth. */
+  --r: 14px;
+  --r-sm: 9px;
+  /*
+   * Width of the centred column everything lines up in — the sidebar, the
+   * panels beside it, and the contents of the top bar above them.
+   *
+   * Sized from the widest thing in the app rather than picked. The key grid
+   * caps at 56.25rem and its control column is 11.875rem with a 0.875rem gap
+   * between them, which is 69rem of panel; the sidebar adds its 13.5rem and
+   * another 0.875rem gap. Past 83.375rem nothing gets any bigger and the
+   * window just adds emptiness on both sides.
+   */
+  --page: 83.375rem;
+  /* Named because three rules depend on it agreeing: the column width above,
+     the gap between the sidebar and the panels, and the sidebar itself. */
+  --sidebar: 13.5rem;
+  /*
+   * Room above and below the key grid, on every tab that shows one.
+   *
+   * Named here because it is spacing, and it has to be told apart from the
+   * band's padding, which is not — see `.gridband`.
+   */
+  --grid-breathe: 0.5rem;
+  /*
+   * The height of the top bar, as a number rather than as whatever its
+   * contents add up to.
+   *
+   * The drawer on a narrow window hangs off the bottom of the bar, and the two
+   * are laid out independently — the bar is in the flow, the drawer is fixed
+   * to the viewport — so something has to say where the bar ends. Declaring it
+   * here and having the bar wear it is the only arrangement where they cannot
+   * disagree. The value is what the bar measured before it was given one.
+   */
+  --topbar-h: 3.875rem;
   --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  /*
+   * What the wordmark falls back to while its own face loads, or if the file
+   * is missing. Not the body stack: those are text faces, and the mark wants
+   * something with weight to it even in the substitute.
+   */
+  --display-fallback: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
   color-scheme: dark;
 }
 
+/*
+ * The same interface with the ladder turned over — see state/theme.ts.
+ *
+ * Only the colours are restated, and only the ones that are literals. Every
+ * token above that is mixed from another — `--sunk-accent`, `--accent-dim`,
+ * `--err-dim`, `--line`, `--thumb-hi`, `--backdrop` — is left alone on purpose:
+ * a custom property substitutes the *computed* value of what it names on the
+ * element it is declared on, so overriding `--sunk` or `--fg` here re-derives
+ * everything mixed from it without a second declaration to keep in step. The
+ * same mechanism that lets state/accent.ts change one colour and repaint the
+ * app is what makes a whole theme eleven lines.
+ *
+ * "Up" and "down" keep their meanings and swap their directions. The page is
+ * still the bottom of the ladder, a panel is still a step up and a field still
+ * a step down — up is towards white here rather than away from black. The steps
+ * stay close together for the same reason they are close in the dark theme: the
+ * hairline does the separating, and the fill only has to agree with it.
+ */
+:root[data-theme="light"] {
+  --bg: #eceef1;
+  --surface: #f7f8fa;
+  --surface-hi: #ffffff;
+  --sunk: #e3e6ec;
+  /* Caps are the colour of keycaps rather than of the panel they are drawn on,
+     which on a light board means white rather than the near-black above. */
+  --keycap: #ffffff;
+  --line-base: #c2c7d0;
+  --fg: #14171c;
+  --fg-dim: #5c6675;
+  --dim-base: #eaedf2;
+  /*
+   * The point colour, knocked down until it can be read.
+   *
+   * The accents are picked to glow on a near-black page; on a white panel the
+   * same green is a highlighter, and it is *text* here as often as it is a
+   * fill — a hovered button's label, a sub-legend on a cap, an outgoing packet
+   * in the log. Mixed towards black rather than replaced by a second list, so
+   * the choice stays one colour with two renderings instead of two colours that
+   * can drift apart. 40% is where both accents clear 4.9:1 against the darkest
+   * surface they ever land on — a field, a log — and still read as the hue
+   * that was chosen.
+   */
+  --accent: color-mix(in srgb, var(--accent-src) 40%, #000);
+  /*
+   * The state colours, same roles, darkened to the same purpose.
+   *
+   * Each of these is a label or a hairline as often as it is a dot — the log
+   * colours an incoming packet with `--ok` and a pending binding with `--warn`,
+   * and a rapid-trigger pair is two coloured numbers on one cap. The dark
+   * theme's versions are picked to carry on a near-black page and are all under
+   * 3:1 on a white one, so they are restated rather than reused: every value
+   * here clears 4.7:1 on `--sunk`, which is the darkest thing any of them is
+   * ever written on.
+   */
+  --ok: #06705b;
+  --warn: #7a5a0a;
+  --press: #1f56bd;
+  --release: #b83430;
+  --err: #b32f2f;
+  --trace-grid: #d2d7e0;
+  --trace-line: #2b66d9;
+  color-scheme: light;
+}
+
 * { box-sizing: border-box; }
+
+/*
+ * How big the interface is drawn, and the only place a `rem` is defined.
+ *
+ * Everything that should grow together — type, the padding inside controls, the
+ * content column, the key grid — is written in `rem`, so this one declaration
+ * moves all of it and nothing drifts out of proportion. It exists because a
+ * pixel size that reads well on a laptop panel is small on a 4K one.
+ *
+ * A straight line from 16px to 19.2px (100% to 120%), drawn against both axes
+ * with the smaller answer winning. Either axis alone would be wrong: width
+ * alone scales a 2560×700 sliver up until the panels no longer fit, height
+ * alone scales a tall narrow window past the width its content column needs.
+ *
+ * The stops are viewport pixels, not display pixels. A maximised window is as
+ * wide as the display, so 1600px and 2560px are the 900p and 1440p widths they
+ * are named after; vertically the browser's chrome and the taskbar take
+ * 100–150px, so 780px and 1250px sit below the displays they correspond to.
+ *
+ * Written as a `clamp()` rather than computed in script deliberately. The
+ * browser interpolates this as part of layout, so dragging a window edge glides
+ * the whole interface instead of stepping it, and there is no resize listener,
+ * no sampling, and nothing to keep in sync. `state/viewport.ts` still measures
+ * the window, but only to decide whether it is too small to use at all.
+ */
+html {
+  font-size: clamp(
+    16px,
+    min(
+      calc(16px + 3.2 * (100vw - 1600px) / 960),
+      calc(16px + 3.2 * (100vh - 780px) / 470)
+    ),
+    19.2px
+  );
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 14px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
+  /*
+   * Noto Sans KR, for both scripts.
+   *
+   * The app was set in whatever `system-ui` resolved to, which on Windows
+   * meant Segoe UI drawing the Latin and Malgun Gothic being pulled in for the
+   * Korean — two faces of different design in the same sentence, and a
+   * different pair on every other machine. Noto Sans KR covers both, so the
+   * interface reads as one typeface and reads the same everywhere.
+   *
+   * The stack behind it is what used to be in front: until the slice carrying
+   * a given character arrives, and forever if the fonts are missing, the app
+   * looks exactly like it did before. See assets/fonts/noto-sans-kr.css.
+   */
+  font: 0.9375rem/1.5 "Noto Sans KR", system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
 }
 
-button, input, select, textarea { font: inherit; color: inherit; }
+button, input, textarea { font: inherit; color: inherit; }
 
+/*
+ * A step above whatever it sits on; the accent under the pointer; a step below
+ * it while it is held.
+ *
+ * With no shadow to invert, all three are fills. Hover takes the accent so that
+ * what the pointer is on is the same colour as everything else the app treats
+ * as chosen, and the press drops to the sunk shade — darker than both, so the
+ * click still reads as a press rather than as a second hover.
+ */
 button {
-  background: var(--bg-2);
+  background: var(--surface-hi);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  padding: 0.4rem 0.8rem;
   cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-button:hover:not(:disabled) { border-color: var(--accent); }
+/*
+ * Two classes are excluded from both, each with its own hover rule instead.
+ *
+ * `.select-trigger` is a button, but its background is a drawing — the
+ * dropdown's arrow is two gradients placed on it — and `background` here is a
+ * shorthand: it resets `background-position` and `background-size` along with
+ * the fill, which turned the arrow into two full-size wedges across the whole
+ * control on hover.
+ *
+ * `.version-badge` is a button because it toggles between the commit and the
+ * date, but it is a label first, and the two things sitting side by side in
+ * the foot of the rail should light up the same way. The select beside it is
+ * already excluded here, so the badge is too.
+ */
+button:hover:not(:disabled):not(.select-trigger):not(.version-badge) {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+button:active:not(:disabled):not(.select-trigger):not(.version-badge) { background: var(--sunk); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
-button.primary { background: var(--accent-dim); border-color: var(--accent); }
-button.danger { border-color: var(--err); color: var(--err); }
+/* The two buttons that are not neutral wear their colour on the edge and the
+   label; the fill stays what every other control has, so a row of them does
+   not turn into a row of coloured slabs. */
+button.primary { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+button.danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, var(--line)); }
+/* Hovering the one button that can lose something must not turn it the colour
+   of every safe button in the app. */
+button.danger:hover:not(:disabled) {
+  color: var(--err);
+  border-color: var(--err);
+  background: var(--err-dim);
+}
 
-input[type="text"], input[type="number"], select, textarea {
-  background: var(--bg);
+/*
+ * The inverse of a button: a field is a step *down* from the surface it sits
+ * on, which is the whole of how the two are told apart now that neither is
+ * lit — a control you press is lighter than its panel, a field you fill is
+ * darker.
+ */
+input[type="text"], input[type="number"], textarea {
+  background: var(--sunk);
   border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.45rem 0.6rem;
+}
+/*
+ * The dropdown — see ui/Select.tsx, which is a listbox rather than a select.
+ *
+ * The trigger keeps the shape a field has: same fill, same hairline, same
+ * corner. The arrow is two diagonal gradients meeting in the middle rather
+ * than an SVG data URI, because a URI cannot name a custom property and the
+ * arrow has to follow the point colour on hover like everything else.
+ */
+.select { position: relative; display: inline-block; }
+.select-trigger {
+  /* Named so the states below can move the arrow's colour without restating
+     the gradients that draw it. */
+  --caret: var(--fg-dim);
+  width: 100%;
+  text-align: left;
+  background-color: var(--sunk-accent);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.45rem 1.7rem 0.45rem 0.6rem;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--caret) 50%),
+    linear-gradient(135deg, var(--caret) 50%, transparent 50%);
+  background-position: right 0.85rem center, right 0.55rem center;
+  background-size: 0.3rem 0.3rem;
+  background-repeat: no-repeat;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+/* The edge, the label and the arrow. The fill stays exactly as it was: this is
+   a control whose background is carrying a drawing, and every state that
+   repainted it lost the drawing with it. */
+.select-trigger:hover:not(:disabled),
+.select-trigger[aria-expanded="true"] {
+  --caret: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.select-value { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/*
+ * The list, which is the whole reason this is not a `<select>`.
+ *
+ * It opens from the edge it is attached to — down from the trigger's bottom,
+ * up from its top — so the movement reads as the list coming out of the
+ * control rather than arriving from somewhere else. `transform-origin` is what
+ * makes the same 120ms do both.
+ */
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.96); }
+}
+@keyframes menu-in-up {
+  from { opacity: 0; transform: translateY(4px) scaleY(0.96); }
+}
+.select-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 13rem;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  transform-origin: top center;
+  animation: menu-in 120ms ease-out;
+}
+.select-menu.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+  transform-origin: bottom center;
+  animation-name: menu-in-up;
+}
+/*
+ * And folding back into the control it came out of.
+ *
+ * The mirror of the two above, with only a `to`: an exit starts from whatever
+ * the element already is, so there is no opening state to restate and nothing
+ * to drift out of step with the rules above. `forwards` holds the last frame —
+ * the element is removed on the same timer that runs this, and without it a
+ * frame of rounding either way would flash the list back at full opacity on
+ * its way out.
+ */
+@keyframes menu-out {
+  to { opacity: 0; transform: translateY(-4px) scaleY(0.96); }
+}
+@keyframes menu-out-up {
+  to { opacity: 0; transform: translateY(4px) scaleY(0.96); }
+}
+/*
+ * Faster than the 120ms it took to open, and untouchable while it lasts.
+ *
+ * `pointer-events: none` is the half that is not decoration: the list is out of
+ * the accessibility tree the moment it is dismissed (see ui/Select.tsx), and a
+ * pointer crossing what is left must not be able to highlight or choose a row
+ * that has already stopped being on offer. The 100ms is written again in that
+ * file, which is where the element's lifetime is decided.
+ */
+.select-menu.closing {
+  pointer-events: none;
+  animation: menu-out 100ms ease-in forwards;
+}
+.select-menu.up.closing { animation-name: menu-out-up; }
+.select-option {
+  padding: 0.35rem 0.55rem;
   border-radius: 6px;
-  padding: 6px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* One highlight, driven by the keyboard and followed by the pointer, so there
+   is never a row the arrow keys are on and a different row lit under the
+   mouse. */
+.select-option.active { background: var(--surface-hi); }
+.select-option[aria-selected="true"] { color: var(--accent); }
+.select-option[aria-selected="true"].active { background: var(--accent-dim); }
+.select-option.disabled { opacity: 0.45; cursor: not-allowed; }
+
+/*
+ * The checkbox, as a switch.
+ *
+ * Same materials as everything else: a sunk track, a hairline round it, and
+ * the accent as the fill once it is on. The knob is the input's own `::after`,
+ * so a checkbox is still one element and still the real control — the label,
+ * the keyboard, the focus ring and the form all keep working, which is what
+ * the usual div-and-span switch throws away.
+ *
+ * `:indeterminate` is not decoration here. The panels that edit several keys
+ * at once put the box in that state when the targets disagree — see
+ * features/RapidTrigger.tsx — and a switch has no third position of its own,
+ * so it is given one: the knob halfway across, which is the one place it can
+ * sit that means neither on nor off.
+ */
+input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  flex: 0 0 auto;
+  width: 2.1em;
+  height: 1.15em;
+  margin: 0 0.2em 0 0;
+  vertical-align: -0.22em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--sunk);
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+input[type="checkbox"]:hover:not(:disabled) { border-color: var(--accent); }
+input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The knob. Sized and placed in `em` so the whole switch follows the type it
+   sits beside, which follows the window. */
+input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0.15em;
+  width: 0.75em;
+  height: 0.75em;
+  border-radius: 50%;
+  background: var(--fg-dim);
+  transform: translateY(-50%);
+  transition: transform 140ms ease, background-color 140ms ease;
+}
+input[type="checkbox"]:checked {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  background: var(--accent);
+  /*
+   * The travel, not a round number: the track is 2.1em wide with a 1px border
+   * on each side and the knob is 0.75em inset by 0.15em, which leaves 0.917em
+   * for it to cross if the gap it stops at is to match the gap it started
+   * from. Rounder values park the knob against the far edge.
+   */
+  transform: translate(0.917em, -50%);
+}
+/* Neither end. The track takes the tint rather than the fill, so a mixed row
+   does not read as an on row at a glance. */
+input[type="checkbox"]:indeterminate { background: var(--sunk-accent); }
+input[type="checkbox"]:indeterminate::after { transform: translate(0.458em, -50%); }
+
+/*
+ * Explicit, and kept from the soft-UI pass.
+ *
+ * The edges are back, but they are hairlines a shade off their fill, and a
+ * default focus ring against one of those is easy to lose. This one is
+ * thicker, offset clear of the border, and the only high-contrast thing in the
+ * design on purpose.
+ */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: 2px;
 }
 input[type="text"], textarea { font-family: var(--mono); }
 textarea { width: 100%; resize: vertical; }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 
+/*
+ * Full-bleed — the background and bottom border should span the window — while
+ * what sits inside lines up with the column below. Doing that with padding
+ * rather than a wrapper element keeps it out of the markup: a percentage
+ * padding resolves against the containing block, which for a child of .app is
+ * the window.
+ */
+/*
+ * Three columns, the middle one only as wide as it needs to be: the wordmark
+ * is centred on the *bar*, not on the room left over beside whatever else is
+ * up here. As a flex row with a spacer either side it would drift left by half
+ * the width of the link on the right, and drift again the next time something
+ * joined it.
+ */
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  /* Definite, so the drawer below can be positioned off it — see `--topbar-h`.
+     Vertical padding is gone with it: the row centres itself in the height. */
+  height: var(--topbar-h);
+  box-sizing: border-box;
+  padding: 0 max(1rem, (100% - var(--page)) / 2);
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
-  background: var(--bg-1);
+  /*
+   * The top bar never scrolls, and reserves a scrollbar's width on each side
+   * anyway. Below it .body does scroll and reserves the same, so without this
+   * the bar would line up with the column on a short tab and be a scrollbar's
+   * width wider than it on a long one. `overflow` is here only because a
+   * gutter is reserved on scroll containers, and `hidden` makes one of an
+   * element that has nothing to overflow.
+   */
+  overflow: hidden;
+  scrollbar-gutter: stable both-edges;
 }
-.topbar h1 { font-size: 15px; margin: 0; letter-spacing: 0.02em; }
-.topbar .spacer { flex: 1; }
+/*
+ * The wordmark, in the middle column so it is centred on the bar itself. It is
+ * set larger than anything else up here and given a little tracking, so two
+ * letters read as a mark rather than as a word someone forgot to finish.
+ */
+.topbar .wordmark {
+  /* Named rather than left to auto-placement: the first column is empty, and
+     the mark would otherwise fall into it and sit against the left edge. */
+  grid-column: 2;
+  /* Nudged down: the face hangs high in its em box, and centred by the box it
+     reads as sitting above the middle of the bar. */
+  margin: 0.6rem 0 0;
+  font-family: "Cafe24 Lovingu", var(--display-fallback);
+  font-size: 1.75rem;
+  /* See the @font-face at the top of this file: the family has one cut, and
+     naming a heavier one only gets a synthesised copy of it. */
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  /*
+   * The one piece of chrome that carries the point colour. Everything else up
+   * here is ink on a surface; the mark is the app's own, so it changes with
+   * the accent the way the rest of the app's own furniture does.
+   */
+  color: var(--accent);
+  /* A logo, not a label: dragging across the bar should not highlight it. */
+  user-select: none;
+  /* The bar is a fixed row of chrome and the mark is the tallest thing in it.
+     Trimming the leading keeps it from setting the bar's height by itself. */
+  line-height: 1.1;
+}
+/*
+ * The two things flanking the mark: the drawer's handle on the left, the
+ * source on the right. Same shape, because they are the same kind of thing —
+ * a bare glyph that takes a fill only under the pointer.
+ *
+ * Each is pinned to its own column rather than left to auto-placement, so the
+ * middle column stays the middle column whether or not the button is there.
+ */
+.topbar .menu, .topbar .repo {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 4px;
+  cursor: pointer;
+}
+.topbar .menu { grid-column: 1; justify-self: start; }
+.topbar .repo { grid-column: 3; justify-self: end; }
+.topbar .menu:hover:not(:disabled), .topbar .repo:hover { color: var(--fg); background: var(--surface-hi); }
+/* Sized in `em` like the sidebar's glyphs, so they track the window's text
+   rather than staying at the pixel size Tabler ships. */
+.topbar .menu svg, .topbar .repo svg {
+  width: 1.25em;
+  height: 1.25em;
+  stroke-width: 1.75;
+}
 
-.tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); }
-.tabs button {
+/*
+ * Everything below the top bar, as one centred, scrolling row: the sidebar and
+ * the open tab's panels beside each other. `align-items: flex-start` is what
+ * makes the sidebar a card the height of its own contents rather than a rail
+ * stretched to the full height of whatever is next to it.
+ */
+.body {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 1rem max(1rem, (100% - var(--page)) / 2);
+  /*
+   * Both edges, always. A scrollbar is laid out inside this padding, so with
+   * the gutter left to appear only when it is needed the whole column steps
+   * sideways the moment a tab is long enough to scroll — and steps back on the
+   * next tab that is not. Reserving it on both sides costs a scrollbar's width
+   * of room and keeps the column where it was put.
+   */
+  scrollbar-gutter: stable both-edges;
+}
+
+/*
+ * The left column, as a stack: the board's identity, then the tabs. It is the
+ * column that sticks, so both cards stay put while a long tab scrolls beside
+ * them.
+ *
+ * It is as tall as the window rather than as tall as its contents, which is
+ * what gives the sidebar a foot to push its second group of tabs down to. The
+ * percentage resolves because .body is a flex item of a 100vh column, so its
+ * height is definite even though what it holds scrolls.
+ */
+.rail {
+  flex: 0 0 var(--sidebar);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+/*
+ * Written with the element name to outrank `.blocked`, which sets
+ * `position: relative` on whatever it dims and would otherwise unstick the
+ * rail for the length of a calibration run.
+ */
+div.rail { position: sticky; top: 0; }
+
+/*
+ * What is plugged in — see ui/DeviceCard.tsx.
+ *
+ * The name is given room to wrap onto a second line rather than being cut off:
+ * a board whose name is too long for the column is exactly the board whose
+ * name you want to read.
+ */
+.devicecard {
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 0.8rem 0.9rem;
+}
+.devicecard h2 {
+  margin: 0 0 2px;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.devicecard .ids { font-family: var(--mono); font-size: 0.8125rem; color: var(--fg-dim); }
+/* Full width, so it reads as the card's own control rather than a button that
+   happens to be inside it. */
+.devicecard button { width: 100%; margin-top: 0.7rem; }
+
+/*
+ * The tabs, down the side rather than across the top.
+ *
+ * They were a strip until there were seven of them, at which point the strip
+ * was most of a line of text wide and the names had to be short enough to fit
+ * it. A column has room for the names the tabs actually want, and it grows
+ * without rationing: the two debug tabs can appear below a rule instead of
+ * lengthening a row.
+ *
+ * Built like a panel — same fill, same edge — because that is what it is now:
+ * one card in the column rather than chrome bolted to the edge of the window.
+ * It sticks to the top so a long tab does not scroll its own navigation away.
+ */
+.sidebar {
+  /* Takes what the device card above it leaves, and scrolls rather than
+     overflowing if a short window cannot hold every tab. */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.sidebar .group { display: flex; flex-direction: column; gap: 2px; }
+/*
+ * `margin-top: auto` eats the space between the groups, so the foot sits on
+ * the bottom of the card — and collapses to nothing when there is no space to
+ * eat, which is what keeps the two groups from overlapping in a short window.
+ */
+.sidebar .group.foot { margin-top: auto; padding-top: 0.875rem; }
+.sidebar button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 9px 14px;
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  color: var(--fg-dim);
+  /* Bare until touched: eleven filled rows inside one filled card is a list
+     nobody can read, so the fill is saved for the two states that mean
+     something. */
+  background: none;
+  border-color: transparent;
+}
+/*
+ * Sized in `em` rather than by the component's own `size` prop, so the glyph
+ * tracks the label it sits beside instead of staying at whatever pixel size it
+ * was given while the text around it grows with the window.
+ *
+ * The stroke is thinner than Tabler's default 2, which is drawn for 24px and
+ * looks heavy next to text at this size. Both are attributes on the <svg>, and
+ * a CSS property beats a presentation attribute.
+ */
+.sidebar button svg {
+  flex: 0 0 auto;
+  width: 1.15em;
+  height: 1.15em;
+  stroke-width: 1.75;
+}
+.sidebar button:hover:not(:disabled) { color: var(--fg); background: var(--surface-hi); border-color: transparent; }
+/*
+ * Where you are, not what you last pressed. Hovering takes the neutral shade
+ * every other row can take; the open tab is the only accent-filled thing in
+ * the column, which is a difference a hover cannot imitate.
+ */
+.sidebar button[aria-selected="true"],
+.sidebar button[aria-selected="true"]:hover {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: transparent;
+}
+/* Between the tabs anyone needs and the two that only exist with debug mode
+   on. See DEBUG_TABS in App.tsx. */
+.sidebar .sep {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 6px 2px;
+  width: auto;
+}
+
+/*
+ * The foot of the rail — see App.tsx. Sits below the sidebar card rather than
+ * inside it: what is in it is about the app, not about which tab is open, and
+ * the sidebar scrolls when a short window cannot hold every tab.
+ */
+.rail-foot { display: flex; flex-direction: column; gap: 8px; }
+.rail-foot .select { width: 100%; }
+/* In the rail the badge is a row of the column, not a pill floating over the
+   corner of the window. */
+.rail-foot .version-badge { justify-content: center; border-radius: var(--r-sm); }
+
+/* `min-width: 0` so a wide child — a table, a log line — makes itself scroll
+   instead of pushing the whole row wider than the column. */
+.content { flex: 1; min-width: 0; }
+
+/*
+ * The open tab's name, at the head of its content: the name in the reader's
+ * language, the English one under it, and the point colour standing the two of
+ * them up.
+ *
+ * Set as a heading rather than as chrome: it is bigger than the panel titles
+ * below it and carries the plain text colour, so the page reads top-down as
+ * one thing with parts rather than as a stack of equal cards. The margin is
+ * asymmetric on purpose — it belongs to what follows it, not to the gap above.
+ *
+ * The rule is a border rather than a drawn box, so it is exactly as tall as
+ * the text beside it and stays that way when the second line is not there —
+ * which is what an English reader gets, since both lines would say the same
+ * thing (App.tsx).
+ */
+.tab-title {
+  /*
+   * The two lines' own sizes, named so the height below can be worked out
+   * from them rather than measured off a screenshot.
+   */
+  --title-size: 1.5rem;
+  --title-leading: 1.25;
+  --sub-size: 0.8125rem;
+  --sub-leading: 1.3;
+  /*
+   * Always as tall as both lines, even when only one of them is drawn.
+   *
+   * An English reader gets no second line — it would repeat the first — and
+   * without this the rule beside it would be two-thirds the height it is in
+   * every other language, so switching the picker would resize a piece of
+   * furniture that has nothing to do with the language. The floor is the
+   * Korean case because that is the taller of the two.
+   */
+  min-height: calc(
+    var(--title-size) * var(--title-leading) + var(--sub-size) * var(--sub-leading)
+  );
+  /*
+   * A row: the name on the left, whatever the tab put in the slot on the
+   * right, and the space between them belonging to neither. The two lines of
+   * the name are their own column inside it — see `.tab-heading`.
+   */
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  /* Above it, the same room the key grid gets below the bar — the two are the
+     first things in a tab and should start at the same distance from it. */
+  margin: var(--grid-breathe) 0 0.875rem;
+  padding-left: 0.6875rem;
+  /*
+   * The accent, on the one piece of furniture at the top of every tab. It is
+   * the same colour as the wordmark in the bar above, which is the point:
+   * where you are and whose app it is are the app's own marks, and they agree.
+   */
+  border-left: 4px solid var(--accent);
+}
+/* Centred in the row's height, so a single line sits in the middle of the rule
+   beside it rather than at the top with a gap underneath. */
+.tab-heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+/*
+ * The tab's own controls, held to the right-hand end — see ui/TabActions.tsx
+ * for how they get here from inside a panel further down the page.
+ *
+ * `margin-left: auto` rather than `space-between` on the row, so an empty slot
+ * — which is every tab that does not draw a key grid — leaves the name where
+ * it would be if the slot were not in the markup at all.
+ */
+.tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+/* Sized by their labels, side by side, rather than filling a column that was
+   as wide as the longest of them. */
+.tab-actions button { flex: 0 0 auto; }
+/*
+ * The divider between the two kinds of control. An `<hr>` turned on its side:
+ * it is a thematic break either way, and the row is the thing that is
+ * horizontal, not the rule.
+ *
+ * Height in `em` so it tracks the buttons it stands between rather than being
+ * a fixed number of pixels beside text that grows with the window. `margin: 0
+ * 4px` on top of the row's own 8px gap, so the break reads as a gap with a
+ * line in it rather than as a fourth item in the row.
+ */
+.tab-actions .sep {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 0;
+  min-height: 1.5em;
+  margin: 0 4px;
+  border: 0;
+  border-left: 1px solid var(--line);
+}
+.tab-title h1 {
+  margin: 0;
+  font-size: var(--title-size);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  /* Trimmed, so the rule beside it hugs the two lines rather than the leading
+     they are set with. */
+  line-height: var(--title-leading);
+  color: var(--fg);
+}
+.tab-title p {
+  margin: 0;
+  font-size: var(--sub-size);
+  font-weight: 500;
+  line-height: var(--sub-leading);
   color: var(--fg-dim);
 }
-.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
 
-.content { flex: 1; overflow: auto; padding: 16px; }
+/*
+ * --- narrow windows ------------------------------------------------------
+ *
+ * Below this width the rail stops being a column of the page and becomes a
+ * drawer over it, opened by the button in the top bar. 1280 is where the page
+ * can no longer give 13.5rem to navigation and still leave the keyboard grid —
+ * the widest thing in here — room to be read. It is the width that used to put
+ * the too-small notice up (state/viewport.ts): the drawer is what makes a
+ * window this size workable, so the warning moved down to where the *content*
+ * stops fitting rather than where the navigation did.
+ *
+ * In px, matching that constant. The stops are viewport pixels either way —
+ * `rem` in a media query is the browser's initial font size, not the root
+ * element's, and this file scales `html` with the viewport, so a breakpoint
+ * written in `rem` would only look like it moved with the text.
+ *
+ * Everything below is layout the wide window does not have. Nothing in
+ * App.tsx asks how wide the window is — it only tracks whether the drawer has
+ * been opened, and above this width nothing reads that.
+ */
+@media (max-width: 1279px) {
+  /* `div.rail` for the same reason the sticky rule is written that way: it has
+     to outrank `.blocked`, which sets `position: relative` on what it dims. */
+  div.rail {
+    position: fixed;
+    /*
+     * Under the top bar, not over it. The bar holds the button that opened
+     * this and the link out of the app, and both stay live and unveiled while
+     * the drawer is out — a drawer that swallows its own handle leaves nothing
+     * on screen that looks like the way back.
+     */
+    top: var(--topbar-h);
+    left: 0;
+    z-index: 30;
+    /* Not 100%: out of the flow, the percentage has no flex item to resolve
+       against. `vh` rather than `dvh` to agree with `.app`, which is what the
+       rest of the window is measured against. */
+    height: calc(100vh - var(--topbar-h));
+    width: var(--sidebar);
+    box-sizing: border-box;
+    padding: 1rem;
+    background: var(--bg);
+    border-right: 1px solid var(--line);
+    transform: translateX(-100%);
+    /*
+     * Off-screen is not gone: a drawer that is only translated away still
+     * holds every one of its tabs in the tab order, and someone on the
+     * keyboard would walk into eleven controls they cannot see. `visibility`
+     * takes them out, and is delayed by the length of the slide so the drawer
+     * is still drawn while it leaves.
+     */
+    visibility: hidden;
+    transition: transform 200ms ease, visibility 0s linear 200ms;
+  }
+  div.rail.open {
+    transform: none;
+    visibility: visible;
+    /* No delay on the way in — it has to be visible before it moves. */
+    transition: transform 200ms ease;
+  }
+
+  /* Under the drawer, over everything else — but stopping where the drawer
+     does, so the bar is neither dimmed nor covered. Same veil calibration
+     uses. */
+  .scrim {
+    position: fixed;
+    inset: var(--topbar-h) 0 0;
+    z-index: 25;
+    background: var(--backdrop);
+    animation: scrim-in 200ms ease-out;
+  }
+  /*
+   * On the way out. `forwards` because the element is still in the tree when
+   * the animation ends — ui/App.tsx holds it there for exactly this long, and
+   * without it the veil would snap back to full opacity for the last frame.
+   *
+   * The drawer beside it needs none of this: it is never unmounted, so its
+   * transition runs in both directions on its own.
+   */
+  .scrim.closing { animation: scrim-out 200ms ease-in forwards; }
+}
+@keyframes scrim-in { from { opacity: 0; } }
+@keyframes scrim-out { to { opacity: 0; } }
+
+/*
+ * Above the breakpoint the rail is part of the page, so neither the handle nor
+ * the veil has anything to do. The scrim is dropped rather than left
+ * transparent: it is `position: fixed` across the whole window, and an
+ * invisible sheet over the app would swallow every click.
+ */
+@media (min-width: 1280px) {
+  .topbar .menu, .scrim { display: none; }
+}
+
+/* Tool navigation inside the debug tab. Sits in the content flow rather than
+   against the window edge, so it reads as a level below the tab it is in. */
+.subtabs {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+}
+.subtabs button {
+  background: none;
+  border: none;
+  /* Sits on the strip's own line, so the selected one can thicken it. */
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -3px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--fg-dim);
+}
+.subtabs button:hover:not(:disabled) { color: var(--fg); background: none; }
+/* Underlined rather than filled: the sidebar's accent fill is for the tab you
+   are in, and a second filled thing inside it would compete. */
+.subtabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* --- connect screen ------------------------------------------------------
+   Everything else in the app is a view onto an attached board, so with none
+   attached the window holds one card and nothing to be distracted by. */
+.connect { flex: 1; overflow: auto; display: grid; place-items: center; padding: 2rem 1rem; }
+/* Spaced with a gap rather than margins: the body copy is a bundle string that
+   may be blank, and its absence should close the gap instead of leaving one. */
+.connect-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(33rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 1.75rem 1.75rem 1.25rem;
+  text-align: center;
+}
+.connect-card h2 { font-size: 1.125rem; margin: 0; }
+.connect-card p { margin: 0; }
+.connect-art {
+  width: 6rem;
+  height: auto;
+  align-self: center;
+  fill: none;
+  stroke: var(--fg-dim);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+.connect-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.connect-actions button { padding: 0.5rem 1rem; }
+.connect-card .notice { text-align: left; }
+.connect-foot { border-top: 1px solid var(--line); padding-top: 0.875rem; }
+/*
+ * The way in without a keyboard. Above the language picker's rule and under one
+ * of its own, so it reads as a second offer rather than as part of the connect
+ * button's row — it is not another way to reach the same board.
+ */
+.connect-demo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.875rem;
+}
+.connect-demo button { padding: 0.5rem 1rem; }
 
 .panel {
-  background: var(--bg-1);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 14px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.875rem;
 }
-.panel > h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); margin: 0 0 10px; }
+/*
+ * The one panel that is still a box — see ui/Panel.tsx and features/Calibration.tsx.
+ *
+ * Every other panel is now just a run of padding down the page: the sections
+ * are told apart by their headings and the space between them, and a box drawn
+ * round each of them was only repeating what the stack already said. The
+ * calibration guide is not one of a stack. It is the whole of the tab for the
+ * length of a pass, with the app's chrome dimmed behind it, and while it is on
+ * screen it is the only thing that can be clicked — so it keeps the edge, which
+ * is what says "this, and nothing around it".
+ */
+.panel.framed {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+/* A step up from the body copy rather than a step down from it. These were
+   small-caps captions sitting inside a bordered card, where the border was
+   doing the work of separating one section from the next; without it the
+   heading is the separator, so it is sized to be found while scrolling. */
+.panel > h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); margin: 0 0 12px; }
 
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/*
+ * The point-colour dots — see ui/AccentPicker.tsx.
+ *
+ * Nearly all of the button styling has to come off: the fill is the control,
+ * so a surface colour behind it, a hover that repaints it and a radius that is
+ * not a circle would each hide the one thing the button is for.
+ */
+.swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+.accent-swatch {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  transition: box-shadow 120ms ease;
+}
+/* The dot is the colour, so it is the colour this theme actually paints with —
+   see the light block at the top. The raw choice arrives as `--swatch` from
+   ui/AccentPicker.tsx; the mix here is the same one `--accent` gets. */
+.accent-swatch { background: var(--swatch); }
+:root[data-theme="light"] .accent-swatch { background: color-mix(in srgb, var(--swatch) 40%, #000); }
+.accent-swatch:hover:not(:disabled) { border-color: var(--fg-dim); }
+/* The ring is offset by a band of the panel behind it, so it reads as drawn
+   around the dot rather than as part of the colour. */
+.accent-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--fg);
+}
 .col { display: flex; flex-direction: column; gap: 8px; }
 .dim { color: var(--fg-dim); }
 .mono { font-family: var(--mono); }
-.small { font-size: 12px; }
+.small { font-size: 0.8125rem; }
+
+/* Label / value pairs — a handful of read-only facts, too few for a table. */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 1rem; margin: 0; font-size: 0.875rem; }
+.facts dt { color: var(--fg-dim); font-size: 0.8125rem; align-self: baseline; }
+.facts dd { margin: 0; }
 
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--line); border-radius: 999px;
-  padding: 2px 10px; font-size: 12px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--surface-hi);
+  padding: 0.2rem 0.65rem; font-size: 0.8125rem;
 }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-dim); }
+.dot {
+  width: 0.5rem; height: 0.5rem; border-radius: 50%;
+  background: var(--fg-dim);
+}
 .dot.on { background: var(--ok); }
 .dot.off { background: var(--err); }
+/* A write in flight. */
+.dot.busy { background: var(--warn); }
+/*
+ * The simulated board — see ui/SyncBadge.tsx.
+ *
+ * Warning amber rather than the green of a board that is really there. The
+ * badge is saying two things at once in this state, "in step" and "not
+ * hardware", and the second is the one someone reading a screenshot needs.
+ */
+.dot.demo { background: var(--warn); }
 
-.notice { border-left: 3px solid var(--warn); background: var(--bg-2); padding: 10px 12px; border-radius: 4px; }
+/* Transient confirmation for something with no visible control behind it —
+   currently only the Shift gesture that toggles debug mode. */
+.toast {
+  position: fixed;
+  left: 50%;
+  /* Just under the top bar rather than against the bottom edge, so the
+     confirmation lands where the eye already is — see `--topbar-h`. */
+  top: calc(var(--topbar-h) + 12px);
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  max-width: min(92vw, 33rem);
+  padding: 0.7rem 1.1rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-size: 0.875rem;
+  animation: toast-in 140ms ease-out;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+/*
+ * Back up the way it came.
+ *
+ * Both halves of the transform have to be restated even though only one of them
+ * moves: `translateX(-50%)` is what centres the toast, and a keyframe that said
+ * only `translateY(-6px)` would drop it against the left edge of the window for
+ * the length of the animation.
+ *
+ * A touch longer than the arrival, which is the opposite of the dropdown above
+ * on purpose. A menu closes because you have just decided something and the
+ * next thing you look at is not it; a toast closes on a timer, unasked, while
+ * you may well still be reading it — so it withdraws rather than snaps, and the
+ * words stay legible the whole way out.
+ */
+@keyframes toast-out {
+  to { opacity: 0; transform: translate(-50%, -6px); }
+}
+/* The 160ms is written again in ui/ApplyToast.tsx and ui/DebugGesture.tsx,
+   which is where the element's lifetime is decided. */
+.toast.closing { animation: toast-out 160ms ease-in forwards; }
+/*
+ * Switching a tab, as a short movement in the direction the switch came from.
+ *
+ * The sidebar's tabs are a column, so its content rises into place; the
+ * sub-tabs are a row, so a section arrives from the side it sits on — from the
+ * right going forwards, from the left going back. Both are short and both end
+ * at `transform: none`, so nothing is left transformed once they finish: an
+ * ancestor with a transform becomes the containing block for anything fixed
+ * inside it, and that is not a thing to leave switched on.
+ *
+ * Written with only a `from`, which animates from there to whatever the
+ * element already is — there is no need to restate the resting state, and no
+ * way for it to drift out of step with the rules above.
+ */
+@keyframes tab-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+@keyframes section-in-forward {
+  from { opacity: 0; transform: translateX(14px); }
+}
+@keyframes section-in-back {
+  from { opacity: 0; transform: translateX(-14px); }
+}
+.tab-in { animation: tab-in 180ms ease-out; }
+.section-in { animation: section-in-forward 160ms ease-out; }
+.section-in.back { animation: section-in-back 160ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * Both directions, and the class that carries the exit has to be named as
+   * specifically as the rule that sets it — `.toast.closing` outranks a bare
+   * `.toast` wherever it is written, media query or not.
+   *
+   * The dropdown joins the list here. It was left out while it only had an
+   * arrival, and an element that answers this preference on the way out but
+   * not on the way in is the one arrangement that makes no sense. Nothing is
+   * lost by leaving: ui/useExit.ts drops these from the tree at once for the
+   * same preference, so the exits are skipped rather than merely silent.
+   */
+  .toast, .toast.closing { animation: none; }
+  .select-menu, .select-menu.up, .select-menu.closing, .select-menu.up.closing { animation: none; }
+  button, .keycap { transition: none; }
+  /* The movement is the whole point of these, so there is nothing to keep. */
+  .tab-in, .section-in { animation: none; }
+  /*
+   * The drawer and its veil. `transition: none` on the rail also drops the
+   * delay that held `visibility` back for the length of the slide — which is
+   * what is wanted: with no slide to wait for, it should be gone at once.
+   * Written as specifically as the rule it overrides, which is `div.rail`.
+   */
+  div.rail, div.rail.open { transition: none; }
+  .scrim, .scrim.closing { animation: none; }
+}
+
+/* A step down from the panel, because a notice is something the panel is
+   holding rather than something stacked on top of it. */
+.notice {
+  border-left: 3px solid var(--warn);
+  background: var(--sunk);
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-sm);
+}
 .notice.err { border-left-color: var(--err); }
-.notice.info { border-left-color: var(--accent); }
+/* The one notice whose colour is the point colour, so its fill follows too.
+   The other three keep the plain sunk fill — a warning tinted with its own
+   amber would be a second warning stripe the width of the panel. */
+.notice.info { border-left-color: var(--accent); background: var(--sunk-accent); }
+.notice.ok { border-left-color: var(--ok); }
 
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
-th { color: var(--fg-dim); font-weight: 600; font-size: 12px; }
-tbody tr:hover { background: var(--bg-2); }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+th, td { text-align: left; padding: 0.35rem 0.55rem; border-bottom: 1px solid var(--line); }
+th { color: var(--fg-dim); font-weight: 600; font-size: 0.8125rem; }
+tbody tr:hover { background: var(--surface-hi); }
 
-pre.dump { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow: auto; margin: 0; }
+pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px; overflow: auto; margin: 0; }
+
+/*
+ * Chrome that a full-window mode has taken away.
+ *
+ * Calibration puts the board in a state where it does not type, and only the
+ * control inside that mode ends it cleanly (see state/calibration.ts). Dimming
+ * is the visible half; `pointer-events: none` is the half that matters, and it
+ * covers the element's own ::after too, so nothing here can be clicked.
+ */
+.blocked { position: relative; pointer-events: none; user-select: none; }
+.blocked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--backdrop);
+  z-index: 5;
+}
 
 /* --- keyboard grid ------------------------------------------------------- */
-.keygrid { position: relative; width: 100%; max-width: 900px; aspect-ratio: 15 / 5; }
+/*
+ * Centred once it stops being the widest thing in the panel. It is capped at
+ * 56.25rem and the panels around it are not, so on a wide window it used to
+ * sit against the left edge of a box far wider than itself.
+ */
+/* The ratio is the board's, set inline from its `units` — see ui/KeyGrid.tsx.
+   What is here is the fallback for the instant before that lands. */
+.keygrid { position: relative; width: 100%; max-width: 56.25rem; margin-inline: auto; aspect-ratio: 15 / 5; }
+
+/*
+ * Stands in for the grid when no board definition matches what is plugged in.
+ * Same footprint as the grid it replaces, so a panel does not jump when a
+ * recognised board is swapped for an unrecognised one.
+ */
+.keygrid-unknown {
+  width: 100%;
+  max-width: 56.25rem;
+  /* Centred with the grid it stands in for — same footprint means the same
+     place, or swapping a known board for an unknown one moves it sideways. */
+  margin-inline: auto;
+  aspect-ratio: 15 / 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 2rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--fg-dim);
+}
+/* Dragging across the caps paints a selection, so the browser must not try to
+   select text or start a native drag while it happens. */
+.keygrid.selectable { user-select: none; -webkit-user-select: none; touch-action: none; }
+
+/*
+ * Grid with its controls beside it.
+ *
+ * The buttons used to sit above the grid, which pushed the keyboard down the
+ * page and put the thing you act on below the things you act with. The column
+ * is a fixed width so the grid keeps its 15:5 aspect and the caps stay the
+ * size they were; `flex-wrap` drops the column under the grid when the window
+ * is too narrow for both.
+ */
+/*
+ * The band a rubber-band selection can be drawn in — see ui/Marquee.tsx.
+ *
+ * It is padded rather than wrapped tight around the row because the point of it
+ * is to have somewhere to start a drag that is *not* a key. The row is exactly
+ * as wide as the grid plus its control column, so without this there would be
+ * nothing but the gaps between caps to grab.
+ */
+/*
+ * What used to be the column beside the grid, split in two and turned across
+ * the page — see ui/GridFrame.tsx for why.
+ *
+ * The controls went further than a row above the grid: they are drawn at the
+ * right-hand end of the tab's title row, which is a line the tab already
+ * spends — see `.tab-actions`. What is left here is the line of readouts
+ * below, centred under the caps they are about.
+ */
+.gridfoot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 4px 0.875rem;
+  margin-top: 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--fg-dim);
+}
+.gridfoot .err { color: var(--err); }
+/* Same warning colour the caps use for an edit the board has not been sent
+   yet — see `.keycap .sub .pending`. The readout under the keymap grid says
+   what the picked cap is set to, and it has to say pending the same way. */
+.gridfoot .pending { color: var(--warn); }
+
+.gridband {
+  padding: 0.875rem 0 1.125rem;
+  /*
+   * That padding is the band's reach, not space around the grid, so the
+   * margins cancel it and then add back what is actually wanted — the same
+   * `--grid-breathe` above and below, whatever the padding happens to be.
+   *
+   * Put on the band rather than on `.keygrid` because the band is what holds
+   * the grid *and* the bars above and below it — spacing the grid alone would
+   * open a gap inside the group rather than around it.
+   */
+  margin: calc(var(--grid-breathe) - 0.875rem) 0 calc(var(--grid-breathe) - 0.25rem);
+}
+/* The rubber band, drawn over the whole row — see ui/Marquee.tsx. */
+.marquee {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 4;
+}
+/*
+ * Black caps on a panel, which is the way round a keyboard actually is: the
+ * board is the dark thing you look at, and everything drawn on a cap — its
+ * legend, its setting, its travel — is light against it.
+ */
 .keycap {
   position: absolute;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--bg-2);
+  border-radius: 7px;
+  background: var(--keycap);
+  transition: background-color 120ms ease, border-color 120ms ease;
   color: var(--fg);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 0.75rem;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
 }
-.keycap.selected { border-color: var(--accent); background: var(--accent-dim); }
-.keycap .sub { font-size: 9px; color: var(--fg-dim); }
-.keycap .fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); opacity: 0.55; pointer-events: none; }
-.keycap .cap-label { position: relative; z-index: 1; }
+/* The only accent-filled thing on the board. */
+.keycap.selected { background: var(--accent-dim); border-color: var(--accent); }
+/*
+ * Calibration state, on the cap's own edge — the board's own key LEDs, where
+ * the user is already looking. Red and amber are the firmware's palette
+ * (0x1753c); green has no LED to copy, because "calibrated" on the board is the
+ * *absence* of an override, and an absence is not something a grid of 61 caps
+ * can show.
+ */
+/*
+ * During a calibration pass the edge is the display — see `flagged` in
+ * ui/KeyGrid.tsx. A hairline is right for a cap that is only a cap; it is thin
+ * for a cap whose colour is the reading you are watching across 61 keys at
+ * once, so it thickens for as long as the pass runs. `box-sizing` is
+ * border-box, so the caps do not move.
+ */
+.keygrid.flagged .keycap { border-width: 3px; }
 
-.log { font-family: var(--mono); font-size: 12px; height: 420px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
-.log .line { display: grid; grid-template-columns: 74px 82px 34px 1fr; gap: 8px; padding: 2px 8px; white-space: pre; }
-.log .line:nth-child(odd) { background: rgba(255,255,255,0.02); }
+.keycap.marginal { border-color: var(--warn); }
+.keycap.bad { border-color: var(--err); }
+.keycap.done { border-color: var(--ok); }
+/* Selected and flagged at once: selection keeps the edge, and the flag moves
+   to a ring just inside it so neither state hides the other. */
+.keycap.selected.marginal { box-shadow: inset 0 0 0 2px var(--warn); }
+.keycap.selected.bad { box-shadow: inset 0 0 0 2px var(--err); }
+.keycap.selected.done { box-shadow: inset 0 0 0 2px var(--ok); }
+/*
+ * The value the key is set to — an actuation point, a rapid-trigger distance,
+ * a calibration scale (see KeyMetrics.tsx). In the accent, because on this tab
+ * it is the number the whole screen is about, and the legend above it is only
+ * there to say which key it belongs to.
+ */
+.keycap .sub { font-size: 0.625rem; color: var(--accent); }
+/*
+ * Two numbers on one cap — a rapid-trigger or dead-zone setting, which is a
+ * pair rather than a value. Smaller, tighter and never wrapped: the cap has
+ * one line to spare, and a pair that wraps reads as two separate facts about
+ * two separate keys. The cap clips rather than reflows if it ever does not
+ * fit, which is the failure mode that stays legible.
+ */
+.keycap .sub.pair {
+  font-size: 0.5625rem;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.keycap .sub .press { color: var(--press); }
+.keycap .sub .release { color: var(--release); }
+/*
+ * A binding that has been changed but not written yet (key mapping tab).
+ *
+ * The warning colour rather than the accent, because the accent on a cap means
+ * "this is what the board holds" everywhere else on the grid, and the whole
+ * point of this one is that the board does not hold it yet.
+ */
+.keycap .sub .pending { color: var(--warn); }
+/* Mixed rather than faded: the same colour it was at 55% opacity, but a solid
+   fill, so nothing on the board is see-through. Mixed into the cap's own black
+   rather than a fixed colour, so it stays a shade of the cap it fills. */
+.keycap .fill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 55%, var(--keycap)); pointer-events: none; }
+.keycap .cap-label { position: relative; z-index: 1; }
+.swatch { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; border: 1px solid currentColor; vertical-align: baseline; }
+.swatch.marginal { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 30%, var(--surface)); }
+.swatch.bad { border-color: var(--err); background: color-mix(in srgb, var(--err) 30%, var(--surface)); }
+.swatch.done { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 30%, var(--surface)); }
+
+/*
+ * The switch colour, beside a switch's name.
+ *
+ * Round rather than square, and bordered in the panel's own hairline rather
+ * than `currentColor`: the calibration swatches above are states this app
+ * decided, and this one is a photograph of a part. Keeping the two apart at a
+ * glance is worth the extra rule.
+ *
+ * A switch whose colour nobody has filled in gets the hatch, not a grey fill —
+ * "unknown" and "a dark grey switch" have to look different, or the table
+ * quietly invents seven grey switches. See `SwitchTypeSpec.color`.
+ */
+/* The ring is the foreground at low opacity rather than `--line`: a pale switch
+   — Magnetic White is #e8e8e6 — sits on a near-white panel in the light theme,
+   and a hairline the colour of every other hairline left it invisible. The fill
+   stays exactly the colour on file; only the edge is drawn to be seen. */
+.switch-swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; border-color: color-mix(in srgb, var(--fg) 32%, transparent); vertical-align: -0.0625rem; margin-right: 0.4rem; flex: none; }
+/*
+ * The switch, on the cap: a band along the bottom edge, and no text.
+ *
+ * Thin on purpose. It is a category, not a quantity — nothing about it should
+ * read as a level rising up the cap the way the calibration fill does — and it
+ * has to sit under the key's own legend without competing with it. Above the
+ * fill in the stack for the same reason: during a pass the fill is the thing
+ * moving, and a band that vanished under it would look like the switch had
+ * changed.
+ */
+.keycap .stripe { position: absolute; left: 0; right: 0; bottom: 0; height: 0.3rem; z-index: 2; pointer-events: none; }
+
+/*
+ * A cap painted with the colour stored for that key — the lighting tab.
+ *
+ * The paint is an inline background, so it wins over `.selected`'s accent fill
+ * and the selection has to say itself some other way: a ring just inside the
+ * edge, the same device the calibration flags use when they collide with a
+ * selection. The legend colour is inline too (see `tint` in ui/KeyGrid.tsx),
+ * and the value line drops the accent to inherit it — the accent is a fixed
+ * colour and half the palette makes it illegible.
+ */
+.keycap.tinted .sub { color: inherit; opacity: 0.8; }
+.keycap.tinted.selected { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/*
+ * The lighting effect picker: two dozen cards rather than a dropdown.
+ *
+ * Same reasoning as the switch cards — the list never changes while the app is
+ * running, and a menu hides it behind a click. Two dozen is more than seven, so
+ * these are one line each and the grid wraps by itself rather than being told
+ * how many columns to have; the mode number rides along in the corner because
+ * it is what goes on the wire and what a bug report needs.
+ */
+.fxgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 6px;
+}
+.fxcard {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  padding: 0.4rem 0.55rem;
+}
+.fxcard .fxname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fxcard .fxmode { flex: none; }
+/* The one the board is actually on. Accent, like every other "this is what the
+   hardware holds" in the app. */
+.fxcard.on { border-color: var(--accent); background: var(--accent-dim); }
+.fxcard.on .fxmode { color: var(--fg); opacity: 0.7; }
+
+/*
+ * Switch types as cards rather than a dropdown.
+ *
+ * There are seven of them and they never change while the app is running, so a
+ * menu was hiding a short list behind a click and a second click: you could not
+ * see what the board offered without opening it, and comparing two travels
+ * meant opening it twice. Laid out flat they are also the legend for the bands
+ * on the caps — the same colour, the same order, the same names.
+ *
+ * Every card one fixed size, and as many across as the window has room for.
+ * The point of the grid is that the eye can go down a column comparing one
+ * number across switches, which a wrapping row of buttons sized to their own
+ * text cannot do — and a card that stretched to fill the row would undo that
+ * the moment a board shipped five switches instead of seven.
+ *
+ * 12rem holds "Magnetic Orange" on one line at the name's own size, so it is
+ * the floor, and a column is added every time another 12rem plus a gap fits.
+ * `min(12rem, 100%)` is the one guard: below the card's own width a track that
+ * insisted on 12rem would push the panel sideways, and a minimum larger than the
+ * maximum resolves to the minimum, so the card simply becomes the width it has.
+ *
+ * `auto-fit` rather than `auto-fill`, because the row is centred. The two differ
+ * only in what becomes of the columns nothing was placed in: `auto-fill` keeps
+ * them, and centring would then centre those too — seven cards in a row with
+ * space for eight would sit visibly left of centre, off by half an empty card.
+ * `auto-fit` collapses them, and because the track's maximum is a fixed 12rem
+ * rather than `1fr`, collapsing removes the empty tracks without stretching the
+ * cards that are left.
+ */
+.switch-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 12rem));
+  justify-content: center;
+  gap: 8px;
+}
+
+/*
+ * One card: the switch's colour down the leading edge, everything else set
+ * against the trailing one.
+ *
+ * The colour is a band rather than a dot because it is the same mark as the one
+ * on the caps above, and at cap size a dot would be a speck. Ranging the text
+ * right puts the three lines — maker, name, numbers — on one edge, so a column
+ * of cards reads as a column rather than as seven ragged blocks.
+ *
+ * `padding: 0` overrides the button default: the band has to reach all four
+ * corners of its edge, and `overflow: hidden` is what rounds it to the card.
+ */
+.switch-card {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  min-height: 4.25rem;
+  text-align: right;
+}
+.switch-card .bar { width: 0.5rem; flex: none; }
+.switch-card .text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0.45rem 0.7rem;
+}
+/* The maker's line keeps its height whether or not there is a maker — an empty
+   one must not lift the name of one card above the name of its neighbour. */
+.switch-card .vendor { font-size: 0.6875rem; line-height: 1.2; min-height: 1.2em; color: var(--fg-dim); }
+.switch-card .name { font-size: 1rem; line-height: 1.25; overflow-wrap: anywhere; }
+.switch-card .spec { font-size: 0.6875rem; line-height: 1.2; color: var(--fg-dim); font-family: var(--mono); }
+/* Chosen, in the one colour this app uses for "chosen" — and the two dim lines
+   come up with it, so the card lights as one thing rather than as a lit name
+   with grey text stuck to it. */
+.switch-card[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.switch-card[aria-pressed="true"] .vendor,
+.switch-card[aria-pressed="true"] .spec { color: inherit; opacity: 0.75; }
+.switch-card:hover:not(:disabled) .vendor,
+.switch-card:hover:not(:disabled) .spec { color: inherit; opacity: 0.75; }
+
+.log { font-family: var(--mono); font-size: 0.8125rem; height: 26rem; overflow: auto; background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.log .line { display: grid; grid-template-columns: 4.625rem 5.125rem 2.125rem 1fr; gap: 8px; padding: 2px 0.5rem; white-space: pre; }
+.log .line:nth-child(odd) { background: color-mix(in srgb, var(--fg) 3%, var(--sunk)); }
 .log .out { color: var(--accent); }
 .log .in { color: var(--ok); }
 .log .feature-set, .log .feature-get { color: var(--warn); }
 .log .note { color: var(--fg-dim); font-style: italic; }
 
-/* --- build identity ------------------------------------------------------ */
-.version-badge {
+/*
+ * The scrollbars, which are surface too.
+ *
+ * Left alone they are the one part of the window drawn by someone else, and a
+ * grey slab down the edge is exactly where the eye goes. Chrome-only syntax,
+ * which this app already is — it needs WebHID.
+ */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  background-color: var(--surface-hi);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--thumb-hi); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* --- window too small ----------------------------------------------------
+   Covers the window rather than sitting in the flow: what is behind it is the
+   thing that does not fit. See ui/TooSmall.tsx and state/viewport.ts. */
+.too-small {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: var(--bg);
+}
+.too-small-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 30rem;
+  text-align: center;
+}
+.too-small-card h2 { font-size: 1.15em; margin: 0; }
+.too-small-card p { margin: 0; }
+.too-small-art {
+  width: 48px;
+  height: auto;
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- the corner ----------------------------------------------------------
+   Two badges stacked against the bottom-right of the window: what the board is
+   doing, over what this build is. Right-aligned rather than stretched, so each
+   is only as wide as what it has to say. */
+.corner {
   position: fixed;
   right: 10px;
   bottom: 8px;
   z-index: 50;
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/*
+ * Whether the board holds what is on screen — see ui/SyncBadge.tsx. Built to
+ * the same metrics as the badge below it so the two read as one stack, and it
+ * is a <button> in the one state that can be acted on, which is why the button
+ * styling is reset here rather than avoided in the markup.
+ */
+.sync-badge {
+  display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid var(--line);
+  padding: 0.25rem 0.6rem;
   border-radius: 999px;
-  background: var(--bg-1);
-  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
-  backdrop-filter: blur(4px);
-  font-size: 11px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.75rem;
   color: var(--fg-dim);
-  /* Interactive so the tooltip works; it covers only its own corner. */
+}
+.sync-badge.failed { color: var(--fg); cursor: pointer; border-color: var(--err); }
+/* It is a <button>, so it would otherwise take the accent hover above — a red
+   badge that goes green under the pointer. */
+.sync-badge.failed:hover { color: var(--fg); border-color: var(--err); background: var(--err-dim); }
+.sync-badge.failed:active { background: var(--sunk); }
+
+.version-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+  /* The commit is there to be copied, so a drag over it selects rather than
+     starting a click — the toggle is on the release of a click that did not
+     move, which is what a button does anyway. */
   user-select: text;
+  /* Never two lines. Both faces fit the column; a font that disagrees should
+     clip the pill rather than change its height under the language picker. */
+  white-space: nowrap;
 }
 .version-badge:hover { color: var(--fg); border-color: var(--accent); }
-.version-badge .dot { width: 6px; height: 6px; }
+.version-badge:active { background: var(--sunk); }
+.version-badge .dot { width: 0.375rem; height: 0.375rem; }
 .version-badge.stable .dot { background: var(--ok); }
 .version-badge.nightly .dot { background: var(--warn); }

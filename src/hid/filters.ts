@@ -1,74 +1,195 @@
-import { isVendorPage } from './reportInfo'
+import { hardwareSpecs, specForDevice } from '../device/registry'
+import { t, type MessageKey } from '../i18n'
+import { inputReports, isVendorPage, outputReports } from './reportInfo'
 
 /**
- * Device ids recovered from the stock driver binary. It matches devices by the
- * Windows hardware id `VID_19F5&PID_xxxx&MI_01`, i.e. always USB interface 1 —
- * the vendor interface, not the keyboard interface.
+ * Which HID interfaces to offer, and which of them is the configurator.
  *
- * The binary's string pool does not preserve the name-to-id pairing reliably,
- * so all three ids are treated as one family; the actual product id is read
- * back from the device once connected.
+ * Nothing here names a board any more. The vendor ids come from the registered
+ * specs, so adding a device definition also adds it to the chooser's filter and
+ * to the ranking below — see `src/device/spec.ts`.
  */
-export const RAVEN_VENDOR_ID = 0x19f5
 
-export const RAVEN_PRODUCT_IDS = [0xfe20, 0xfed0, 0xfeb1] as const
+/**
+ * Vendor ids any registered board answers to, de-duplicated.
+ *
+ * Hardware specs only — the demo board's ids belong to no device, and putting
+ * them in the chooser's filter would be offering to open something that cannot
+ * be there.
+ */
+export function knownVendorIds(): number[] {
+  return [...new Set(hardwareSpecs().map((s) => s.usb.vendorId))]
+}
 
-/** Layout files shipped by the stock driver, for reference. */
-export const RAVEN_FAMILY = ['Raven61', 'Raven68', 'ABT68'] as const
+/** Payload sizes the registered boards use; the report-shape signal below. */
+function knownPayloadLengths(): number[] {
+  return [...new Set(hardwareSpecs().map((s) => s.frame.payloadLength))]
+}
+
+/**
+ * True when a registered spec lists this exact product id.
+ *
+ * Stricter than `specForDevice`, deliberately: this is a ranking signal, and a
+ * spec that claims a whole vendor would otherwise make every device under it
+ * look equally identified.
+ */
+export function isKnownDevice(device: HIDDevice): boolean {
+  return hardwareSpecs().some(
+    (s) => s.usb.vendorId === device.vendorId && s.usb.productIds.includes(device.productId),
+  )
+}
+
+/** The board a registered spec claims for this device, if any. */
+export function specFor(device: HIDDevice) {
+  return specForDevice(device)
+}
 
 export interface FilterPreset {
   id: string
-  label: string
-  hint: string
+  labelKey: MessageKey
+  hintKey: MessageKey
   filters: HIDDeviceFilter[]
 }
 
-export const FILTER_PRESETS: FilterPreset[] = [
-  {
-    id: 'raven',
-    label: 'Raven 계열 (VID 0x19F5)',
-    hint: '순정 드라이버가 인식하는 장치 ID입니다. 보통 이걸 쓰면 됩니다.',
-    filters: [{ vendorId: RAVEN_VENDOR_ID }],
-  },
-  {
-    id: 'all',
-    label: '모든 HID 장치',
-    hint: '위에서 아무것도 안 보일 때. 크롬이 접근 가능한 모든 HID 장치를 보여줍니다.',
-    filters: [],
-  },
-  {
-    id: 'vendor-pages',
-    label: '벤더 정의 페이지',
-    hint: '설정 채널로 흔히 쓰이는 usage page 들만.',
-    filters: [{ usagePage: 0xff00 }, { usagePage: 0xff01 }, { usagePage: 0xff02 }],
-  },
-]
-
-export function isRavenDevice(device: HIDDevice): boolean {
-  return device.vendorId === RAVEN_VENDOR_ID
+export function filterPresets(): FilterPreset[] {
+  return [
+    {
+      id: 'known',
+      labelKey: 'device.filter.known.label',
+      hintKey: 'device.filter.known.hint',
+      filters: knownVendorIds().map((vendorId) => ({ vendorId })),
+    },
+    {
+      id: 'all',
+      labelKey: 'device.filter.all.label',
+      hintKey: 'device.filter.all.hint',
+      filters: [],
+    },
+    {
+      id: 'vendor-pages',
+      labelKey: 'device.filter.vendorPages.label',
+      hintKey: 'device.filter.vendorPages.hint',
+      filters: [{ usagePage: 0xff00 }, { usagePage: 0xff01 }, { usagePage: 0xff02 }],
+    },
+  ]
 }
 
 /**
- * Heuristic ranking for "which of these interfaces is the configurator
- * channel". A known Raven id wins outright; otherwise a vendor-defined
- * collection carrying feature reports is the best guess, since the stock
- * driver talks over HidD_SetFeature / HidD_GetFeature.
+ * How a candidate interface scored, and why.
+ *
+ * A composite keyboard exposes several HID interfaces under the same VID/PID,
+ * and only one of them carries the configurator channel. `requestDevice`
+ * returns all of them at once, so something has to choose — and it cannot be
+ * "the first one", which on this board is the plain keyboard interface.
  */
-export function scoreDevice(device: HIDDevice): number {
-  let score = isRavenDevice(device) ? 100 : 0
-  if (score > 0 && (RAVEN_PRODUCT_IDS as readonly number[]).includes(device.productId)) score += 50
-  for (const c of device.collections) {
-    if (!isVendorPage(c.usagePage ?? 0)) continue
-    score += 10
-    if ((c.featureReports?.length ?? 0) > 0) score += 8
-    if ((c.inputReports?.length ?? 0) > 0) score += 5
-    if ((c.outputReports?.length ?? 0) > 0) score += 5
+export interface DeviceRank {
+  score: number
+  reasons: string[]
+}
+
+/** Usage pages that identify an interface as one of the boot/HID roles. */
+const BOOT_KEYBOARD = { page: 0x01, usage: 0x06 }
+const CONSUMER_PAGE = 0x0c
+
+function collectionsOf(device: HIDDevice): HIDCollectionInfo[] {
+  const out: HIDCollectionInfo[] = []
+  const walk = (list: readonly HIDCollectionInfo[]) => {
+    for (const c of list) {
+      out.push(c)
+      if (c.children?.length) walk(c.children)
+    }
   }
-  return score
+  walk(device.collections)
+  return out
+}
+
+/**
+ * Ranks an interface by how much it looks like the configurator channel.
+ *
+ * The decisive signal is the report shape rather than the usage page: the
+ * driver moves fixed 64-byte payloads in both directions (docs/protocol.md §2),
+ * and no boot keyboard or consumer-control interface declares reports that
+ * size. The usage page only breaks ties, because vendors are inconsistent about
+ * whether the configurator collection is vendor-defined.
+ */
+/**
+ * Reasons are translated here rather than at the call site because they are
+ * de-duplicated as text; the panel re-renders on a language change, which
+ * re-runs this.
+ */
+export function rankDevice(device: HIDDevice): DeviceRank {
+  const reasons: string[] = []
+  let score = 0
+
+  if (knownVendorIds().includes(device.vendorId)) {
+    score += 100
+    reasons.push(t('device.reason.knownVid'))
+    if (isKnownDevice(device)) {
+      score += 20
+      reasons.push(t('device.reason.knownPid'))
+    }
+  }
+
+  const ins = inputReports(device)
+  const outs = outputReports(device)
+
+  for (const bytes of knownPayloadLengths()) {
+    if (ins.some((r) => r.byteLength === bytes)) {
+      score += 60
+      reasons.push(t('device.reason.inReport', { bytes }))
+    }
+    if (outs.some((r) => r.byteLength === bytes)) {
+      score += 60
+      reasons.push(t('device.reason.outReport', { bytes }))
+    }
+  }
+
+  for (const c of collectionsOf(device)) {
+    const page = c.usagePage ?? 0
+    if (isVendorPage(page)) {
+      score += 20
+      reasons.push(t('device.reason.vendorPage'))
+    } else if (page === BOOT_KEYBOARD.page && (c.usage ?? 0) === BOOT_KEYBOARD.usage) {
+      // The typing interface. It never carries the config channel, and writing
+      // to it would only toggle lock LEDs.
+      score -= 60
+      reasons.push(t('device.reason.keyboardInterface'))
+    } else if (page === CONSUMER_PAGE) {
+      score -= 30
+      reasons.push(t('device.reason.consumerControl'))
+    }
+  }
+
+  return { score, reasons: [...new Set(reasons)] }
+}
+
+export function scoreDevice(device: HIDDevice): number {
+  return rankDevice(device).score
+}
+
+/**
+ * The interface to open out of everything one pick returned.
+ *
+ * Chrome's chooser lists physical devices, so selecting the keyboard hands back
+ * every interface it exposes. Opening `devices[0]` picked the typing interface,
+ * which never streams analog events — the monitor stayed empty until the user
+ * opened the right one by hand.
+ */
+export function pickConfigInterface(devices: readonly HIDDevice[]): HIDDevice | null {
+  let best: HIDDevice | null = null
+  let bestScore = -Infinity
+  for (const d of devices) {
+    const { score } = rankDevice(d)
+    if (score > bestScore) {
+      best = d
+      bestScore = score
+    }
+  }
+  return best
 }
 
 export function describeDevice(device: HIDDevice): string {
   const vid = device.vendorId.toString(16).padStart(4, '0')
   const pid = device.productId.toString(16).padStart(4, '0')
-  return `${device.productName || '(이름 없음)'} — ${vid}:${pid}`
+  return `${device.productName || t('device.unnamed')} — ${vid}:${pid}`
 }
