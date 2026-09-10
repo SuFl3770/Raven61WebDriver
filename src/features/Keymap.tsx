@@ -584,6 +584,10 @@ export function Keymap() {
         <KeyGrid
           selected={selected === null ? undefined : new Set([selected])}
           onSelect={(i) => setSelected(i)}
+          /* Which layer's bindings are on the caps. Switching layer rewrites
+             the second line of every cap, and this is what fades the new one
+             in — the same treatment the input-point tab's sections get. */
+          subKey={String(layer)}
           sub={(k) =>
             capBinding(
               k,
