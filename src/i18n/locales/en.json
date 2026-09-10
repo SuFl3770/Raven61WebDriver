@@ -56,6 +56,8 @@
 
   "keygrid": {
     "label": "Raven61 key layout",
+    "hide": "Hide key layout",
+    "show": "Show key layout",
     "unknown": {
       "title": "No definition for this device",
       "body": "No registered board definition matches this VID:PID, so the decoded protocol is not used. If you have confirmed this keyboard speaks it, add a definition under src/device/."
@@ -526,6 +528,29 @@
   },
 
   "keymap": {
+    "macro": {
+      "unsupported": "This board's spec has no macro-store command. Without reading the store there is no way to tell whether binding a macro key is safe.",
+      "reading": "Reading the store…",
+      "unread": "The macro store has not been read yet. Leaving this category and coming back tries again.",
+      "ready": "All {total} slots point at a body and end in a stop record. Binding a macro key is safe.",
+      "unsafe": "⚠ <b>{slots} slots</b> do not point at a body, or have no stop record. The player has no upper bound on its cursor, so a macro key pressed in this state walks flash and presses whatever it reads. <b>Write the store from the Macro tab first</b> — binding is always the second write.",
+      "slotTitle": "#{slot} · {count} events",
+      "slotEmpty": "#{slot} · empty",
+      "note": "Slots are numbered from 0 — the stock driver's \"M 1\" is #0 here. An empty slot can be bound too: its body is a bare stop record, so the key does nothing. The repeat byte is not read by the firmware, so this app writes 1, as the stock driver does.",
+      "slotsUnlocked": "Debug mode, so all {total} slots are open. The stock driver only manages the first ten, so writing the store from it would take the bodies in the rest with it.",
+      "inUse": "Bound to"
+    },
+
+    "debug": {
+      "usage": "HID usage",
+      "usageApply": "Use this usage",
+      "record": "Record, three bytes",
+      "recordApply": "Use this record",
+      "bad": "Cannot read that value.",
+      "unsafe": "This app never writes actions <c>0x04</c> / <c>0x05</c> (layer latch).",
+      "note": "This is where a value no list carries goes in as itself. Two things to know. First, <b>a type byte the firmware does not know, written to slot 0</b>, makes the boot check (<c>0xa7ae</c>) lay both keymap layers back down from the factory tables — it checks no other slot. Second, the key path puts a usage straight into the report, so a value the host does not know does nothing at all. The only thing refused before the write is the layer latch."
+    },
+
     "categories": "Button categories",
     "apply": "Apply to board",
     "applyCount": "Apply {count} keys",
@@ -580,7 +605,9 @@
       "special": "Special",
       "function": "Function",
       "lighting": "Lighting",
-      "mouse": "Mouse"
+      "mouse": "Mouse",
+      "macro": "Macro",
+      "debug": "Debug"
     },
     "label": {
       "macro": "Macro {slot}",
@@ -609,10 +636,12 @@
     "layers": "Layer",
     "unverified": "The format is decoded from the firmware and <b>confirmed field by field against the stock driver's own encoder</b> — the record layout, the stop and press bits, the mask-versus-usage split and the millisecond unit all agree at both ends. Writes are read back and compared like every other block here, so <b>the bytes are in the store</b>; whether the board plays them has not been confirmed on hardware.",
     "store": "Store",
-    "storeReady": "All 32 slots name a body and every body stops. Binding a macro key is safe.",
+    "storeReady": "All 32 table entries name a body and every body stops — the ten the board manages and the 22 it does not. Binding a macro key is safe.",
     "storeUnsafe": "⚠ Slots with no body or no stop record: <b>{slots}</b>. The player has no bound on its cursor, so pressing a macro key in this state sends it walking through flash four bytes at a time, emitting a keystroke for every record it passes. <b>Write the store first</b> — binding stays refused until you do.",
     "capacity": "{used} of {total} events — what is left after the offset table and the one stop record each slot carries.",
-    "slotNumbering": "Slots count from 0. The stock driver shows {stock} of them, and its \"M 1\" is #0 here.",
+    "slotNumbering": "Slots count from 0 — the stock driver's \"M 1\" is #0 here. The store holds {total} and {shown} are shown. A write always lays out all {total}, stop records included.",
+    "slotsUnlocked": "Debug mode, so all {total} slots are open. The firmware takes a slot up to 31 (<c>macroStart</c>, 0x9500) and this app writes the whole table, so <b>the board is fine with it.</b> The <b>stock driver only knows about {stock}</b> — save a macro there once and it rewrites this block from its own database with {stock} slots, taking the rest with it.",
+    "aliasOf": "This slot <b>names the same offset as #{owner}.</b> The stock driver leaves an empty slot pointing at the next body, so that is what a slot it left empty looks like. This app treats it as empty, but <b>right now the board would play #{owner}'s body</b> — one store write makes it really empty.",
     "overStock": "Past the stock driver's recording budget of {total} events. The firmware and this block hold more, but the stock driver may not handle a store this size if you go back to it.",
     "slot": "Slot",
     "slotPlain_one": "#{slot} · {count} event",
@@ -657,7 +686,7 @@
     "apply": "Write the store",
     "applying": "Writing…",
     "revert": "Revert",
-    "applied": "Applied to {slots} of 32 slots — {bytes} bytes sent, and the read-back matched byte for byte.",
+    "applied": "Applied to {slots} of {total} slots — {bytes} bytes sent, and the read-back matched byte for byte.",
     "unchanged": "The board already held these bodies, so nothing was sent.",
     "capacityFull": "The store holds {total} event records and this needs {used}. Shorten it and apply again.",
     "mismatch": "Slots did not read back as written — {detail}",
@@ -670,7 +699,7 @@
     "binding": "Writing…",
     "unbind": "Unbind",
     "bindNeedsStore": "The store is not safe yet. Write it first.",
-    "bindNote": "Binding is the <b>second</b> write — the body has to be in the store first. That is also why the remap tab's picker offers no macros: binding from a tab that cannot check the store would be the one way around this order. A macro that is already bound does show up there by name.",
+    "bindNote": "Binding is the <b>second</b> write — the body has to be in the store first. The remap tab's Macro category binds too, and keeps the same order: it reads the store itself, and locks its buttons and sends you here when the store is not sound.",
     "unbindUnavailable": "The board returned no factory record for this key, so there is nothing to put back.",
     "bound": "#{slot} is now bound to {key}.",
     "unbound": "{key} no longer starts a macro. The body is still in the store.",

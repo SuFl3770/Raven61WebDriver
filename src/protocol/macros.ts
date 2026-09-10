@@ -130,6 +130,34 @@
  * entries only for the ten slots it knows about, leaving 10..31 at zero — so a
  * store the stock driver has just written is still one where slot 10 walks the
  * flash. Its own UI cannot bind those slots, which is how it gets away with it.
+ * This app writes all 32, which is also what makes the upper 22 usable at all.
+ *
+ * ### Reading a store this app did not write
+ *
+ * A stock store says nothing directly about which slots are empty, because the
+ * cursor only advances after a body is written. An empty slot gets the cursor
+ * as it stands, which is **the next body's offset** — or, for the empty slots
+ * that trail the last real body, an offset into space the write never covered.
+ *
+ * A profile with M1, M3, M5, M7, M9 and M10 recorded lays out like this:
+ *
+ *     slot   0    1    2    3    4    5    6    7    8    9
+ *     offset 64   96   96   128  128  160  160  192  192  224
+ *            M1   M2   M3   M4   M5   M6   M7   M8   M9   M10
+ *
+ * so a repeated offset is the tell: of the slots sharing one, the **last** is
+ * the one whose body was actually written there and the earlier ones were
+ * empty. `decodeMacro` reports those as empty with `aliasOf` naming the owner.
+ * That is a reading of the stock *layout*, not of the firmware — the player
+ * has no notion of ownership and would happily play the shared body — which is
+ * why an alias still counts as unsafe until this app has written the store.
+ *
+ * The trailing case needs a different tell, because there is no next body: the
+ * offset lands in bytes the write did not carry, which read back as whatever
+ * the flash held. `decodeMacro` stops at an **all-zero record** — no delay, no
+ * action, no stop, so nothing any encoder emits — rather than walking it as
+ * events. Without that, an unwritten slot decodes as several hundred padding
+ * records, which is exactly as useless as it sounds.
  */
 import type { MacroSpec } from '../device/spec'
 import { MODIFIERS } from './keymap'
@@ -137,7 +165,20 @@ import { MODIFIERS } from './keymap'
 /** The store, with the flash address the evidence is quoted against. */
 export const MACRO_BLOCK = {
   base: 0x21100,
-  /** `macroStart` rejects a slot above this. 32 slots, 32 offsets. */
+  /**
+   * Slots the store holds.
+   *
+   * `macroStart` rejects a slot above 31 (0x9500) and indexes the table at
+   * `0x21100 + slot * 2` (0x9530), so the table is 32 entries wide — and the
+   * stock encoder agrees from the other side by starting its write cursor at
+   * 0x40.
+   *
+   * The stock driver manages ten of them (`MACRO_STOCK.slots`), which for a
+   * while looked like the board's number too. It is not: the driver keeps its
+   * macros in its own database and **never reads this block back** — there is
+   * no 0x0c builder anywhere in its image — so the other 22 are the firmware's
+   * to give and nothing on the board contradicts them.
+   */
   slots: 32,
   eventBytes: 4,
   /**
@@ -199,11 +240,33 @@ export const MACRO_STOP_RECORD: readonly number[] = [0, 0, MACRO_CONTROL.stop, 0
  * of 42.
  */
 export const MACRO_STOCK = {
-  /** Slots its UI exposes, of the 32 the offset table and `macroStart` allow. */
+  /**
+   * Slots its UI exposes, of the 32 the store holds.
+   *
+   * A profile export has exactly ten `macro_item` entries, and its encoder
+   * writes exactly ten offsets. This app offers the same ten by default and
+   * the full 32 in debug mode — see `macroSlotsExposed`.
+   */
   slots: 10,
   /** Records its recorder allows across the whole store — `2 * 325`, 0x436aa4. */
   events: 650,
 } as const
+
+/**
+ * Slots to put in front of someone.
+ *
+ * Ten unless debug mode is on, and the reason is not the board. Writing a body
+ * into slot 12 works — the player takes it — but the stock driver cannot see
+ * it, and the next time that driver writes this block it writes ten macros
+ * from its own database and the other 22 go with it. So the wider set is
+ * behind the same gate as the rest of the protocol lab.
+ */
+export function macroSlotsExposed(
+  debug: boolean,
+  spec: MacroSpec = DEFAULT_MACROS,
+): number {
+  return debug ? spec.slots : Math.min(MACRO_STOCK.slots, spec.slots)
+}
 
 /**
  * The geometry a caller gets when it names no spec.
@@ -247,6 +310,15 @@ export interface MacroEvent {
 export interface Macro {
   slot: number
   events: MacroEvent[]
+  /**
+   * Set when a later slot names this slot's offset, which in the stock layout
+   * means this slot is empty and that one owns the body.
+   *
+   * The player does not know that: bind a key to an aliased slot and the board
+   * plays the owner's body. Writing the store from this app is what makes the
+   * slot really empty.
+   */
+  aliasOf?: number
   /**
    * False when the slot's offset does not name a body at all — it points into
    * the offset table, or past the end of the region.
@@ -296,7 +368,7 @@ export function overStockBudget(
   return macroEventsUsed(macros, spec) > MACRO_STOCK.events
 }
 
-/** Records `macros` would occupy, stop records included. */
+/** Records `macros` would occupy, the stop record every slot gets included. */
 export function macroEventsUsed(
   macros: readonly Macro[],
   spec: MacroSpec = DEFAULT_MACROS,
@@ -339,13 +411,52 @@ export function isStopRecord(blob: ArrayLike<number>, at: number): boolean {
   return ((blob[at + 2] ?? 0) & MACRO_CONTROL.stop) !== 0
 }
 
+/** The offset a slot's table entry names. */
+export function macroOffset(
+  blob: ArrayLike<number>,
+  slot: number,
+): number {
+  const at = slot * 2
+  return (blob[at] ?? 0) | ((blob[at + 1] ?? 0) << 8)
+}
+
+/** True for a record that does nothing and takes no time — unwritten space. */
+export function isBlankRecord(blob: ArrayLike<number>, at: number): boolean {
+  return (
+    (blob[at] ?? 0) === 0 &&
+    (blob[at + 1] ?? 0) === 0 &&
+    (blob[at + 2] ?? 0) === 0 &&
+    (blob[at + 3] ?? 0) === 0
+  )
+}
+
+/**
+ * The last slot naming `offset`, which in the stock layout owns the body there.
+ *
+ * See the module header: the write cursor does not advance for an empty slot,
+ * so every slot before the owner that shares the offset was empty.
+ */
+function ownerOfOffset(
+  blob: ArrayLike<number>,
+  offset: number,
+  spec: MacroSpec,
+): number {
+  let owner = 0
+  // The slot asking is always among them, so a unique offset resolves to the
+  // asker and owns its own body.
+  for (let slot = 0; slot < spec.slots; slot++) {
+    if (macroOffset(blob, slot) === offset) owner = slot
+  }
+  return owner
+}
+
 /**
  * One slot's body, walked the way the player walks it.
  *
  * Stops where the player stops — a control byte with bit 7 set — and, unlike
- * the player, also stops at the end of the region and at the capacity of the
- * store. Those two are what `terminated: false` reports: a body the firmware
- * would run off the end of.
+ * the player, also stops at an all-zero record, at the end of the region and
+ * at the capacity of the store. Those are what `terminated: false` reports: a
+ * body the firmware would run off the end of.
  */
 export function decodeMacro(
   blob: ArrayLike<number>,
@@ -353,13 +464,28 @@ export function decodeMacro(
   spec: MacroSpec = DEFAULT_MACROS,
 ): Macro {
   const tableBytes = spec.slots * 2
-  const at = slot * 2
-  const offset = (blob[at] ?? 0) | ((blob[at + 1] ?? 0) << 8)
+  const offset = macroOffset(blob, slot)
   // An offset inside the table is not a body. It is what a zeroed store says,
   // and reading the table as records would turn other slots' offsets into
   // keystrokes.
   if (offset < tableBytes || offset >= spec.blobBytes) {
     return { slot, events: [], programmed: false, terminated: false, offset }
+  }
+  // A slot a later slot shares an offset with was empty when the store was
+  // written. Report it as empty, but carry the owner's `terminated` — until the
+  // store is rewritten the player would run the owner's body from here, so the
+  // safety question is the owner's.
+  const owner = ownerOfOffset(blob, offset, spec)
+  if (owner !== slot) {
+    const body = decodeMacro(blob, owner, spec)
+    return {
+      slot,
+      events: [],
+      aliasOf: owner,
+      programmed: body.programmed,
+      terminated: body.terminated,
+      offset,
+    }
   }
   const events: MacroEvent[] = []
   const limit = macroEventCapacity(spec)
@@ -377,6 +503,11 @@ export function decodeMacro(
       if (last.action.kind !== 'unknown') events.push(last)
       return { slot, events, programmed: true, terminated: true, offset }
     }
+    // Space the write never covered. The player would walk straight through it
+    // (that is the hazard in this module's header); this app stops and says the
+    // body does not terminate, rather than inventing hundreds of padding
+    // records out of bytes nobody wrote.
+    if (isBlankRecord(blob, cursor)) break
     if (events.length >= limit) break
     events.push(decodeMacroEvent(blob, cursor))
     cursor += spec.eventBytes
@@ -384,7 +515,7 @@ export function decodeMacro(
   return { slot, events, programmed: true, terminated: false, offset }
 }
 
-/** Every slot of the store. */
+/** Every slot of the store. The UI shows as many as it exposes. */
 export function decodeMacros(
   blob: ArrayLike<number>,
   spec: MacroSpec = DEFAULT_MACROS,
@@ -398,9 +529,13 @@ export function decodeMacros(
  * Whether the store on the board is safe for a macro key to be bound to.
  *
  * Every slot has to name a body and every body has to stop, because the keymap
- * record does not say which slot a key will reach — the *user* does, later,
- * with the layer they are on. A store where slot 9 is unterminated is a store
- * where binding slot 3 is still a loaded gun.
+ * record does not say which slot a key will reach — the user does, later, with
+ * the layer they are on. A store where slot 9 is unterminated is one where
+ * binding slot 3 is still a loaded gun.
+ *
+ * All 32, not the ten the UI shows by default: the player takes any slot up to
+ * 31 (0x9500), so an entry nobody has offered is the same hazard as one that
+ * has been — and a stock store leaves 22 of them at zero.
  */
 export function isCanonical(blob: ArrayLike<number>, spec: MacroSpec = DEFAULT_MACROS): boolean {
   return decodeMacros(blob, spec).every((m) => m.programmed && m.terminated)
@@ -455,6 +590,15 @@ export class MacroCapacityError extends Error {
  * in slot order, and **every** body gets a stop record whether or not it has
  * any events. A store this returns is one the player cannot walk off the end
  * of, from any slot, in any order.
+ *
+ * "Any slot" includes the 22 the stock driver leaves at zero, pointing into
+ * the offset table. Every slot here gets its own offset and its own stop
+ * record, so slot 12 plays nothing instead of reading the flash aloud.
+ *
+ * An empty slot gets its own stop record rather than sharing the next body's
+ * offset the way the stock driver leaves it. Four bytes, and it is the
+ * difference between an empty slot being empty and an empty slot quietly
+ * playing its neighbour.
  *
  * The tail past the last body is zeroed rather than left as it was. There is
  * nothing there to preserve — the offset table is the only index into this

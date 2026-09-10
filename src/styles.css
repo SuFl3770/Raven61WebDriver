@@ -1542,6 +1542,50 @@ div.rail { position: sticky; top: 0; }
 .gridband.arriving { animation: grid-in 260ms ease-out; }
 
 /*
+ * The keyboard put away, on a tab that offers it — see `collapsible` in
+ * ui/GridFrame.tsx.
+ *
+ * Fading it in place was the first try and it was the wrong answer: the band
+ * is the tallest thing on the page after the panels, and a transparent one
+ * still holds every pixel of that height. What is wanted is the room, so the
+ * band closes as well as fades, and the panels below rise into the space
+ * rather than waiting under a hole.
+ *
+ * Same trick as `.keycap .sub-slot` further down, for the same reason — the
+ * grid is as tall as the board it is drawing and nobody has measured that.
+ * One row at `1fr` is exactly the height of what is in it, `0fr` is nothing,
+ * and unlike `auto` the two interpolate. The band's own padding and margin go
+ * with it: they are the band's reach around the grid (see `.gridband`), and
+ * leaving them behind would close the grid onto a strip of empty page.
+ *
+ * Only under `.collapsible`, so the bands that cannot be shut are laid out by
+ * the block rules below exactly as they were.
+ */
+.gridband.collapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 260ms ease, opacity 260ms ease, padding 260ms ease,
+    margin 260ms ease;
+}
+.gridband.collapsible > .gridband-body { min-height: 0; overflow: hidden; }
+.gridband.collapsible.shut {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  padding-block: 0;
+  margin-block: 0;
+  /*
+   * Closed is not gone: a band clipped to no height still holds sixty-odd
+   * caps in the tab order, and someone on the keyboard would walk through a
+   * keyboard they cannot see. `visibility` takes them out, delayed by the
+   * length of the close so the board is still drawn while it leaves — the
+   * same arrangement, and the same reasoning, as `div.rail` above.
+   */
+  visibility: hidden;
+  transition: grid-template-rows 260ms ease, opacity 260ms ease, padding 260ms ease,
+    margin 260ms ease, visibility 0s linear 260ms;
+}
+
+/*
  * The room the second line takes, which opens and closes rather than
  * appearing and vanishing.
  *
@@ -1618,6 +1662,11 @@ div.rail { position: sticky; top: 0; }
      for waiting. */
   .keycap .sub, .keycap.tinted { animation: none; }
   .gridband.arriving { animation: none; }
+  /* Both directions, and the shut state named as specifically as the rule
+     that sets it. Dropping the transition drops the `visibility` delay with
+     it, which is what is wanted: with no close to wait for, the band should
+     be out of the tab order in the same frame it leaves the page. */
+  .gridband.collapsible, .gridband.collapsible.shut { transition: none; }
   /* Written as specifically as the rules they override — `.keycap` alone does
      not reach a span inside it. */
   .keycap .stripe, .keycap .sub-slot { transition: none; }

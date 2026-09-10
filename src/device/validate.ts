@@ -558,8 +558,8 @@ function checkConsistency(spec: DeviceSpec, at: (f: string) => string): string[]
   /*
    * Every slot needs its offset *and* a stop record, or the player walks off
    * the end of the store — see protocol/macros.ts. So a store that cannot hold
-   * 32 offsets and 32 stop records is not a store this app can write safely,
-   * and saying so here beats finding out at the first write.
+   * an offset and a stop record for every slot is not one this app can write
+   * safely, and saying so here beats finding out at the first write.
    */
   const macroFloor = spec.macros.slots * (2 + spec.macros.eventBytes)
   if (macroFloor > spec.macros.hostBytes) {

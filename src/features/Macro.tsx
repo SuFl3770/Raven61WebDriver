@@ -12,6 +12,7 @@ import {
   isMacroEmpty,
   MACRO_STOCK,
   macroEventCapacity,
+  macroSlotsExposed,
   macroEventHex,
   macroEventsUsed,
   overStockBudget,
@@ -25,6 +26,7 @@ import {
 import type { KeymapEntry, MacroSnapshot, MacroUse } from '../protocol/types'
 import { link, useCodec, useConnection } from '../state/link'
 import { macroNames, useMacroNames } from '../state/macroNames'
+import { useSettings } from '../state/settings'
 import { GridFrame } from '../ui/GridFrame'
 import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
@@ -128,6 +130,7 @@ export function Macro() {
   /** Unbinding puts the cap back to the board's own factory record. */
   const canUnbind = canBind && supports(codec, 'readKeymapDefaults')
 
+  const { debug } = useSettings()
   const [layer, setLayer] = useState(0)
   const [slot, setSlot] = useState(0)
   const [selectedKey, setSelectedKey] = useState<number | null>(null)
@@ -187,6 +190,11 @@ export function Macro() {
   // It is where the store stops being one the stock driver's recorder budgets
   // for, which matters to anyone who still uses it (see protocol/macros.ts).
   const overStock = draft ? overStockBudget(draft, spec.macros) : false
+  // Ten by default and all 32 in debug mode. Not a board limit — see
+  // `macroSlotsExposed`. A slot past the tenth still gets written, terminated
+  // and read back like any other; what it does not get is a stock driver that
+  // knows it exists.
+  const exposed = macroSlotsExposed(debug, spec.macros)
 
   const editSlot = (events: MacroEvent[]) => {
     if (!draft || !current) return
@@ -294,7 +302,11 @@ export function Macro() {
       await read()
       setStatus(
         written.sent
-          ? t('macro.applied', { slots: written.changed.length, bytes: written.bytes })
+          ? t('macro.applied', {
+              slots: written.changed.length,
+              total: spec.macros.slots,
+              bytes: written.bytes,
+            })
           : t('macro.unchanged'),
       )
     } catch (e) {
@@ -397,7 +409,10 @@ export function Macro() {
   for (const u of uses) if (u.index >= 0) useByKey.set(u.index, u)
 
   const grid = (
-    <GridFrame selectable={false} marquee={false}>
+    // Collapsible here and nowhere else: the grid picks the one cap a macro
+    // is bound to, and everything below it — the recording, the store, the
+    // event list — is longer than the window. See ui/GridFrame.tsx.
+    <GridFrame selectable={false} marquee={false} collapsible>
       <KeyGrid
         selected={selectedKey === null ? undefined : new Set([selectedKey])}
         onSelect={(index) => setSelectedKey(index)}
@@ -436,7 +451,7 @@ export function Macro() {
     render: () => null,
   }))
 
-  const slotOptions: SelectOption[] = Array.from({ length: spec.macros.slots }, (_, i) => {
+  const slotOptions: SelectOption[] = Array.from({ length: exposed }, (_, i) => {
     const name = names[`${spec.id}/${i}`]
     const count = draft?.[i]?.events.length ?? 0
     return {
@@ -483,8 +498,13 @@ export function Macro() {
           {t('macro.capacity', { used, total: capacity })}
         </div>
         <div className="small dim" style={{ marginTop: 4 }}>
-          {t('macro.slotNumbering', { stock: MACRO_STOCK.slots })}
+          {t('macro.slotNumbering', { shown: exposed, total: spec.macros.slots })}
         </div>
+        {debug && exposed > MACRO_STOCK.slots && (
+          <Notice kind="warn">
+            <T k="macro.slotsUnlocked" params={{ stock: MACRO_STOCK.slots, total: exposed }} />
+          </Notice>
+        )}
       </Panel>
 
       <Panel title={t('macro.title')}>
@@ -512,6 +532,14 @@ export function Macro() {
       </Panel>
 
       <Panel title={t('macro.events')}>
+        {snapshot?.macros[slot]?.aliasOf !== undefined && (
+          <Notice kind="warn">
+            <T
+              k="macro.aliasOf"
+              params={{ slot, owner: snapshot!.macros[slot]!.aliasOf! }}
+            />
+          </Notice>
+        )}
         {!current || isMacroEmpty(current) ? (
           <div className="small dim">
             <T k="macro.noEvents" />

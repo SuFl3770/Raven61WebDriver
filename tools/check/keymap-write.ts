@@ -230,6 +230,28 @@ const record = (blob: Uint8Array, layer: number, slot: number) =>
   ok('and names all of them', unnamed.length === 0, unnamed.map((u) => u.toString(16)).join(' '))
 }
 
+// --- a macro key is a slot and the stock repeat byte ---
+{
+  /*
+   * The remap tab's macro category is the one list whose entries are not in a
+   * catalog — they are slots of the store — so the record it builds is pinned
+   * here instead. `70 <slot> 01`: the repeat byte is 1 because that is what the
+   * stock encoder writes and the firmware never reads it back (see
+   * protocol/macros.ts), and a slot has to survive the round trip or a key
+   * would start the wrong body.
+   */
+  for (const slot of [0, 1, 9, 31]) {
+    const binding: KeyBinding = { kind: 'macro', slot, repeat: 1 }
+    eq(`macro #${slot} encodes`, encodeRecord(binding), [0x70, slot, 1])
+    ok(`macro #${slot} round trips`, sameBinding(decodeRecord(encodeRecord(binding)), binding))
+  }
+  // The store holds 32 and the player rejects 32 and up (0x9500), so a slot
+  // byte that has wrapped is a different macro rather than an error.
+  eq('and the slot is one byte', encodeRecord({ kind: 'macro', slot: 0x100, repeat: 1 }), [
+    0x70, 0, 1,
+  ])
+}
+
 // --- the picker's keyboard is a keyboard ---
 {
   /*

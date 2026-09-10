@@ -323,7 +323,13 @@ export interface MacroSnapshot {
   slotMap: SlotMapInfo
   uses: MacroUse[]
   canonical: boolean
-  /** Slots this app could not walk to a stop record. */
+  /**
+   * Slots that name no body, or one whose body does not stop — all 32, not the
+   * ten the UI shows by default.
+   *
+   * The count a safety notice should quote: the player accepts any slot up to
+   * 31, so a slot nobody has been offered decides safety just the same.
+   */
   malformed: number[]
 }
 

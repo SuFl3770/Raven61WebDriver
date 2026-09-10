@@ -7,7 +7,7 @@
  * driver's own encoder at 0x428440 confirmed every field — so the last section
  * here replays bytes the stock driver would really have written. The rest of
  * the checks are still the only thing between a refactor and a keyboard that
- * types by itself. Five things are pinned.
+ * types by itself. Six things are pinned.
  *
  * **The record layout.** `[delay lo][delay hi][control][value]`, with the
  * control byte's bit 7 stopping the player, bit 6 saying press or release, and
@@ -35,6 +35,12 @@
  * runs that record's action before going idle — so a decoder that treats bit 7
  * as pure punctuation silently drops the last event of every stock recording.
  *
+ * **All 32 slots are the store's; ten is the stock driver's.** The codec works
+ * in 32 throughout, because the player takes any slot up to 31 and the stock
+ * driver never reads this block back to disagree. What ten decides is how many
+ * the UI puts in front of someone, and that is a separate function so the
+ * distinction cannot leak into the bytes.
+ *
  * Run it after touching macros.ts or the macro path in engine.ts.
  */
 import { raven61Spec } from '../../src/device/boards/raven61/index'
@@ -57,6 +63,8 @@ import {
   encodeMacroEvent,
   encodeMacros,
   eventForUsage,
+  isBlankRecord,
+  macroSlotsExposed,
   isCanonical,
   macroBlobSize,
   macroEventCapacity,
@@ -285,6 +293,25 @@ function imageOf(blob: Uint8Array): Uint8Array {
   eq('the write is table plus bodies', macroWriteBytes(macros, SPEC), 64 + (32 + 2) * 4)
   eq('records used counts the stop records', macroEventsUsed(macros, SPEC), 32 + 2)
   eq('and free is the rest', macroEventsFree(macros, SPEC), macroEventCapacity(SPEC) - 34)
+  eq('the store holds 32 slots', SPEC.slots, 32)
+  eq('so the first body is at 64', blob[0]! | (blob[1]! << 8), 64)
+
+  // Every slot, not just the ten the UI shows: the player takes any slot up to
+  // 31 (0x9500), and an entry left at zero points into the table itself.
+  ok('every entry names a body past the table',
+    Array.from({ length: 32 }, (_, i) => blob[i * 2]! | (blob[i * 2 + 1]! << 8))
+      .every((at) => at >= 64))
+  ok('and every slot stops when played',
+    Array.from({ length: 32 }, (_, i) => play(imageOf(blob), i)).every((p) => p.stopped))
+  eq('so slot 31 plays nothing', play(imageOf(blob), 31).steps.map((st) => st.keys), [[]])
+  ok('and stops doing it', play(imageOf(blob), 31).stopped)
+
+  // Ten is the stock driver's number and lives outside the codec.
+  eq('the default exposure is the stock ten', macroSlotsExposed(false, SPEC), 10)
+  eq('debug mode opens all of them', macroSlotsExposed(true, SPEC), 32)
+  eq('and it never exceeds the store', macroSlotsExposed(true, { ...SPEC, slots: 8 }), 8)
+  eq('nor the store when the stock number is bigger',
+    macroSlotsExposed(false, { ...SPEC, slots: 4 }), 4)
 
   // The tail is zeroed rather than left as found, so two stores with the same
   // macros are the same bytes — which is what makes the read-back compare mean
@@ -632,7 +659,7 @@ const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
 
   // Its recorder's budget, which is not the firmware's and not this app's.
   eq('the stock recorder allows 650 records', MACRO_STOCK.events, 650)
-  eq('and exposes ten of the 32 slots', MACRO_STOCK.slots, 10)
+  eq('while the store holds 32', SPEC.slots, 32)
   ok('this block holds more than that', macroEventCapacity(SPEC) > MACRO_STOCK.events)
   const oneSlot = (events: MacroEvent[]): Macro[] =>
     [{ slot: 0, events, programmed: true, terminated: true, offset: 0 }]
@@ -640,6 +667,137 @@ const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
   ok('so 660 records is over the stock budget',
     overStockBudget(oneSlot(repeatEvents(tapEvents(0x04, 40, 30), 330)), SPEC))
   ok('while 200 is not', !overStockBudget(oneSlot(repeatEvents(tapEvents(0x04, 40, 30), 100)), SPEC))
+}
+
+// --- the second profile: what a real board came back holding --------------
+{
+  /*
+   * `Raven Driver/new macro.xml`, laid out the way 0x428440 lays it out. The
+   * recording is known: M1 types QWER, M3 ASDF, M5 ZXCV, M7 1234, M9 four
+   * Escapes, M10 is 551 records of filler, and M2, M4, M6, M8 were left empty.
+   *
+   * The offset table it produces is the whole reason this section exists:
+   *
+   *     slot   0    1    2    3    4    5    6    7    8    9
+   *     offset 64   96   96   128  128  160  160  192  192  224
+   *
+   * An empty slot did not advance the cursor, so it carries the *next* body's
+   * offset. Nothing in the bytes says "empty" — the stock driver knows from its
+   * own database, which is why it never reads 0x0c at all.
+   */
+  const stock = new Uint8Array(SPEC.blobBytes)
+  const put = (slot: number, at: number) => {
+    stock[slot * 2] = at & 0xff
+    stock[slot * 2 + 1] = (at >> 8) & 0xff
+  }
+  const TABLE = [64, 96, 96, 128, 128, 160, 160, 192, 192, 224]
+  TABLE.forEach((at, slot) => put(slot, at))
+
+  // Four taps, the last record carrying the stop bit — stock's punctuation.
+  const word = (usages: number[]) => usages.flatMap((u, i) => {
+    const last = i === usages.length - 1
+    return [
+      [0x50, 0, 0x42, u],
+      [1, 0, last ? 0x82 : 0x02, u],
+    ]
+  })
+  const QWER = [0x14, 0x1a, 0x08, 0x15]
+  const ASDF = [0x04, 0x16, 0x07, 0x09]
+  const ZXCV = [0x1d, 0x1b, 0x06, 0x19]
+  const N1234 = [0x1e, 0x1f, 0x20, 0x21]
+  const ESCX4 = [0x29, 0x29, 0x29, 0x29]
+  const bodies: [number, number[]][] = [
+    [64, QWER], [96, ASDF], [128, ZXCV], [160, N1234], [192, ESCX4],
+  ]
+  for (const [at, usages] of bodies) {
+    word(usages).forEach((rec, i) => stock.set(rec, at + i * 4))
+  }
+  // M10, cut off mid-keystroke: its last record is a *press* with the stop bit,
+  // which is control 0xc2 — the board would leave that key held down.
+  const filler = 551
+  for (let i = 0; i < filler; i++) {
+    const last = i === filler - 1
+    stock.set([4, 0, last ? 0xc2 : 0x42, 0x09 + (i % 3)], 224 + i * 4)
+  }
+  const written = 224 + filler * 4
+  eq('the stock store is 2428 bytes', written, 2428)
+
+  const read = decodeMacros(stock, SPEC)
+  eq('the codec walks all 32', read.length, 32)
+  eq('but only ten would be shown', macroSlotsExposed(false, SPEC), 10)
+  ok('and the 22 the stock driver left at zero name no body',
+    read.slice(10).every((m) => !m.programmed))
+
+  // --- the recording reads back as what was recorded ---
+  const usagesOf = (m: Macro) =>
+    m.events.filter((e) => e.press && e.action.kind === 'key')
+      .map((e) => (e.action as { kind: 'key'; usage: number }).usage)
+  eq('slot 0 types QWER', usagesOf(read[0]!), QWER)
+  eq('slot 2 types ASDF', usagesOf(read[2]!), ASDF)
+  eq('slot 4 types ZXCV', usagesOf(read[4]!), ZXCV)
+  eq('slot 6 types 1234', usagesOf(read[6]!), N1234)
+  eq('slot 8 types Escape four times', usagesOf(read[8]!), ESCX4)
+  eq('and each is eight records', read[0]!.events.length, 8)
+  ok('every one of them stops', [0, 2, 4, 6, 8].every((i) => read[i]!.terminated))
+  eq('the delays are milliseconds as recorded', read[0]!.events[0]!.delayMs, 0x50)
+
+  // --- the empty slots ---
+  eq('slot 1 is empty', read[1]!.events, [])
+  eq('and says slot 2 owns its offset', read[1]!.aliasOf, 2)
+  eq('slot 3 defers to 4', read[3]!.aliasOf, 4)
+  eq('slot 5 defers to 6', read[5]!.aliasOf, 6)
+  eq('slot 7 defers to 8', read[7]!.aliasOf, 8)
+  ok('the slots with bodies claim no owner',
+    [0, 2, 4, 6, 8, 9].every((i) => read[i]!.aliasOf === undefined))
+  // Faithfully: the board has not been told they are empty.
+  eq('the board would play slot 2 from slot 1',
+    play(imageOf(stock), 1).steps.length, play(imageOf(stock), 2).steps.length)
+
+  // --- M10 and the key it leaves held ---
+  eq('slot 9 holds all 551 records', read[9]!.events.length, filler)
+  ok('and stops', read[9]!.terminated)
+  const played = play(imageOf(stock), 9)
+  ok('the player stops there too', played.stopped)
+  eq('but leaves the last key down', played.steps.at(-1)!.keys.length, 1)
+
+  // --- the bug this profile found: no phantom padding ---
+  // Slots whose offset lands past the write read back as blank records. The
+  // player would walk them; the decoder used to as well, all the way to the
+  // capacity of the store, which is where the hundreds of `00 00 00 00` rows
+  // came from.
+  const trailing = new Uint8Array(SPEC.blobBytes)
+  put(0, 64)
+  trailing.set(stock.subarray(0, 20))
+  for (let slot = 1; slot < 10; slot++) {
+    trailing[slot * 2] = written & 0xff
+    trailing[slot * 2 + 1] = (written >> 8) & 0xff
+  }
+  trailing.set(stock.subarray(64, written), 64)
+  const past = decodeMacros(trailing, SPEC)
+  eq('a slot pointing past the write decodes as no events', past[9]!.events, [])
+  ok('and is reported unterminated', !past[9]!.terminated)
+  ok('never as padding up to capacity',
+    past.every((m) => m.events.length < macroEventCapacity(SPEC)))
+  ok('a blank record is what stops it', isBlankRecord(trailing, written))
+  ok('so the store is not canonical', !isCanonical(trailing, SPEC))
+
+  // --- writing it back makes every slot really empty ---
+  const rewritten = encodeMacros(read, SPEC)
+  ok('a rewrite is canonical', isCanonical(rewritten, SPEC))
+  const after = decodeMacros(rewritten, SPEC)
+  ok('and no slot is an alias any more',
+    after.every((m) => m.aliasOf === undefined))
+  eq('the empty ones are empty', after[1]!.events, [])
+  eq('while the recordings survive', usagesOf(after[0]!), QWER)
+  eq('and so does the long one', after[9]!.events.length, filler)
+  ok('the upper 22 become real empty slots',
+    after.slice(10).every((m) => m.programmed && m.terminated && m.events.length === 0))
+  ok('and each plays nothing',
+    [10, 20, 31].every((i) => {
+      const p = play(imageOf(rewritten), i)
+      return p.stopped && p.steps.every((st) => st.keys.length === 0)
+    }))
+  ok('slot 1 now plays nothing', play(imageOf(rewritten), 1).steps.every((st) => st.keys.length === 0))
 }
 
 if (fails.length > 0) {

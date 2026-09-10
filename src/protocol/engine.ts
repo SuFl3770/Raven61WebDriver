@@ -83,10 +83,10 @@ import {
   decodeMacros,
   encodeMacros,
   isCanonical,
+  malformedSlots,
   macroBlobSize,
   macroBodyHex,
   macroWriteBytes,
-  malformedSlots,
   sameMacro,
   type Macro,
 } from './macros'

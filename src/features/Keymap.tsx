@@ -14,12 +14,15 @@ import {
   decodeRecord,
   encodeRecord,
   factoryBinding,
+  isUnsafe,
   sameBinding,
   type KeyBinding,
 } from '../protocol/keymap'
-import type { KeymapEntry } from '../protocol/types'
+import { isMacroEmpty, macroSlotsExposed } from '../protocol/macros'
+import type { KeymapEntry, MacroSnapshot } from '../protocol/types'
 import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
+import { useSettings } from '../state/settings'
 import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { GridFrame } from '../ui/GridFrame'
@@ -53,14 +56,21 @@ import { SubTabs, type SubTab } from '../ui/SubTabs'
  *     would then have to be used to repair. So the write stays an explicit
  *     press, and the button says how many keys are waiting.
  *
- * Two things the panel does not offer:
+ * What the panel does not offer:
  *
  *   - layers 2 and 3. The firmware indexes four, and only two have storage; the
  *     other two land on the per-key RGB blob and the macro table.
- *   - macros and advanced keys. Both are records that point *into another
- *     block*, and neither block is written by this app yet, so binding one
- *     would point at whatever happens to be there. They are decoded and shown,
- *     which is the honest half of the feature.
+ *   - advanced keys. A `0x90`-`0x95` record points *into another block* and
+ *     this app does not write that block, so binding one would point at
+ *     whatever happens to be there. They are decoded and shown, which is the
+ *     honest half of the feature.
+ *
+ * Macros were in that list until this tab could check the store. They are the
+ * same shape of hazard — a `0x70` record names a slot in a block written
+ * somewhere else — but a *checkable* one: the store says whether every slot
+ * points at a body that stops, and a key bound to one that does not sends the
+ * player walking through flash. So the macro category reads the store itself,
+ * and binds nothing until it comes back sound. See `protocol/macros.ts`.
  */
 
 /**
@@ -69,8 +79,27 @@ import { SubTabs, type SubTab } from '../ui/SubTabs'
  * Basic is this project's own HID table (keycodes.ts) rather than a catalog
  * entry: the stock tab draws it as a keyboard instead of a list, and it is the
  * one group whose members are already named everywhere else in this app.
+ *
+ * Macro is the stock driver's sixth list (`edi` 5 in its builder at 0x414700)
+ * and the last one this app was missing, but it is not a catalog either — its
+ * entries are slots of a block on the board. Debug is nobody's list; see the
+ * two constants below.
  */
 const BASIC = 'keymap.group.basic'
+/**
+ * Macros, which are not a `BindingGroup`: the entries are the board's own store
+ * rather than a catalog, so the list is whatever a read of it found.
+ */
+const MACRO = 'keymap.group.macro'
+/**
+ * Any record at all, typed in. Debug mode only — see `state/settings.ts`.
+ *
+ * The catalogs are what the stock driver can produce, which is the right
+ * default and the wrong ceiling: the firmware decodes type bytes no list here
+ * carries, and the key path will put any usage in the report. This is the way
+ * to try one without adding it to a catalog on a guess.
+ */
+const DEBUG = 'keymap.group.debug'
 /** The section KC_NO is in, and where the KC_TRNS button joins it. */
 const UNBOUND = 'keymap.section.unbound'
 
@@ -84,7 +113,36 @@ const span = (u: number) => Math.round(u * 4)
 const CATEGORIES: { id: string; nameKey: MessageKey }[] = [
   { id: BASIC, nameKey: 'keymap.group.basic' },
   ...BINDING_GROUPS.map((g) => ({ id: g.nameKey as string, nameKey: g.nameKey })),
+  { id: MACRO, nameKey: 'keymap.group.macro' },
 ]
+const DEBUG_CATEGORY = { id: DEBUG, nameKey: 'keymap.group.debug' } as const
+
+/**
+ * Reads a byte someone typed, in whatever base they meant.
+ *
+ * `0x` or a bare hex pair for the way records are written down everywhere else
+ * in this app and in the docs; plain decimal because a HID usage table is as
+ * likely to be read off a list of decimals. Undefined for anything that is not
+ * one byte, which is what disables the button rather than writing a 0.
+ */
+function readByte(text: string): number | undefined {
+  const s = text.trim()
+  if (s === '') return undefined
+  const hex = /^(0x|0X)?[0-9a-fA-F]{1,2}$/.test(s)
+  const dec = /^[0-9]{1,3}$/.test(s)
+  // A bare "10" is ambiguous and this app reads records in hex, so hex wins —
+  // which is also what the `0x` form makes explicit for anyone who cares.
+  const value = hex ? parseInt(s.replace(/^0[xX]/, ''), 16) : dec ? Number(s) : NaN
+  return Number.isInteger(value) && value >= 0 && value <= 0xff ? value : undefined
+}
+
+/** The three bytes of a record, typed as `70 01 01` or `0x70 1 1`. */
+function readRecord(text: string): [number, number, number] | undefined {
+  const parts = text.trim().split(/[\s,:]+/).filter(Boolean)
+  if (parts.length !== 3) return undefined
+  const bytes = parts.map(readByte)
+  return bytes.every((b) => b !== undefined) ? (bytes as [number, number, number]) : undefined
+}
 
 /** Per layer, the keys the board reported, in this project's key order. */
 type LayerRead = { entries: KeymapEntry[] }
@@ -157,6 +215,8 @@ export function Keymap() {
   const groups = bindingGroups(spec.keymap.layers)
   const { connected } = useConnection()
 
+  const { debug } = useSettings()
+
   const [layer, setLayer] = useState(0)
   const [category, setCategory] = useState<string>(BASIC)
   /** The one key being bound. Local: nothing else on this tab acts on a set. */
@@ -175,9 +235,30 @@ export function Keymap() {
   const [status, setStatus] = useState<string | null>(null)
   const [mismatch, setMismatch] = useState<string | null>(null)
 
+  /** The macro store, when the macro category has read it. */
+  const [macros, setMacros] = useState<MacroSnapshot | null>(null)
+  const [macroBusy, setMacroBusy] = useState(false)
+  const [macroError, setMacroError] = useState<string | null>(null)
+  const macroInFlight = useRef(false)
+  /** The debug category's two fields, as typed. */
+  const [rawUsage, setRawUsage] = useState('')
+  const [rawRecord, setRawRecord] = useState('')
+
   const canRead = supports(codec, 'readKeymap')
   const canWrite = supports(codec, 'writeKeymap')
   const canReset = supports(codec, 'readKeymapDefaults')
+  const canMacros = supports(codec, 'readMacros')
+
+  /*
+   * Which category is open, which is not quite which one was picked: turning
+   * debug mode off takes its category out of the strip, and the one that was
+   * picked would then be a category with no tab. Resolved while rendering
+   * rather than corrected in an effect, the way App.tsx resolves the same
+   * thing for the debug *tabs* — an effect would leave one frame with a strip
+   * that has nothing selected in it.
+   */
+  const categoryTabs = [...CATEGORIES, ...(debug ? [DEBUG_CATEGORY] : [])]
+  const open = categoryTabs.some((c) => c.id === category) ? category : BASIC
 
   const read = reads[layer]
   const layerEdits = edits[layer] ?? {}
@@ -249,6 +330,42 @@ export function Keymap() {
     void readLayer(layer)
   }, [connected, canRead, layer, readLayer])
 
+  /*
+   * The macro store, read when its category is opened.
+   *
+   * Not on entering the tab: it is a 4 KB read for a category most sessions
+   * never open, and every other tab that wants it reads it itself. Once per
+   * connection is enough — nothing here writes the store, so what changes it is
+   * the macro tab, and coming back to this one after that is a category switch
+   * away either way.
+   *
+   * Failure is not retried, for the reason the layer read is not: a board that
+   * answers nothing would be asked once per render. Leaving the category and
+   * coming back tries again.
+   */
+  useEffect(() => {
+    if (open !== MACRO || !connected || !canMacros) return
+    if (macros !== null || macroInFlight.current) return
+    if (!codec.readMacros) return
+    macroInFlight.current = true
+    setMacroBusy(true)
+    setMacroError(null)
+    codec
+      .readMacros(link)
+      .then(setMacros)
+      .catch((e: unknown) => setMacroError(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        macroInFlight.current = false
+        setMacroBusy(false)
+      })
+  }, [open, connected, canMacros, codec, macros])
+
+  /* A board swap or a disconnect makes the store this app read someone else's. */
+  useEffect(() => {
+    if (!connected) setMacros(null)
+  }, [connected])
+
+
   /**
    * Steps to the next cap, in layout order.
    *
@@ -309,6 +426,11 @@ export function Keymap() {
       // this far: until the write lands they are this tab's business alone.
       if (layer === 0) legends.set(applied)
       setEdits((prev) => ({ ...prev, [layer]: {} }))
+      // The macro category lists which keys start each body, and that list is
+      // read out of the keymap — so a write to the keymap is what makes it
+      // stale. Dropping the snapshot re-reads it, and only while that category
+      // is the one open (see the effect above).
+      setMacros(null)
       setStatus(
         result.slots.length === 0
           ? t('keymap.noChange')
@@ -387,6 +509,167 @@ export function Keymap() {
   const unmapped = read
     ? keys.filter((k) => read.entries[k.index]?.slot === undefined)
     : []
+
+  /**
+   * The macro slots, as buttons that bind one.
+   *
+   * Two things make this list different from a catalog. It is **read**: the
+   * entries are slots of the board's own store, so how many have anything in
+   * them is a fact about the board and not about this app. And it is **gated**:
+   * a `0x70` record sends the player to `0x21100 + table[slot]`, and the player
+   * has no upper bound on its cursor — bound to a slot whose offset names no
+   * body, a key walks flash pressing whatever it reads. `canonical` is the
+   * store saying every slot ends in a stop record, and nothing binds until it
+   * does. That is the same rule the macro tab's own bind button uses, and the
+   * reason this category could be added at all.
+   *
+   * The repeat byte goes out as 1, which is what the stock driver writes. The
+   * firmware stores it at `gp-0x781` and never reads it back, so it is not
+   * offered as a setting — see `macro.repeatNote`.
+   */
+  const macroSlots = macroSlotsExposed(debug, spec.macros)
+  const macroUses = macros ? macros.uses.filter((u) => u.layer === layer) : []
+  const macroPicker = !canMacros ? (
+    <Notice kind="warn">
+      <T k="keymap.macro.unsupported" />
+    </Notice>
+  ) : macroError ? (
+    <Notice kind="err">{macroError}</Notice>
+  ) : macros === null ? (
+    <div className="small dim">
+      {macroBusy ? t('keymap.macro.reading') : t('keymap.macro.unread')}
+    </div>
+  ) : (
+    <>
+      <div style={{ marginBottom: 10 }}>
+        <Notice kind={macros.canonical ? 'ok' : 'warn'}>
+          {macros.canonical ? (
+            <T k="keymap.macro.ready" params={{ total: spec.macros.slots }} />
+          ) : (
+            <T k="keymap.macro.unsafe" params={{ slots: macros.malformed.length }} />
+          )}
+        </Notice>
+      </div>
+      <div className="row" style={{ gap: 4 }}>
+        {Array.from({ length: macroSlots }, (_, slot) => {
+          const body = macros.macros[slot]
+          const binding: KeyBinding = { kind: 'macro', slot, repeat: 1 }
+          const count = body?.events.length ?? 0
+          return (
+            <button
+              key={slot}
+              className={`picker-choice${
+                current && sameBinding(current, binding) ? ' primary' : ''
+              }`}
+              disabled={none || !macros.canonical}
+              title={
+                !body || isMacroEmpty(body)
+                  ? t('keymap.macro.slotEmpty', { slot })
+                  : t('keymap.macro.slotTitle', { slot, count })
+              }
+              onClick={() => assign(binding)}
+            >
+              {`#${slot}`}
+            </button>
+          )
+        })}
+      </div>
+      {macroUses.length > 0 && (
+        <div className="small dim" style={{ marginTop: 8 }}>
+          {t('keymap.macro.inUse')} — {macroUses.map((u) => `#${u.macro} ${u.label}`).join(', ')}
+        </div>
+      )}
+      <div className="small dim" style={{ marginTop: 10 }}>
+        <T k="keymap.macro.note" />
+      </div>
+      {debug && (
+        <div className="small dim" style={{ marginTop: 6 }}>
+          <T k="keymap.macro.slotsUnlocked" params={{ total: spec.macros.slots }} />
+        </div>
+      )}
+    </>
+  )
+
+  /**
+   * Debug mode's own category: a usage, or a whole record, typed in.
+   *
+   * The catalogs stop where the stock driver stops, which is the right default
+   * — a list this app cannot cite is a list of guesses. It is the wrong ceiling
+   * for a protocol lab, though: the firmware's dispatch decodes types no
+   * catalog here carries (`0x22`, `0x23`, `0x40`, `0x50`, `0x60`, `0x80`), and
+   * the key path puts any usage byte into the report unchanged. So the two
+   * fields, and no list.
+   *
+   * The usage field is separate from the record field on purpose, because it is
+   * the one people actually want: it rides the modifier strip above, so
+   * `0x66` and Shift is one click apart from `0x66` alone.
+   */
+  const usageByte = readByte(rawUsage)
+  const recordBytes = readRecord(rawRecord)
+  const recordBinding = recordBytes ? decodeRecord(recordBytes) : undefined
+  const recordUnsafe = recordBinding !== undefined && isUnsafe(recordBinding)
+  const badInput =
+    (rawUsage.trim() !== '' && usageByte === undefined) ||
+    (rawRecord.trim() !== '' && recordBytes === undefined)
+  const debugPicker = (
+    <>
+      <div className="row" style={{ gap: 8 }}>
+        <span className="small dim">{t('keymap.debug.usage')}</span>
+        <input
+          type="text"
+          className="mono"
+          style={{ width: '6rem' }}
+          placeholder="0x66"
+          value={rawUsage}
+          onChange={(e) => setRawUsage(e.target.value)}
+        />
+        <b>{usageByte === undefined ? '—' : keycodeLabel(usageByte)}</b>
+        <button
+          className="picker-choice"
+          disabled={none || usageByte === undefined}
+          onClick={() =>
+            usageByte !== undefined && assign({ kind: 'key', usage: usageByte, modifiers })
+          }
+        >
+          {t('keymap.debug.usageApply')}
+        </button>
+      </div>
+
+      <div className="row" style={{ gap: 8, marginTop: 8 }}>
+        <span className="small dim">{t('keymap.debug.record')}</span>
+        <input
+          type="text"
+          className="mono"
+          style={{ width: '8rem' }}
+          placeholder="70 00 01"
+          value={rawRecord}
+          onChange={(e) => setRawRecord(e.target.value)}
+        />
+        <b>{recordBinding === undefined ? '—' : bindingLabel(recordBinding, keycodeLabel)}</b>
+        <button
+          className="picker-choice"
+          disabled={none || recordBinding === undefined || recordUnsafe}
+          onClick={() => recordBinding !== undefined && assign(recordBinding)}
+        >
+          {t('keymap.debug.recordApply')}
+        </button>
+      </div>
+
+      {badInput && (
+        <div className="small err" style={{ marginTop: 8 }}>
+          {t('keymap.debug.bad')}
+        </div>
+      )}
+      {recordUnsafe && (
+        <div className="small err" style={{ marginTop: 8 }}>
+          <T k="keymap.debug.unsafe" />
+        </div>
+      )}
+      <div className="small dim" style={{ marginTop: 10 }}>
+        <T k="keymap.debug.note" />
+      </div>
+    </>
+  )
 
   /**
    * The layer strip is this tab's section strip: it chooses what is edited, and
@@ -474,7 +757,11 @@ export function Keymap() {
         </div>
 
         <div style={{ marginTop: 14 }}>
-          {category === BASIC ? (
+          {open === MACRO ? (
+            macroPicker
+          ) : open === DEBUG ? (
+            debugPicker
+          ) : open === BASIC ? (
             /*
              * A keyboard, not a list of groups. See KEYBOARD_ROWS: a remap is
              * "make this key send Home", and the hand knows where Home is.
@@ -518,7 +805,7 @@ export function Keymap() {
              */
             <>
               <div className="picker-sections">
-                {(groups.find((g) => g.nameKey === category)?.sections ?? []).map((s, i) => (
+                {(groups.find((g) => g.nameKey === open)?.sections ?? []).map((s, i) => (
                   <div className="picker-section" key={s.nameKey ?? i}>
                     {s.nameKey && <div className="small dim">{t(s.nameKey)}</div>}
                     <div className="row" style={{ gap: 4 }}>
@@ -556,7 +843,7 @@ export function Keymap() {
               {/* Under the whole row rather than under its own section: the
                   sections are columns now, and a paragraph in one of them would
                   be a two-word-wide wall of text. */}
-              {category === 'keymap.group.special' && (
+              {open === 'keymap.group.special' && (
                 <div className="small dim" style={{ marginTop: 10 }}>
                   <T k="keymap.trnsNote" />
                 </div>
@@ -592,7 +879,7 @@ export function Keymap() {
    * where the things that act on the grid live — and the grid is what follows
    * the layer.
    */
-  const categories: SubTab[] = CATEGORIES.map((c) => ({
+  const categories: SubTab[] = categoryTabs.map((c) => ({
     id: c.id,
     labelKey: c.nameKey,
     render: () => picker,
@@ -713,7 +1000,7 @@ export function Keymap() {
       <SubTabs
         tabs={categories}
         label={t('keymap.categories')}
-        active={category}
+        active={open}
         onActive={setCategory}
       />
     </>

@@ -34,7 +34,7 @@ import { FACTORY_GLOBAL } from '../protocol/global'
 import { encodeKeyPerfRecord } from '../protocol/keyPerf'
 import { ADVANCED_KEY_BLOCKS } from '../protocol/advancedKeys'
 import { keyRgbBlobSize } from '../protocol/keyRgb'
-import { macroBlobSize } from '../protocol/macros'
+import { MACRO_STOCK, macroBlobSize } from '../protocol/macros'
 import {
   LIGHT_CONTROL,
   LIGHT_LIMITS,
@@ -113,14 +113,23 @@ export class DemoBoard {
   private advancedPair!: Uint8Array
   private advancedToggle!: Uint8Array
   /**
-   * The macro store, zeroed — and zeroed is not a shortcut here, it is the
-   * state worth demonstrating.
+   * The macro store, laid out the way the stock driver leaves it.
    *
-   * A factory reset fills 0x21100 with zeros (docs §3.8), which leaves all 32
-   * offsets pointing into the offset table rather than at a body. On real
-   * hardware that is the state in which binding a macro key sends the player
-   * walking out of the region, so it is the state the panel has to notice and
-   * offer to fix. A demo that started with a tidy store would never show that.
+   * Not zeroed, and not tidy either — both of those hide the two states this
+   * panel exists to cope with, and a real board sent back this shape:
+   *
+   * - an **empty slot carries the next body's offset**, because the stock
+   *   encoder's cursor does not advance for a body with no records. Nothing in
+   *   the bytes says "empty"; the driver knows from its own database, which is
+   *   why it never reads the store back at all.
+   * - the **22 entries it does not manage stay at zero**, pointing into the
+   *   offset table, which is the state where binding a macro key sends the
+   *   player walking through the flash.
+   *
+   * `buildMacros` writes the profile a real board was read from: QWER in slot
+   * 0, ASDF in 2, ZXCV in 4, 1234 in 6, and the four slots between them empty.
+   * A store the app has written is canonical; this one is not, and the panel
+   * has to say so before it will bind anything.
    */
   private macros!: Uint8Array
 
@@ -411,7 +420,44 @@ export class DemoBoard {
     this.advancedDks = new Uint8Array(ADVANCED_KEY_BLOCKS.dks.blobSize)
     this.advancedPair = new Uint8Array(ADVANCED_KEY_BLOCKS.pair.blobSize)
     this.advancedToggle = new Uint8Array(ADVANCED_KEY_BLOCKS.toggle.blobSize)
-    this.macros = new Uint8Array(macroBlobSize(this.spec.macros))
+    this.macros = this.buildMacros()
+  }
+
+  /**
+   * A stock-shaped macro store. See the field's comment for why this shape.
+   *
+   * Four recorded slots and four empty ones between them, in the stock layout:
+   * offsets 64, 96, 96, 128, 128, 160, 160, 192, then the last two slots share
+   * the byte after the final body — the trailing-empty case, which reads back
+   * as unwritten space rather than as a body.
+   */
+  private buildMacros(): Uint8Array {
+    const spec = this.spec.macros
+    const blob = new Uint8Array(macroBlobSize(spec))
+    const words = [
+      [0x14, 0x1a, 0x08, 0x15], // QWER
+      [0x04, 0x16, 0x07, 0x09], // ASDF
+      [0x1d, 0x1b, 0x06, 0x19], // ZXCV
+      [0x1e, 0x1f, 0x20, 0x21], // 1234
+    ]
+    let cursor = spec.slots * 2
+    // Ten, because that is how many the stock driver writes — the rest of the
+    // table stays at zero, which is the state the panel has to notice.
+    for (let slot = 0; slot < MACRO_STOCK.slots; slot++) {
+      blob[slot * 2] = cursor & 0xff
+      blob[slot * 2 + 1] = (cursor >> 8) & 0xff
+      // Odd slots were left empty, so the cursor stays where it is and the
+      // entry ends up naming the next body.
+      const word = slot % 2 === 0 ? words[slot / 2] : undefined
+      if (!word) continue
+      word.forEach((usage, i) => {
+        const last = i === word.length - 1
+        blob.set([90, 0, 0x42, usage], cursor)
+        blob.set([120, 0, last ? 0x82 : 0x02, usage], cursor + spec.eventBytes)
+        cursor += spec.eventBytes * 2
+      })
+    }
+    return blob
   }
 
   private buildGlobal(): Uint8Array {

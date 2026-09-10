@@ -242,6 +242,14 @@ export interface AdvancedKeySpec {
  * deliberate and is left alone.
  */
 export interface MacroSpec {
+  /**
+   * Slots the store holds — offsets in the table, and bodies this app lays out.
+   *
+   * A firmware number: the player rejects a slot above 31 and indexes the
+   * table at `base + slot * 2`. What the stock driver *manages* is fewer, and
+   * that lives in `MACRO_STOCK` because it is a fact about the vendor's
+   * software rather than about the board.
+   */
   slots: number
   eventBytes: number
   blobBytes: number
