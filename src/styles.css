@@ -199,6 +199,16 @@
    * disagree. The value is what the bar measured before it was given one.
    */
   --topbar-h: 3.875rem;
+  /*
+   * How wide a scrollbar is, which the app decides for itself further down —
+   * see `::-webkit-scrollbar`.
+   *
+   * Named because the tab's title and its key grid do not scroll and the
+   * panels below them do, so the scrollbar is laid out inside the panels
+   * alone. Padding the other two by the same amount is what keeps the three
+   * right-hand edges in one line — see `.tab-scroll`.
+   */
+  --scrollbar: 12px;
   --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   /*
    * What the wordmark falls back to while its own face loads, or if the file
@@ -858,8 +868,66 @@ div.rail { position: sticky; top: 0; }
 .rail-foot .version-badge { justify-content: center; border-radius: var(--r-sm); }
 
 /* `min-width: 0` so a wide child — a table, a log line — makes itself scroll
-   instead of pushing the whole row wider than the column. */
-.content { flex: 1; min-width: 0; }
+   instead of pushing the whole row wider than the column.
+
+   As tall as the row rather than as tall as what is in it, the way the rail
+   beside it already is: the tab inside divides that height between the part
+   that stays put and the part that scrolls, and it cannot divide a height
+   nobody has stated. The percentage resolves because .body is a flex item of
+   a 100vh column. */
+.content { flex: 1; min-width: 0; height: 100%; }
+
+/*
+ * A tab, in three bands: its title, its key grid, and the panels — and only
+ * the last of them scrolls.
+ *
+ * It used to be one column that scrolled as a whole, which meant reading the
+ * second panel on a tab took the keyboard off the screen. That is the wrong
+ * thing to lose: every panel below the grid is about the keys picked in it,
+ * and the sub-tab strip that chooses between them went with it. So the tab is
+ * a fixed-height column now, and what is long inside it is given its own box
+ * to be long in.
+ *
+ * The grid gets there by being rendered into `.tab-pin` from wherever it is
+ * declared — see ui/TabPinned.tsx. The sub-tab strip stays where it is
+ * written and sticks to the top of the scrolling box instead, which is enough
+ * for something that starts at the top of it — see `.subtabs`.
+ */
+.tab-in {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tab-in > .tab-title, .tab-in > .tab-pin { flex: 0 0 auto; }
+/*
+ * Nothing on the tabs that draw no grid, and on those it should take no room
+ * at all — not even the flex gap it would otherwise be given a share of.
+ */
+.tab-pin:empty { display: none; }
+/*
+ * The panels, and the only part of a tab that moves.
+ *
+ * `min-height` rather than nothing: on a window short enough that the title,
+ * the grid and a readable panel do not all fit, this box holds its floor and
+ * the column overflows .body instead — which scrolls, so the grid can be
+ * pushed off the top by hand. Squeezing the panels to a slot too small to
+ * read would be the worse of the two failures, and there is no third option
+ * short of dropping the grid.
+ */
+.tab-scroll {
+  flex: 1 1 auto;
+  min-height: 10rem;
+  overflow: auto;
+  /* Reserved whether or not it is needed, so a short section and a long one
+     do not lay their panels out at two different widths. */
+  scrollbar-gutter: stable;
+}
+/* The bands above it are not scroll containers and get no gutter of their
+   own, so they are padded by what one costs — otherwise the grid and the
+   tab's controls would sit a scrollbar's width to the right of every panel
+   under them. */
+.tab-title, .tab-pin { padding-right: var(--scrollbar); }
 
 /*
  * The open tab's name, at the head of its content: the name in the reader's
@@ -1074,13 +1142,37 @@ div.rail { position: sticky; top: 0; }
   .topbar .menu, .scrim { display: none; }
 }
 
-/* Tool navigation inside the debug tab. Sits in the content flow rather than
-   against the window edge, so it reads as a level below the tab it is in. */
+/*
+ * Navigation between the sections of one tab. Sits in the content flow rather
+ * than against the window edge, so it reads as a level below the tab it is
+ * in.
+ *
+ * Held at the top of the scrolling box while the section under it moves. On
+ * the tabs that draw a key grid the strip is the first thing in that box, so
+ * it never actually travels — it simply stays under the grid, which is where
+ * it was; the debug tab, where an analysis panel comes first, is the one
+ * place it slides up before it catches.
+ *
+ * Sticky is enough here and would not be for the grid: a sticky element is
+ * scrolled *through* on the way to its perch, and the grid is far too tall to
+ * be worth that. It is lifted out of the box entirely — see `.tab-pin`.
+ *
+ * The room above the strip is padding rather than the margin it was, so it
+ * belongs to the strip and travels with it. As a margin it would be scrolled
+ * away and the strip would jump the last few pixels into place.
+ */
 .subtabs {
+  position: sticky;
+  top: 0;
+  /* Over the section, which scrolls under it. */
+  z-index: 2;
+  /* The page's own ground: the panels below carry no fill of their own, so
+     without this they would show through the strip they are sliding under. */
+  background: var(--bg);
   display: flex;
   justify-content: center;
   gap: 4px;
-  margin-top: 6px;
+  padding-top: 6px;
   padding-bottom: 2px;
   border-bottom: 1px solid var(--line);
 }
@@ -1302,9 +1394,109 @@ div.rail { position: sticky; top: 0; }
 @keyframes section-in-back {
   from { opacity: 0; transform: translateX(-14px); }
 }
-.tab-in { animation: tab-in 180ms ease-out; }
+/*
+ * What a tab switch moves, and what it leaves alone.
+ *
+ * This was one rule on the whole column, so the keyboard slid in with
+ * everything else — and the keyboard is the one thing that is the same on
+ * every tab. Naming the two bands either side of it instead says what is
+ * actually happening: the name is new and the panels are new, the board is
+ * the board. See `.tab-pin`, which is the band between them and is left out
+ * of this on purpose.
+ */
+.tab-title, .tab-scroll { animation: tab-in 180ms ease-out; }
 .section-in { animation: section-in-forward 160ms ease-out; }
 .section-in.back { animation: section-in-back 160ms ease-out; }
+
+/*
+ * What the caps say about the setting, arriving.
+ *
+ * A tab switch rebuilds the grid, so every cap is a new element and these run
+ * without anything having to ask whether the tab changed. That is the whole
+ * of the effect now that the board itself holds still: the numbers, the
+ * switch bands and the paint fade up in place on a keyboard that never moved.
+ *
+ * The legend is left out. It is the key's name, it is the same name on the
+ * tab just left, and a name that fades in reads as a name that changed. So is
+ * the travel bar, which is live data on the monitor and has no business
+ * fading every time it is drawn.
+ */
+@keyframes cap-info-in {
+  from { opacity: 0; }
+}
+.keycap .sub { animation: cap-info-in 240ms ease-out; }
+
+/*
+ * A keyboard appearing where there was none: a board just plugged in, or a
+ * tab that draws one opened from a tab that does not.
+ *
+ * Only then. Moving between two tabs that both draw a keyboard leaves the
+ * keyboard alone — it never went anywhere, and animating it would say it did
+ * (see `.tab-title` above, and `bandOnScreen` in ui/GridFrame.tsx for how the
+ * two cases are told apart). It rises the way the rest of a tab does, a
+ * little further and a little slower: it is the largest thing on the page,
+ * and the same distance in the same time reads as hurried on something that
+ * size.
+ */
+@keyframes grid-in {
+  from { opacity: 0; transform: translateY(14px); }
+}
+.gridband.arriving { animation: grid-in 260ms ease-out; }
+
+/*
+ * The room the second line takes, which opens and closes rather than
+ * appearing and vanishing.
+ *
+ * A cap centres what it holds, so a line that simply stopped being rendered
+ * dropped the legend a few pixels in one frame — on a keyboard of eighty-odd
+ * caps, all at once. This is the grid trick for animating to the height of
+ * content nobody measured: one row at `1fr` is exactly as tall as what is in
+ * it, `0fr` is nothing, and unlike `auto` the two interpolate. The line
+ * inside hides its own overflow, which is what lets the row close over it.
+ *
+ * Height and opacity together, so the line is gone before the gap is.
+ */
+.keycap .sub-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  /*
+   * Never squeezed. A slot that could shrink would take the cap's shortage
+   * out of the value rather than out of the cap — a long binding on a 1u key
+   * would lose its last line to a flex box rather than to the cap's own edge,
+   * which is where this app already clips.
+   */
+  flex: 0 0 auto;
+  transition: grid-template-rows 240ms ease, opacity 240ms ease;
+}
+.keycap .sub-slot.shut { grid-template-rows: 0fr; opacity: 0; }
+/*
+ * A slot that only closes slowly — see `subLive` in ui/KeyGrid.tsx.
+ *
+ * The rule is on the shut state rather than on the open one, which is what
+ * makes it one-way: a transition is run with the properties the element has
+ * *after* the change, so shutting finds a duration here and opening finds
+ * none. No class to add and take away on a timer, and nothing to get out of
+ * step with what the line is doing.
+ */
+.keycap .sub-slot.at-once { transition: none; }
+.keycap .sub-slot.at-once.shut {
+  transition: grid-template-rows 240ms ease, opacity 240ms ease;
+}
+.keycap .sub-slot > .sub { min-height: 0; overflow: hidden; }
+/*
+ * The paint, from the cap's own colour rather than from nothing — a lit key
+ * fading up from transparent would show the page through the board. The
+ * legend colour comes with it, because the tab that painted the cap chose
+ * that colour to be read against the paint and not against the black it
+ * starts from.
+ *
+ * A `from` with no `to`, like the rules above: where it ends is inline on the
+ * element and known only to the tab that put it there.
+ */
+@keyframes cap-tint-in {
+  from { background: var(--keycap); color: var(--fg); }
+}
+.keycap.tinted { animation: cap-tint-in 240ms ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
   /*
@@ -1322,7 +1514,15 @@ div.rail { position: sticky; top: 0; }
   .select-menu, .select-menu.up, .select-menu.closing, .select-menu.up.closing { animation: none; }
   button, .keycap { transition: none; }
   /* The movement is the whole point of these, so there is nothing to keep. */
-  .tab-in, .section-in { animation: none; }
+  .tab-title, .tab-scroll, .section-in { animation: none; }
+  /* Not movement, but the same answer: what these do is delay a value the
+     reader asked to see, and a preference for less motion is not a preference
+     for waiting. */
+  .keycap .sub, .keycap.tinted { animation: none; }
+  .gridband.arriving { animation: none; }
+  /* Written as specifically as the rules they override — `.keycap` alone does
+     not reach a span inside it. */
+  .keycap .stripe, .keycap .sub-slot { transition: none; }
   /*
    * The drawer and its veil. `transition: none` on the rail also drops the
    * delay that held `visibility` back for the length of the slide — which is
@@ -1585,7 +1785,39 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
  * moving, and a band that vanished under it would look like the switch had
  * changed.
  */
-.keycap .stripe { position: absolute; left: 0; right: 0; bottom: 0; height: 0.3rem; z-index: 2; pointer-events: none; }
+.keycap .stripe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.3rem;
+  z-index: 2;
+  pointer-events: none;
+  /*
+   * It slides rather than fades, out through the bottom of the cap it is
+   * already sitting on. The cap clips its own overflow, so a band pushed down
+   * by its own height is simply gone behind the edge — and it arrives the
+   * same way, which is what makes switching into the switch section and back
+   * out of it one movement rather than two effects.
+   *
+   * A transform rather than the colour: a switch with no colour on file is
+   * drawn as `--hatch`, and a gradient does not interpolate to nothing. The
+   * colour stays put and only the band moves — see `CapSaid` in
+   * ui/KeyGrid.tsx for what keeps it there once the caller has stopped
+   * naming it.
+   *
+   * No arrival animation to go with it, and it would be worse than useless:
+   * a grid rebuilt by a tab switch is built holding what the last one held,
+   * so this transition is what runs there too, and an animation on the same
+   * property would take the transform away from it and hand back a band that
+   * simply blinks. A keyboard appearing where there was none brings its bands
+   * with it — see `.gridband.arriving`.
+   */
+  transition: transform 240ms ease;
+}
+/* Nothing to say: pushed out through the edge, with the colour it last had
+   still on it. */
+.keycap .stripe.gone { transform: translateY(100%); }
 
 /*
  * A cap painted with the colour stored for that key — the lighting tab.
@@ -1728,7 +1960,7 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
  * grey slab down the edge is exactly where the eye goes. Chrome-only syntax,
  * which this app already is — it needs WebHID.
  */
-::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar { width: var(--scrollbar); height: var(--scrollbar); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
