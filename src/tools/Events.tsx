@@ -206,7 +206,14 @@ export function Events() {
               ? t('events.pressHint')
               : t('events.bindHint', { fingerprint: binding })}
           </div>
+          {/*
+            Printed legends, not bindings: this grid is where a sensor is
+            bound to a *physical* key, and the key it is pointing at is the one
+            under the finger — not whatever that key has since been remapped to
+            send. See state/legends.ts.
+          */}
           <KeyGrid
+            physical
             fill={(k) => (coverage.has(k.index) ? 1 : 0)}
             sub={(k) => (coverage.has(k.index) ? String(coverage.get(k.index)) : undefined)}
             onSelect={(index) => {

@@ -109,7 +109,7 @@
     },
     "raven61": {
       "label": "Raven61 (performance block and keymap read/write)",
-      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), the global settings read (0x05) and the keymap read (0x08) and write (0x09) are decoded and hardware-verified. Every write is read-modify-write and is read back afterwards to compare the bytes. Lighting, advanced keys and macros are not decoded."
+      "notes": "Packet framing, analog key events, the per-key performance block read (0xa0) and write (0xa1), the global settings read (0x05) and the keymap read (0x08) and write (0x09) are decoded and hardware-verified. Every write is read-modify-write and is read back afterwards to compare the bytes. Advanced keys and macros are decoded from the firmware and both read and write are wired up, but not confirmed on hardware yet."
     },
     "demo": {
       "label": "Demo TKL (simulated)",
@@ -143,7 +143,8 @@
     "writeMismatch_other": "{count} slots read back differently from what was written: {detail}",
     "firmwareEmpty": "The board answered 0x03 with nothing. This firmware appears not to report its build.",
     "resetNak": "The board did not acknowledge the factory reset. It appears not to have started.",
-    "noAnalogMode": "This board’s spec ({board}) names no analog test-mode command, so live travel cannot be started."
+    "noAnalogMode": "This board’s spec ({board}) names no analog test-mode command, so live travel cannot be started.",
+    "advancedRecordRange": "Record {record} does not exist; this board has {max}."
   },
 
   "reset": {
@@ -337,9 +338,85 @@
   },
 
   "advanced": {
-    "title": "Advanced keys (DKS · MT · TGL · RS · SOCD · OKS)",
+    "title": "Advanced keys (DKS · TGL · MT · RS · SOCD · OKS)",
     "what": "advanced keys",
-    "note": "The stock driver stores up to 40 advanced keys per profile and tells the kinds apart by <c>t_magnetic_key_data.macro_type</c>. DKS keeps its four depth-stage actions in <c>t_key_item_data.trigger_state1..4</c>."
+    "note": "A record holds the parameters and a keymap entry says which key runs it, which of the six kinds it is, and for RS, SOCD and OKS which key it is paired with. So applying writes twice: the record first, then the keymap.",
+    "unverified": "The three tables and all six kinds are decoded from the firmware, and every write here is read back and compared — but <b>none of it has been confirmed on hardware</b>. A verified write means the bytes are in the table; whether the key behaves is what you are testing.",
+    "pickKey": "Pick a key on the grid.",
+    "layers": "Layer",
+    "key": "Key",
+    "kind": "Kind",
+    "kindNone": "— none —",
+    "record": "Record",
+    "param": "Argument",
+    "bytes": "Bytes",
+    "apply": "Apply",
+    "applying": "Applying…",
+    "revert": "Revert",
+    "unbind": "Unbind",
+    "unbound": "The key is back to its factory binding, and record #{record} was cleared.",
+    "unboundShared": "The key is back to its factory binding. Record #{record} was left alone — another key still uses it.",
+    "unbindUnavailable": "The board's factory table has no binding for this key, so there is nothing to put back.",
+    "applied": "Record #{record} written, and the key bound to it as {kind}.",
+    "mismatch": "Record #{record} did not read back as written: {wanted} → {got}. The keymap was left alone.",
+    "keymapMismatch": "The record was written, but the keymap entry did not read back as sent: {detail}. The key is not bound to it.",
+    "noFreeRecord": "All {limit} records are in use. Free one by unbinding the key that uses it.",
+    "capLabel": "{kind} · record {record}",
+    "inUse": "Advanced keys on this layer",
+    "noneBound": "No key on this layer is bound to an advanced key.",
+    "orphans": "Records with bytes in them that no layer points at: {records}. Left alone — from here a leftover and a record the stock driver wrote look the same.",
+    "unmappedSlot": "slot {slot}",
+    "holdMs": "{ms} ms",
+    "partnerSlot": "partner slot {slot}",
+    "kinds": {
+      "dks": "DKS",
+      "tgl": "TGL",
+      "mt": "MT",
+      "rs": "RS",
+      "socd": "SOCD",
+      "oks": "OKS"
+    },
+    "dks": {
+      "help": "Four depth points and four bindings. Each binding goes down at one point and comes up at another; setting both to the same point makes it a tap. Points 1 and 2 are tested pressing down, points 3 and 4 coming back up.",
+      "point0": "Point 1 (down)",
+      "point1": "Point 2 (down)",
+      "point2": "Point 3 (up)",
+      "point3": "Point 4 (up)",
+      "binding": "Binding {n}",
+      "pressAt": "Press at",
+      "releaseAt": "Release at",
+      "stage0": "Point 1",
+      "stage1": "Point 2",
+      "stage2": "Point 3",
+      "stage3": "Point 4"
+    },
+    "tgl": {
+      "help": "Press once and the key stays down; press again and it comes up. The board can hold 32 toggles down at a time.",
+      "key": "Key"
+    },
+    "mt": {
+      "help": "Tap for one binding, hold for another. The hold time goes in the keymap entry, in units of 10 ms.",
+      "tap": "Tap",
+      "hold": "Hold",
+      "time": "Hold time"
+    },
+    "rs": {
+      "help": "Two keys, and whichever is pressed deeper wins. Give the other key its own record too, with this key's slot as its partner."
+    },
+    "socd": {
+      "help": "Two keys on the same axis, resolved so they never fight. Give the other key its own record too, with this key's slot as its partner.",
+      "modeNote": "The resolution mode is not in this table — the firmware reads it from the high nibble of this key's performance record, which the input-point tab owns. Set it there."
+    },
+    "oks": {
+      "help": "The key sends one usage while it is held and fires another when it comes up.",
+      "onRelease": "On release"
+    },
+    "pair": {
+      "own": "This key sends",
+      "partner": "Partner sends",
+      "partnerSlot": "Partner slot",
+      "partnerSlotNote": "The other key's slot, as the table below reports it."
+    }
   },
 
   "calibration": {
@@ -449,6 +526,7 @@
   },
 
   "keymap": {
+    "categories": "Button categories",
     "apply": "Apply to board",
     "applyCount": "Apply {count} keys",
     "revert": "Discard edits",
@@ -474,8 +552,30 @@
       "unassign": "None",
       "modifiers": "Held modifiers"
     },
+    "section": {
+      "playback": "Playback",
+      "volume": "Volume",
+      "display": "Display",
+      "web": "Web",
+      "apps": "Launch",
+      "unbound": "Unbound · pass-through",
+      "fkeys": "Extra function keys",
+      "international": "International · IME",
+      "layer": "Layer",
+      "input": "Input locks",
+      "board": "Board",
+      "mode": "Effect",
+      "brightness": "Brightness",
+      "speed": "Speed",
+      "direction": "Direction",
+      "color": "Colour",
+      "buttons": "Buttons",
+      "wheel": "Wheel"
+    },
+
     "group": {
       "basic": "Basic",
+      "symbols": "Symbols",
       "multimedia": "Multimedia",
       "special": "Special",
       "function": "Function",
@@ -488,20 +588,13 @@
       "momentary": "Layer {layer}",
       "action": "Action 0x{code}"
     },
+    "trnsNote": "<c>KC_TRNS</c> is not a record this board has. Its firmware has no transparent key, so this button <b>copies</b> the base layer's binding into this key. It is a copy and not a link: a later edit to the base layer does not follow it.",
     "writeWhat": "keymap write",
     "writeNote": "The keymap command is usually long enough to be split across several reports. Change <b>one key</b> in the stock driver, save, and diff the captures: the byte that moved is that key's index — the most reliable way to work out the matrix order."
   },
 
   "keycode": {
-    "group": {
-      "letters": "Letters",
-      "digits": "Digits · symbols",
-      "function": "Function keys",
-      "editing": "Editing · navigation",
-      "modifiers": "Modifiers",
-      "special": "Special"
-    },
-    "none": "None",
+        "none": "None",
     "error": "Error"
   },
 
@@ -510,7 +603,83 @@
   },
 
   "macro": {
-    "todo": "This tab is a placeholder — the feature has not been built yet."
+    "what": "macros",
+    "note": "This board's spec names no macro-store commands. If the same commands answer on another board, say so in its spec.",
+    "title": "Macros",
+    "layers": "Layer",
+    "unverified": "The format is decoded from the firmware and <b>confirmed field by field against the stock driver's own encoder</b> — the record layout, the stop and press bits, the mask-versus-usage split and the millisecond unit all agree at both ends. Writes are read back and compared like every other block here, so <b>the bytes are in the store</b>; whether the board plays them has not been confirmed on hardware.",
+    "store": "Store",
+    "storeReady": "All 32 slots name a body and every body stops. Binding a macro key is safe.",
+    "storeUnsafe": "⚠ Slots with no body or no stop record: <b>{slots}</b>. The player has no bound on its cursor, so pressing a macro key in this state sends it walking through flash four bytes at a time, emitting a keystroke for every record it passes. <b>Write the store first</b> — binding stays refused until you do.",
+    "capacity": "{used} of {total} events — what is left after the offset table and the one stop record each slot carries.",
+    "slotNumbering": "Slots count from 0. The stock driver shows {stock} of them, and its \"M 1\" is #0 here.",
+    "overStock": "Past the stock driver's recording budget of {total} events. The firmware and this block hold more, but the stock driver may not handle a store this size if you go back to it.",
+    "slot": "Slot",
+    "slotPlain_one": "#{slot} · {count} event",
+    "slotPlain_other": "#{slot} · {count} events",
+    "slotNamed_one": "#{slot} {name} · {count} event",
+    "slotNamed_other": "#{slot} {name} · {count} events",
+    "name": "Name",
+    "namePlaceholder": "Macro {slot}",
+    "nameNote": "Names stay <b>in this browser</b>. The store is an offset table and 4-byte records with no room for one — the stock driver keeps its own in its database for the same reason. What identifies a macro to the board is its slot number.",
+    "events": "Events",
+    "noEvents": "This slot is empty. Record one below, or add keys by hand. An empty slot is still written with a stop record, so pressing it does nothing.",
+    "eventKey": "Key",
+    "eventDir": "Direction",
+    "eventUnknown": "unknown (nibble {nibble}, value {value})",
+    "eventCount": "Events",
+    "delayMs": "Wait after (ms)",
+    "hex": "Bytes",
+    "down": "down",
+    "up": "up",
+    "clear": "Clear",
+    "remove": "Remove",
+    "record": "Record",
+    "recordStop": "Stop recording",
+    "recordingNow": "Recording — the keys you press now go into this list instead of to the page. The gap between two keystrokes is rounded and stored as the delay on the earlier event.",
+    "recordNote": "Browsers <b>never report Fn</b>: the keyboard's own firmware consumes it and no key event reaches the page. Auto-repeat is dropped too — the board has no concept of it, and a held key would fill the store.",
+    "addTitle": "Add by hand",
+    "addKey": "Key",
+    "holdMs": "Hold for (ms)",
+    "gapMs": "Gap after (ms)",
+    "addTap": "Tap",
+    "addDown": "Press only",
+    "addUp": "Release only",
+    "modifierNote": "Modifiers ({mods}) go out as a <b>mask record</b> automatically. The player's key arm puts its value in the report's <i>usage array</i>, and a Shift that arrives there is not a Shift to the host.",
+    "tools": "Bulk edits",
+    "repeatTimes": "Repeat times",
+    "repeatGap": "Gap between passes (ms)",
+    "fixedDelay": "Fixed delay (ms)",
+    "repeatApply": "Repeat the list",
+    "flattenApply": "Set every delay",
+    "repeatNote": "The keymap record's repeat byte is <b>never read</b> by the firmware — <c>macroStart</c> stores it at <c>gp-0x781</c> and nothing in the image reads that byte back. So a repeat is <b>more records in the body</b>, which is what this does. The stock driver's <c>play_times</c> does not reach the store either — its encoder walks each record list exactly once, so <b>the bytes on the board carry no repeat count anywhere</b>.",
+    "applyTitle": "Apply",
+    "apply": "Write the store",
+    "applying": "Writing…",
+    "revert": "Revert",
+    "applied": "Applied to {slots} of 32 slots — {bytes} bytes sent, and the read-back matched byte for byte.",
+    "unchanged": "The board already held these bodies, so nothing was sent.",
+    "capacityFull": "The store holds {total} event records and this needs {used}. Shorten it and apply again.",
+    "mismatch": "Slots did not read back as written — {detail}",
+    "keymapMismatch": "The keymap record did not read back as written — {detail}",
+    "bindTitle": "Bind to a key",
+    "pickKey": "Pick a key in the grid above.",
+    "key": "Key",
+    "boundTo": "Currently",
+    "bind": "Bind #{slot}",
+    "binding": "Writing…",
+    "unbind": "Unbind",
+    "bindNeedsStore": "The store is not safe yet. Write it first.",
+    "bindNote": "Binding is the <b>second</b> write — the body has to be in the store first. That is also why the remap tab's picker offers no macros: binding from a tab that cannot check the store would be the one way around this order. A macro that is already bound does show up there by name.",
+    "unbindUnavailable": "The board returned no factory record for this key, so there is nothing to put back.",
+    "bound": "#{slot} is now bound to {key}.",
+    "unbound": "{key} no longer starts a macro. The body is still in the store.",
+    "inUse": "Keys bound",
+    "noneBound": "No key on this layer starts a macro.",
+    "repeatColumn": "Repeat byte",
+    "repeatByte": "repeat byte {n}",
+    "repeatByteNote": "The repeat byte is <b>read only</b>. The firmware never uses it, so this app writes the stock driver's 1 — and reports whatever a slot already holds, so a store the stock driver wrote does not look misread.",
+    "capLabel": "Macro {slot}"
   },
 
   "light": {
@@ -538,6 +707,7 @@
       "unread": "The settings block has not been read from the board yet.",
       "unknownMode": "The board reports mode {mode}, which this table has no row for. Left as it is — overwriting it with a value we do know would throw away whatever it was set to.",
       "perKey": "<b>Custom Light</b> is the effect that paints the <b>per-key colours</b> stored on the board. Paint them in the section next to this one.",
+      "held": "· applied when you let go",
       "raw": "<c>payload[16..24]</c> = {bytes} · colorindex {index} (undecoded; the board's own byte is written back)"
     },
     "showsIn": {

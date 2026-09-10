@@ -117,12 +117,26 @@ export interface CommandSpec {
   /** The stored per-key custom colour layer. See `protocol/keyRgb.ts`. */
   readKeyRgb: number | null
   writeKeyRgb: number | null
+  /** The macro store — see `protocol/macros.ts`. */
+  readMacros: number | null
+  writeMacros: number | null
   /**
    * The LED frame the board is displaying right now, effects included — a RAM
    * buffer, not the stored layer above. Read-only: it is what the effect engine
    * is about to push out, so writing it would be overwritten on the next frame.
    */
   readLightFrame: number | null
+  /**
+   * The three advanced-key tables. All three or none: a board that answers one
+   * and not the others cannot describe a keyboard's advanced keys, since a
+   * keymap entry can name any of the six kinds. See `protocol/advancedKeys.ts`.
+   */
+  readAdvancedDks: number | null
+  writeAdvancedDks: number | null
+  readAdvancedPair: number | null
+  writeAdvancedPair: number | null
+  readAdvancedToggle: number | null
+  writeAdvancedToggle: number | null
   readCalibration: number | null
   /** Enters analog test mode: travel is reported, typing stops. */
   analogTestOn: number | null
@@ -198,6 +212,40 @@ export interface KeyRgbSpec {
    * a board that answers more slowly can raise it.
    */
   framePollMs: number
+}
+
+/**
+ * Geometry of the three advanced-key tables. See `protocol/advancedKeys.ts`.
+ *
+ * `records` is how many each table holds, and `usable` how many a host should
+ * hand out — the stock driver stops at 40 of the 42 that fit, and staying
+ * inside that keeps a board this app configures readable in the stock driver.
+ */
+export interface AdvancedKeySpec {
+  records: number
+  usable: number
+  dksRecordSize: number
+  dksBlobSize: number
+  pairRecordSize: number
+  pairBlobSize: number
+  toggleRecordSize: number
+  toggleBlobSize: number
+}
+
+/**
+ * Geometry of the macro store. See `protocol/macros.ts`.
+ *
+ * `blobBytes` is what the read command transfers and what the firmware's write
+ * handler bounds against; `hostBytes` is how much of it a host should use — the
+ * stock driver stops at 3584, and staying inside that keeps a board this app
+ * configures readable in the stock driver. The gap between the two is
+ * deliberate and is left alone.
+ */
+export interface MacroSpec {
+  slots: number
+  eventBytes: number
+  blobBytes: number
+  hostBytes: number
 }
 
 /** Geometry of the keymap blocks. See `protocol/keymap.ts` and `protocol/slotMap.ts`. */
@@ -449,6 +497,8 @@ export interface ProtocolSpec {
   keyPerf: KeyPerfSpec
   keyRgb: KeyRgbSpec
   keymap: KeymapSpec
+  advancedKeys: AdvancedKeySpec
+  macros: MacroSpec
   global: GlobalSpec
   monitor: MonitorSpec
   factoryReset: FactoryResetSpec

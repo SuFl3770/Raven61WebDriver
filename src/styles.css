@@ -21,6 +21,27 @@
   font-display: swap;
 }
 
+/*
+ * Two colours the canvas reads back — see `--trace-line` below and drawTrace in
+ * tools/Sensors.tsx.
+ *
+ * Registering them is what lets them be derived. An unregistered custom
+ * property computes to the text it was written as, so `getComputedStyle` on a
+ * `color-mix()` hands back the expression and a canvas cannot use it; a
+ * property declared as `<color>` computes to a resolved colour instead. The
+ * initial values are the pre-theme fallbacks and should never be reached.
+ */
+@property --trace-line {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #4c9aff;
+}
+@property --trace-grid {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2a3441;
+}
+
 :root {
   /*
    * Flat: a ladder of fills, with a hairline where two of them meet.
@@ -138,16 +159,18 @@
    * The travel trace on the sensors tab, which is drawn into a canvas rather
    * than laid out — see tools/Sensors.tsx.
    *
-   * Plain colours, and the only two in this block that are not allowed to be
-   * mixed from anything: a canvas context takes a colour *string*, and what
-   * `getComputedStyle` hands back for a derived token is the `color-mix()`
-   * expression itself. Kept apart from `--press` for the same reason the
-   * rapid-trigger pair is kept apart from the accent — a graph line and half a
-   * keycap setting are not the same fact, and one theme change should not be
-   * able to make them the same colour.
+   * These were the two plain colours in this block, on the grounds that a
+   * canvas takes a colour *string* while `getComputedStyle` hands back the
+   * `color-mix()` expression itself for a derived token. That holds for an
+   * ordinary custom property and not for a registered one: the `@property`
+   * rules below give these a `<color>` syntax, which makes their computed
+   * value a resolved colour the canvas will take. So the line is the point
+   * colour, like every other live reading in the app, and the grid is a few
+   * percent of the foreground over the well it is drawn in. Both follow the
+   * theme, and neither has to be restated for the light one.
    */
-  --trace-grid: #2a3441;
-  --trace-line: #4c9aff;
+  --trace-line: var(--accent);
+  --trace-grid: color-mix(in srgb, var(--fg) 14%, var(--sunk));
   --err: #f4787a;
   /* The one other colour that has to fill something: a destructive control
      under the pointer, which must not go green like everything else does. */
@@ -278,8 +301,6 @@
   --press: #1f56bd;
   --release: #b83430;
   --err: #b32f2f;
-  --trace-grid: #d2d7e0;
-  --trace-line: #2b66d9;
   color-scheme: light;
 }
 
@@ -405,6 +426,83 @@ input[type="text"], input[type="number"], textarea {
   border-radius: var(--r-sm);
   padding: 0.45rem 0.6rem;
 }
+
+/*
+ * The slider, which was the last control still drawn by the platform.
+ *
+ * A well for the track and the point colour for the thumb, so it says the same
+ * thing the switch and the selected tab say: this is the part you move, and it
+ * is the colour everything you have chosen is.
+ *
+ * `-webkit-` only, like the scrollbars further down. The app needs WebHID, so
+ * it needs Chrome, and a second set of `-moz-` rules would be dead text.
+ */
+input[type="range"] {
+  appearance: none;
+  height: 1.15rem;
+  background: none;
+  cursor: pointer;
+}
+/*
+ * Filled to the thumb, empty after it.
+ *
+ * Chrome draws the track as one piece — there is no pseudo-element for the part
+ * behind the thumb — so the two halves are one gradient with a hard stop, and
+ * the stop is `--fill`, which ui/Slider.tsx works out from the value and hands
+ * down as a percentage. Without it both halves are the same well and the
+ * control says nothing about where it is set until you find the thumb.
+ */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 0%),
+    var(--sunk) var(--fill, 0%) 100%
+  );
+  transition: border-color 120ms ease;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  background: var(--accent);
+  /* Half the difference between the thumb and the track it straddles, plus the
+     track's own border, which is what centres it on the line. */
+  margin-top: calc((0.35rem - 0.9rem) / 2 - 1px);
+  /* A ring of the panel behind it. The thumb sits at the end of the filled
+     half and is the same colour as it, so without this the two run together
+     and the knob stops having an edge. */
+  box-shadow: 0 0 0 2px var(--surface);
+  transition: transform 120ms ease;
+}
+input[type="range"]:hover:not(:disabled)::-webkit-slider-runnable-track {
+  border-color: var(--accent);
+}
+input[type="range"]:active:not(:disabled)::-webkit-slider-thumb { transform: scale(1.15); }
+input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/*
+ * The colour input keeps its own contents — the whole point of it is the
+ * colour inside — and takes the app's frame around them.
+ */
+input[type="color"] {
+  appearance: none;
+  width: 2.4rem;
+  height: 1.9rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+input[type="color"]:hover:not(:disabled) { border-color: var(--accent); }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+input[type="color"]:disabled { opacity: 0.45; cursor: not-allowed; }
 /*
  * The dropdown — see ui/Select.tsx, which is a listbox rather than a select.
  *
@@ -1535,18 +1633,31 @@ div.rail { position: sticky; top: 0; }
 
 /* A step down from the panel, because a notice is something the panel is
    holding rather than something stacked on top of it. */
+/*
+ * Each notice tinted by the colour on its own edge, at the same 8% the
+ * accent-tinted surfaces use.
+ *
+ * They all sat on the plain well before, which left the info notice — the one
+ * whose edge is the point colour — as the only tinted panel on a screen full
+ * of flat grey ones, and made every other notice look like it had been missed.
+ * Eight percent is a long way from a coloured slab: it reads as the stripe
+ * having a shadow rather than as a second stripe.
+ */
 .notice {
   border-left: 3px solid var(--warn);
-  background: var(--sunk);
+  background: color-mix(in srgb, var(--warn) 8%, var(--sunk));
   padding: 0.7rem 0.85rem;
   border-radius: var(--r-sm);
 }
-.notice.err { border-left-color: var(--err); }
-/* The one notice whose colour is the point colour, so its fill follows too.
-   The other three keep the plain sunk fill — a warning tinted with its own
-   amber would be a second warning stripe the width of the panel. */
+.notice.err {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err) 8%, var(--sunk));
+}
+.notice.ok {
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, var(--sunk));
+}
 .notice.info { border-left-color: var(--accent); background: var(--sunk-accent); }
-.notice.ok { border-left-color: var(--ok); }
 
 table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
 th, td { text-align: left; padding: 0.35rem 0.55rem; border-bottom: 1px solid var(--line); }
@@ -1751,6 +1862,19 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 /* Mixed rather than faded: the same colour it was at 55% opacity, but a solid
    fill, so nothing on the board is see-through. Mixed into the cap's own black
    rather than a fixed colour, so it stays a shade of the cap it fills. */
+/*
+ * A cap reading what the key was remapped to send, rather than what is printed
+ * on it (see state/legends.ts).
+ *
+ * The accent, which on a cap already means "this is what the board holds" — the
+ * value on the second line is in it for the same reason. A remapped legend is
+ * the same claim about the same key, so it is the same colour, and the caps
+ * that were never touched stay the plain white of a keyboard nobody has edited.
+ */
+.keycap.remapped .cap-label { color: var(--accent); }
+/* Except on a painted cap, where the caller chose a legend colour that can be
+   read against its own paint and the accent may be neither. */
+.keycap.tinted.remapped .cap-label { color: inherit; }
 .keycap .fill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 55%, var(--keycap)); pointer-events: none; }
 .keycap .cap-label { position: relative; z-index: 1; }
 .swatch { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; border: 1px solid currentColor; vertical-align: baseline; }
@@ -2040,6 +2164,105 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
    badge that goes green under the pointer. */
 .sync-badge.failed:hover { color: var(--fg); border-color: var(--err); background: var(--err-dim); }
 .sync-badge.failed:active { background: var(--sunk); }
+
+/*
+ * The remap picker's own keyboard — a full-size 104-key board, drawn out of
+ * ordinary buttons.
+ *
+ * Two grids on one page, doing different jobs. `.keygrid` above is *the board*:
+ * absolutely positioned from the layout's real rectangles, because it has to be
+ * the keyboard in front of the user. This one is a catalog laid out the way a
+ * keyboard is, so it is a plain grid of quarter units — 90 columns to a row,
+ * `span (u × 4)` per cap (see `span` in features/Keymap.tsx) — which lines the
+ * rows up at any width without a rectangle for every key.
+ *
+ * The gap is a margin rather than the grid's own `gap`, so a column is exactly
+ * a quarter unit: with `gap` the track sizing would shrink by the gaps and a
+ * 6.25u space would come out proportionally wider than a 1u cap.
+ */
+/*
+ * The keyboard scrolls sideways rather than shrinking past legibility.
+ *
+ * `aspect-ratio` keeps the caps square down to any width, but square and 10px
+ * across is not a keyboard anyone can read — and a 104-key board simply does
+ * not fit a narrow panel. Below the floor it scrolls, which is the same thing
+ * the tables in this app do.
+ */
+.kbpick-scroll { overflow-x: auto; }
+.kbpick { display: flex; flex-direction: column; min-width: 40rem; }
+/*
+ * A row is exactly one key unit tall, and the ratio is what says so: the box is
+ * 22.5u wide, so `aspect-ratio: 22.5 / 1` makes it 1u high at any width and the
+ * caps come out square, the way the board grid's do.
+ *
+ * Before this the rows were whatever height the buttons' padding gave them —
+ * about two thirds of a unit on a 104-key board, which is a keyboard drawn in
+ * letterbox.
+ */
+.kbpick-row {
+  display: grid;
+  grid-template-columns: repeat(90, 1fr);
+  aspect-ratio: 22.5 / 1;
+}
+/*
+ * The half unit under the function row, which is the one gap a full-size board
+ * has between rows. In percent because a percentage margin resolves against
+ * the container's *width*: half a unit is 0.5/22.5 of it, at any size.
+ */
+.kbpick-row:first-child { margin-bottom: 2.222%; }
+.kbpick-row > * { margin: 1.5px; min-width: 0; }
+.kbpick-row > button {
+  /* No padding: the cap's size is the key's size, and the row's height already
+     set it. Same legend size as the board grid above, so the two read as the
+     same kind of thing. */
+  padding: 0;
+  font-size: 0.75rem;
+  /* The legend must not be able to push the row taller than its one unit,
+     which is what decides the cap is square. */
+  line-height: 1;
+  /* A legend too long for its cap is clipped rather than wrapped or widened:
+     the cap's width is the key's width, and every one of them has its full name
+     on the button's tooltip and in the line under the grid. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+/*
+ * The catalog groups that are split into sections, side by side.
+ *
+ * Stacked, a group like Multimedia is five headers and five rows — a column of
+ * text taller than the keyboard it sits under, for twenty buttons. Laid out
+ * across, the sections pack into two or three lines and the whole group is
+ * visible at once, which is the only reason to have grouped it.
+ *
+ * Each section is a column of its own so its header stays over its own buttons;
+ * the gap does the separating, because a rule between them would land in the
+ * wrong place as soon as the row wraps.
+ */
+.picker-sections { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: flex-start; }
+.picker-section { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }
+
+/*
+ * A catalog entry, sized like a cap on the keyboard next door.
+ *
+ * The two are the same choice — "make this key send that" — and they were two
+ * different-looking controls: a 43px cap under Basic, and a cramped 24px chip
+ * under every other category. The minimums here are one key unit of the
+ * keyboard above, so a one-character entry like `~` comes out square and a
+ * worded one like `Web Favorites` grows sideways only.
+ *
+ * Not applied to the modifier strip or to the panel's own buttons. Those act on
+ * the binding rather than being one, and a row of caps that are not choices is
+ * the confusion this is meant to remove.
+ */
+.picker-choice {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  min-width: 2.6875rem;
+  min-height: 2.6875rem;
+}
 
 .version-badge {
   display: flex;

@@ -232,6 +232,29 @@ export interface GlobalPatch {
 }
 
 /**
+ * One patch on top of another — later wins, field by field.
+ *
+ * Exists because a control that moves continuously emits a patch per pixel, and
+ * a block write is a read-modify-write with a settle delay in the middle: sent
+ * one at a time they queue up and the board falls seconds behind the pointer.
+ * `BoardSync.applyGlobal` merges them instead and sends one. See
+ * `state/sync.ts`.
+ *
+ * `lighting` is merged one level deeper rather than replaced, so a drag on the
+ * brightness slider does not throw away a colour picked a moment earlier. Every
+ * other field of a `GlobalPatch` is a scalar, and a later value for one of
+ * those genuinely does replace the earlier.
+ */
+export function mergeGlobalPatch(base: GlobalPatch | null, next: GlobalPatch): GlobalPatch {
+  if (!base) return { ...next }
+  const out: GlobalPatch = { ...base, ...next }
+  if (base.lighting || next.lighting) {
+    out.lighting = { ...base.lighting, ...next.lighting }
+  }
+  return out
+}
+
+/**
  * Applies a patch to the rate byte. `tick_rate` shares it as the high nibble
  * and belongs to another screen, so it is carried through untouched.
  */

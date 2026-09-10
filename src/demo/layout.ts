@@ -10,7 +10,7 @@
  *
  * Positions are keyboard units from the top-left, with the F-row separated
  * from the number row by half a unit the way the physical board is. Codes are
- * the USB standard usages, which is also what `demo/keys.ts` maps the host's
+ * the USB standard usages, which is also what `keyboard/hostKeys.ts` maps the host's
  * `KeyboardEvent.code` to — so every key here answers to the same key on the
  * reader's own keyboard.
  *

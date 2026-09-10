@@ -12,8 +12,10 @@
 
 import type { ReportRateSpec, SwitchTypeSpec } from '../device/spec'
 import { t, type MessageKey } from '../i18n'
+import type { AdvancedKeyBlobs, AdvancedKind } from './advancedKeys'
 import type { KeyBinding } from './keymap'
 import type { Rgb } from './keyRgb'
+import type { Macro } from './macros'
 import type { LightingSettings } from './lighting'
 
 /**
@@ -245,6 +247,84 @@ export interface KeyPerfSnapshot {
   configs: KeyConfig[]
   /** Slots whose 8 bytes are all zero, by slot number. */
   emptySlots: number[]
+}
+
+/**
+ * One keymap entry that names an advanced key.
+ *
+ * The tables in `protocol/advancedKeys.ts` hold parameters and nothing else —
+ * not which key runs them, not even which of the six kinds a record is. Both
+ * are in the keymap, so a snapshot has to sweep it, and a record can be named
+ * by more than one key or by none.
+ */
+export interface AdvancedKeyUse {
+  layer: number
+  /** Key index in this project's key order. */
+  index: number
+  label: string
+  slot: number
+  /** The kind, from the entry's type byte. */
+  kind: AdvancedKind
+  /** The record number, from the entry's second byte. */
+  record: number
+  /**
+   * The entry's third byte — the partner key's slot for RS, SOCD and OKS, and
+   * the hold time in units of 10 ms for MT. Unused by DKS and TGL.
+   */
+  param: number
+}
+
+/**
+ * The advanced-key tables, plus what the keymap says about them.
+ *
+ * `orphans` are records with bytes in them that no layer points at. They are
+ * reported rather than cleaned up: this app cannot tell a leftover from a
+ * record the stock driver wrote and a profile switch will reach, and the two
+ * spare records past the driver's limit of 40 are a legitimate place for either.
+ */
+export interface AdvancedKeySnapshot {
+  blobs: AdvancedKeyBlobs
+  slotMap: SlotMapInfo
+  uses: AdvancedKeyUse[]
+  orphans: number[]
+}
+
+/** A key on some layer that starts a macro. See `protocol/macros.ts`. */
+export interface MacroUse {
+  layer: number
+  /** Key index in this project's key order. */
+  index: number
+  label: string
+  slot: number
+  /** Macro slot the entry's second byte names. */
+  macro: number
+  /**
+   * The entry's third byte — the repeat count.
+   *
+   * Read and reported, never acted on: `macroStart` stores it at `gp-0x781`
+   * and no code in the image reads that byte back. Shown so a store the stock
+   * driver wrote does not look like this app misread it.
+   */
+  repeat: number
+}
+
+/**
+ * The macro store, plus what the keymap says about it.
+ *
+ * `canonical` is the safety answer, not a tidiness one. The player has no bound
+ * on its cursor, so a slot with no body or no stop record makes *every* macro
+ * key on the board unsafe, not just that slot's — see `protocol/macros.ts`. A
+ * panel must not offer to bind a key while this is false; writing the store
+ * first is what makes it true.
+ */
+export interface MacroSnapshot {
+  blob: Uint8Array
+  macros: Macro[]
+  slotMap: SlotMapInfo
+  uses: MacroUse[]
+  canonical: boolean
+  /** Slots this app could not walk to a stop record. */
+  malformed: number[]
 }
 
 /** Structural view of a slot mapping, so panels need not import the codec. */

@@ -233,10 +233,27 @@ export function factoryBinding(usage: number): KeyBinding {
   return { kind: 'key', usage, modifiers: 0 }
 }
 
+/**
+ * Whether two bindings are the same thing.
+ *
+ * The wire bytes decide it, with one exception: `encodeRecord` deliberately
+ * writes `10 00 00` for every `none`, because `0xff` is the factory's marker and
+ * this app does not put it back as if it were an edit. That makes the encoding
+ * lossy in exactly one place — a slot the factory left empty and a key someone
+ * switched off encode alike — so `raw` is compared as well.
+ *
+ * Without that, picking `KC_NO` for a key whose slot is already `ff ff ff` (most
+ * of the Fn layer) looked like an edit back to what the board holds, and the
+ * remap tab dropped it: no write, no change on screen, and no way to tell that
+ * from a setting that had been applied. The two records really are different
+ * bytes on the board, and the firmware's boot check reads the difference.
+ */
 export function sameBinding(a: KeyBinding, b: KeyBinding): boolean {
   const x = encodeRecord(a)
   const y = encodeRecord(b)
-  return x[0] === y[0] && x[1] === y[1] && x[2] === y[2]
+  if (x[0] !== y[0] || x[1] !== y[1] || x[2] !== y[2]) return false
+  if (a.kind === 'none' && b.kind === 'none') return a.raw === b.raw
+  return true
 }
 
 /**
@@ -275,10 +292,38 @@ export interface BindingChoice {
   binding: KeyBinding
 }
 
-export interface BindingGroup {
-  nameKey: MessageKey
+/**
+ * One run of related entries inside a group.
+ *
+ * A group is a whole tab of the picker and some of them are twenty buttons long,
+ * which is a wall to read: "Vol+" and "Web Refresh" and "Calculator" have
+ * nothing to do with each other beyond both being on the consumer page. So each
+ * group is split into the sets a person actually looks for — playback, volume,
+ * web, launchers — and the split is only for reading. The values, and which
+ * group an entry is in, stay the stock driver's.
+ *
+ * `nameKey` is absent for a group that is one set, where a header would just
+ * repeat the tab's own name.
+ */
+export interface BindingSection {
+  nameKey?: MessageKey
   choices: BindingChoice[]
 }
+
+export interface BindingGroup {
+  nameKey: MessageKey
+  sections: BindingSection[]
+}
+
+/** Every choice of a group, in the order the sections put them. */
+export function groupChoices(group: BindingGroup): BindingChoice[] {
+  return group.sections.flatMap((s) => s.choices)
+}
+
+const section = (nameKey: MessageKey, choices: BindingChoice[]): BindingSection => ({
+  nameKey,
+  choices,
+})
 
 const consumer = (label: string, usage: number): BindingChoice => ({
   label,
@@ -289,37 +334,79 @@ const consumer = (label: string, usage: number): BindingChoice => ({
  * The stock driver's "Multimedia" list, in its order, with the consumer-page
  * usage it pairs each name with (0x414880-0x414cc6).
  */
-export const CONSUMER_KEYS: BindingChoice[] = [
-  consumer('Player', 0x183),
-  consumer('Vol+', 0x0e9),
-  consumer('Vol-', 0x0ea),
-  consumer('Mute', 0x0e2),
-  consumer('Play', 0x0cd),
-  consumer('Stop', 0x0b7),
-  consumer('Previous', 0x0b6),
-  consumer('Next', 0x0b5),
-  consumer('Screen Bright+', 0x06f),
-  consumer('Screen Bright-', 0x070),
-  consumer('Web Home', 0x223),
-  consumer('Web Refresh', 0x227),
-  consumer('Web Stop', 0x226),
-  consumer('Web Backward', 0x224),
-  consumer('Web Forward', 0x225),
-  consumer('Web Favorites', 0x22a),
-  consumer('Web Search', 0x221),
-  consumer('PC', 0x194),
-  consumer('Calculator', 0x192),
-  consumer('Email', 0x18a),
+export const CONSUMER_SECTIONS: BindingSection[] = [
+  section('keymap.section.playback', [
+    consumer('Play', 0x0cd),
+    consumer('Stop', 0x0b7),
+    consumer('Previous', 0x0b6),
+    consumer('Next', 0x0b5),
+  ]),
+  section('keymap.section.volume', [
+    consumer('Vol+', 0x0e9),
+    consumer('Vol-', 0x0ea),
+    consumer('Mute', 0x0e2),
+  ]),
+  section('keymap.section.display', [
+    consumer('Screen Bright+', 0x06f),
+    consumer('Screen Bright-', 0x070),
+  ]),
+  section('keymap.section.web', [
+    consumer('Web Home', 0x223),
+    consumer('Web Refresh', 0x227),
+    consumer('Web Stop', 0x226),
+    consumer('Web Backward', 0x224),
+    consumer('Web Forward', 0x225),
+    consumer('Web Favorites', 0x22a),
+    consumer('Web Search', 0x221),
+  ]),
+  /*
+   * The four that start a program rather than control one. "Player" is the
+   * driver's name for 0x183, which is the consumer page's own
+   * "launch media player" — it heads the driver's list, and it belongs here
+   * rather than under playback, where it would read as a transport control.
+   */
+  section('keymap.section.apps', [
+    consumer('Player', 0x183),
+    consumer('PC', 0x194),
+    consumer('Calculator', 0x192),
+    consumer('Email', 0x18a),
+  ]),
 ]
+
+export const CONSUMER_KEYS: BindingChoice[] = CONSUMER_SECTIONS.flatMap((s) => s.choices)
 
 const key = (label: string, usage: number): BindingChoice => ({
   label,
   binding: { kind: 'key', usage, modifiers: 0 },
 })
 
+/*
+ * "no key", and the one entry in this list the stock driver has no counterpart
+ * for. It is here because the obvious thing to look for is not here: VIA's
+ * `KC_TRNS`, the transparent key that falls through to the layer below.
+ *
+ * **This firmware has no such record.** The press path fetches the three bytes
+ * at `0x20b00 + layer * 512 + slot * 3` and hands them straight to the
+ * dispatch (0xf6ec, then 0x9ec6) — there is no second fetch with layer 0 — and
+ * the dispatch has no branch for `0x00` or `0xff`, so both fall to its default
+ * arm, which sends the report along untouched (0xa116 → 0xa2ce). An unbound key
+ * on the Fn layer does nothing; it does not become the base layer's key.
+ *
+ * So the honest entry is the one below and it is named for what it is. It
+ * writes `10 00 00`, the same record the picker's "unassign" button writes —
+ * having it in the list too is what makes it findable by someone looking for
+ * the triangle.
+ *
+ * `raw` is the type byte this record actually has, so that a pending edit and
+ * the same record read back off the board are one binding and read the same
+ * on the cap. See the `none` arm of `bindingLabel`.
+ */
+const KC_NO: BindingChoice = { label: 'KC_NO', binding: { kind: 'none', raw: RECORD_TYPE.key } }
+
 /**
  * The stock driver's "Special" list: the HID usages a 61-key board has no cap
- * for (0x414cc6-0x415180).
+ * for (0x414cc6-0x415180), plus `KC_NO` — see the note on it above, which is the
+ * one entry here that is this app's and not the driver's.
  *
  * Its last entry, "Reset" with the value 0xf8, is left out. 0xf8 is not a HID
  * usage and the firmware's key path would put it in the report unchanged, so
@@ -330,17 +417,74 @@ const key = (label: string, usage: number): BindingChoice => ({
  * Katakana/Hiragana, 0x89 Yen, 0x8a Henkan, 0x8b Muhenkan, 0x90 Hangul/English
  * and 0x91 Hanja.
  */
-export const EXTRA_KEYS: BindingChoice[] = [
-  ...Array.from({ length: 12 }, (_, i) => key(`F${13 + i}`, 0x68 + i)),
-  key('NUHS', 0x32),
-  key('NUBS', 0x64),
-  key('Ro', 0x87),
-  key('かな', 0x88),
-  key('￥', 0x89),
-  key('変換', 0x8a),
-  key('無変換', 0x8b),
-  key('한영', 0x90),
-  key('漢字', 0x91),
+export const EXTRA_SECTIONS: BindingSection[] = [
+  section('keymap.section.unbound', [KC_NO]),
+  section(
+    'keymap.section.fkeys',
+    Array.from({ length: 12 }, (_, i) => key(`F${13 + i}`, 0x68 + i)),
+  ),
+  section('keymap.section.international', [
+    key('NUHS', 0x32),
+    key('NUBS', 0x64),
+    key('Ro', 0x87),
+    key('かな', 0x88),
+    key('￥', 0x89),
+    key('変換', 0x8a),
+    key('無変換', 0x8b),
+    key('한영', 0x90),
+    key('漢字', 0x91),
+  ]),
+]
+
+export const EXTRA_KEYS: BindingChoice[] = EXTRA_SECTIONS.flatMap((s) => s.choices)
+
+/** LShift. The stock driver stores one modifier per binding, and this is it. */
+const SHIFT = 0x02
+
+const shifted = (label: string, usage: number): BindingChoice => ({
+  label,
+  binding: { kind: 'key', usage, modifiers: SHIFT },
+})
+
+/**
+ * The shifted symbols, in board order — the number row, then the two brackets
+ * and the backslash, then the home row, then the bottom row.
+ *
+ * These are **not** a stock-driver list, and nothing in the binary names them:
+ * the stock tab reaches them by capturing a keypress, so pressing Shift+1 there
+ * stores exactly what a button here does — a `0x10` record with the Shift bit in
+ * its modifier byte and the *unshifted* key's usage in its code byte
+ * (`10 02 1e`). There is no such thing as a HID usage for "!"; the shift is the
+ * modifier, and the OS is what turns the pair into a character.
+ *
+ * Which character it turns into is therefore the **host's** business, not the
+ * board's. The legends below are the US layout's, because that is the layout
+ * this board is printed for; on a keyboard layout that puts something else on
+ * Shift+2, the board still sends `10 02 1f` and the host still decides. The
+ * picker shows the record's bytes beside the name for exactly this reason.
+ */
+export const SHIFTED_KEYS: BindingChoice[] = [
+  shifted('~', 0x35),
+  shifted('!', 0x1e),
+  shifted('@', 0x1f),
+  shifted('#', 0x20),
+  shifted('$', 0x21),
+  shifted('%', 0x22),
+  shifted('^', 0x23),
+  shifted('&', 0x24),
+  shifted('*', 0x25),
+  shifted('(', 0x26),
+  shifted(')', 0x27),
+  shifted('_', 0x2d),
+  shifted('+', 0x2e),
+  shifted('{', 0x2f),
+  shifted('}', 0x30),
+  shifted('|', 0x31),
+  shifted(':', 0x33),
+  shifted('"', 0x34),
+  shifted('<', 0x36),
+  shifted('>', 0x37),
+  shifted('?', 0x38),
 ]
 
 const action = (label: string, code: number, arg = 0): BindingChoice => ({
@@ -355,13 +499,17 @@ const action = (label: string, code: number, arg = 0): BindingChoice => ({
  * "Reset" (0x08) was not read out of the handler branch by branch, so they are
  * repeated rather than explained.
  */
-export const SYSTEM_ACTIONS: BindingChoice[] = [
-  action('Lock', ACTION.lock),
-  action('WinLock', ACTION.winLock),
-  action('WASD Change', ACTION.wasdSwap),
-  action('Boot', ACTION.boot),
-  action('Reset', ACTION.reset),
+export const SYSTEM_SECTIONS: BindingSection[] = [
+  section('keymap.section.input', [
+    action('Lock', ACTION.lock),
+    action('WinLock', ACTION.winLock),
+    action('WASD Change', ACTION.wasdSwap),
+  ]),
+  /* The two that stop the keyboard being a keyboard for a moment. */
+  section('keymap.section.board', [action('Boot', ACTION.boot), action('Reset', ACTION.reset)]),
 ]
+
+export const SYSTEM_ACTIONS: BindingChoice[] = SYSTEM_SECTIONS.flatMap((s) => s.choices)
 
 /**
  * Momentary layer keys. The stock driver offers FN1-FN7; this board has two
@@ -381,31 +529,44 @@ export const LAYER_KEYS: BindingChoice[] = layerKeys(KEYMAP_BLOCK.layers)
  * The stock driver's "Lighting" list (0x41545c-0x4157f5). The firmware decodes
  * these in the same 0x812c handler as the system actions.
  */
-export const LIGHT_ACTIONS: BindingChoice[] = [
-  action('RGB Mode-', 0x2e),
-  action('RGB Mode+', 0x2f),
-  action('RGB Mode', 0x30),
-  action('RGB Test', 0x31),
-  action('Bright+', 0x32),
-  action('Bright-', 0x33),
-  action('Bright', 0x34),
-  action('Bright Off', 0x35),
-  action('Speed+', 0x36),
-  action('Speed-', 0x37),
-  action('Speed', 0x38),
-  action('Light Left', 0x39),
-  action('Light Right', 0x3a),
-  action('Light Trend', 0x3b),
-  action('Color +', 0x3c),
-  action('Color -', 0x3d),
-  action('Color', 0x3e),
+export const LIGHT_SECTIONS: BindingSection[] = [
+  section('keymap.section.mode', [
+    action('RGB Mode-', 0x2e),
+    action('RGB Mode+', 0x2f),
+    action('RGB Mode', 0x30),
+    action('RGB Test', 0x31),
+  ]),
+  section('keymap.section.brightness', [
+    action('Bright+', 0x32),
+    action('Bright-', 0x33),
+    action('Bright', 0x34),
+    action('Bright Off', 0x35),
+  ]),
+  section('keymap.section.speed', [
+    action('Speed+', 0x36),
+    action('Speed-', 0x37),
+    action('Speed', 0x38),
+  ]),
+  section('keymap.section.direction', [
+    action('Light Left', 0x39),
+    action('Light Right', 0x3a),
+    action('Light Trend', 0x3b),
+  ]),
+  section('keymap.section.color', [
+    action('Color +', 0x3c),
+    action('Color -', 0x3d),
+    action('Color', 0x3e),
+  ]),
 ]
+
+export const LIGHT_ACTIONS: BindingChoice[] = LIGHT_SECTIONS.flatMap((s) => s.choices)
 
 /**
  * The stock driver's "Mouse" list (0x4158c7-0x415aee), whose eight items its
  * encoder turns into five button masks, a double click and two wheel steps.
  */
-export const MOUSE_ACTIONS: BindingChoice[] = [
+export const MOUSE_SECTIONS: BindingSection[] = [
+  section('keymap.section.buttons', [
   {
     label: 'Left Click',
     binding: { kind: 'mouseButton', buttons: MOUSE_BUTTONS.left, doubleClick: false },
@@ -430,9 +591,14 @@ export const MOUSE_ACTIONS: BindingChoice[] = [
     label: 'Backward',
     binding: { kind: 'mouseButton', buttons: MOUSE_BUTTONS.back, doubleClick: false },
   },
-  { label: 'Scroll Up', binding: { kind: 'mouseWheel', delta: 1 } },
-  { label: 'Scroll Down', binding: { kind: 'mouseWheel', delta: -1 } },
+  ]),
+  section('keymap.section.wheel', [
+    { label: 'Scroll Up', binding: { kind: 'mouseWheel', delta: 1 } },
+    { label: 'Scroll Down', binding: { kind: 'mouseWheel', delta: -1 } },
+  ]),
 ]
+
+export const MOUSE_ACTIONS: BindingChoice[] = MOUSE_SECTIONS.flatMap((s) => s.choices)
 
 /**
  * Everything the picker offers beyond the plain keyboard usages.
@@ -443,11 +609,21 @@ export const MOUSE_ACTIONS: BindingChoice[] = [
  */
 export function bindingGroups(layers: number = KEYMAP_BLOCK.layers): BindingGroup[] {
   return [
-    { nameKey: 'keymap.group.multimedia', choices: CONSUMER_KEYS },
-    { nameKey: 'keymap.group.special', choices: EXTRA_KEYS },
-    { nameKey: 'keymap.group.function', choices: [...SYSTEM_ACTIONS, ...layerKeys(layers)] },
-    { nameKey: 'keymap.group.lighting', choices: LIGHT_ACTIONS },
-    { nameKey: 'keymap.group.mouse', choices: MOUSE_ACTIONS },
+    // One set, so no header: every one of these is Shift and a key.
+    { nameKey: 'keymap.group.symbols', sections: [{ choices: SHIFTED_KEYS }] },
+    { nameKey: 'keymap.group.multimedia', sections: CONSUMER_SECTIONS },
+    { nameKey: 'keymap.group.special', sections: EXTRA_SECTIONS },
+    {
+      nameKey: 'keymap.group.function',
+      // The layer keys lead this group: on a two-layer board FN1 is the one
+      // entry here that is used every day, and the rest are once-ever settings.
+      sections: [
+        { nameKey: 'keymap.section.layer', choices: layerKeys(layers) },
+        ...SYSTEM_SECTIONS,
+      ],
+    },
+    { nameKey: 'keymap.group.lighting', sections: LIGHT_SECTIONS },
+    { nameKey: 'keymap.group.mouse', sections: MOUSE_SECTIONS },
   ]
 }
 
@@ -456,7 +632,7 @@ export const BINDING_GROUPS: BindingGroup[] = bindingGroups()
 
 const CHOICE_LABELS = new Map<string, string>()
 for (const group of BINDING_GROUPS) {
-  for (const choice of group.choices) {
+  for (const choice of groupChoices(group)) {
     const bytes = encodeRecord(choice.binding).join(',')
     if (!CHOICE_LABELS.has(bytes)) CHOICE_LABELS.set(bytes, choice.label)
   }
@@ -478,12 +654,36 @@ function modifierPrefix(mask: number): string {
  */
 export function bindingLabel(binding: KeyBinding, keyLabel: (usage: number) => string): string {
   switch (binding.kind) {
-    case 'none':
-      return '—'
+    case 'none': {
+      /*
+       * Two different things decode to `none`, and only one of them has a name.
+       *
+       * `10 00 00` is a key record with no usage: a deliberate "this key sends
+       * nothing", which is what the stock encoder writes for macro_type 1 and
+       * what the picker offers as `KC_NO`. Naming it is the only way a read can
+       * show that the setting took — a dash there is indistinguishable from a
+       * slot nobody ever wrote.
+       *
+       * `0x00` and `0xff` are the other thing: a slot that was never set, which
+       * is most of the Fn layer straight from the factory. There is no name to
+       * put on that, so it stays a dash.
+       */
+      if (binding.raw !== RECORD_TYPE.key) return '—'
+      return CHOICE_LABELS.get(encodeRecord(binding).join(',')) ?? '—'
+    }
     case 'key': {
       const prefix = modifierPrefix(binding.modifiers)
       if (binding.usage === 0) return prefix || '—'
-      return prefix ? `${prefix}+${keyLabel(binding.usage)}` : keyLabel(binding.usage)
+      // The catalog first, because it names records the caller's table cannot:
+      // F13-F24 and the international keys are in `EXTRA_KEYS` and nowhere else,
+      // and a cap showing `0x68` for F13 is the shape of a key that looks broken.
+      // The whole record is looked up before the bare usage, so Shift+1 reads as
+      // `!` rather than as `LShift+1` — see SHIFTED_KEYS.
+      const whole = CHOICE_LABELS.get(encodeRecord(binding).join(','))
+      if (whole) return whole
+      const named = CHOICE_LABELS.get(`${RECORD_TYPE.key},0,${binding.usage}`)
+      const label = named ?? keyLabel(binding.usage)
+      return prefix ? `${prefix}+${label}` : label
     }
     case 'macro':
       return t('keymap.label.macro', { slot: binding.slot })

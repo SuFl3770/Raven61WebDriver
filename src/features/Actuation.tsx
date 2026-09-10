@@ -8,6 +8,7 @@ import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/c
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { Notice, Panel } from '../ui/Panel'
 import { useHeldWrites } from '../ui/useHeldWrites'
+import { Slider } from '../ui/Slider'
 
 /** 1.5mm is the board's factory default (global_key_actuation = 75). */
 const PRESETS: { labelKey: MessageKey; value: number }[] = [
@@ -101,8 +102,7 @@ export function Actuation() {
 
 
       <div className="row" style={{ marginTop: 16 }}>
-        <input
-          type="range"
+        <Slider
           {...held}
           disabled={none}
           min={MM_PER_COUNT}
