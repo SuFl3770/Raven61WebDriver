@@ -981,6 +981,10 @@ function LiveGrid({
       */
       physical={physical}
       selected={selected}
+      // A monitor: the line under the legend is what the key is doing right
+      // now, so it appears the moment there is one. It still leaves the way
+      // every other cap's line does — see `subLive`.
+      subLive
       onToggle={(i, on) => selection.setSelected(i, on)}
       fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / travelMm}
       sub={(k) => {

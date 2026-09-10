@@ -31,6 +31,7 @@ import { useCalibrationMode } from './state/calibration'
 import { DebugGesture } from './ui/DebugGesture'
 import { DeviceCard } from './ui/DeviceCard'
 import { TabActionSlot } from './ui/TabActions'
+import { TabPinnedSlot } from './ui/TabPinned'
 import { useExit } from './ui/useExit'
 import { VersionBadge } from './ui/VersionBadge'
 import { selection } from './state/selection'
@@ -124,6 +125,12 @@ export default function App() {
    * exists, and a ref changing tells nobody.
    */
   const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null)
+  /*
+   * The other slot: the band between the title and the panels, which is where
+   * a tab's key grid is drawn — see ui/TabPinned.tsx. State for the same
+   * reason as the one above.
+   */
+  const [pinnedSlot, setPinnedSlot] = useState<HTMLElement | null>(null)
   const { connected } = useConnection()
   const { debug } = useSettings()
   const t = useT()
@@ -313,10 +320,15 @@ export default function App() {
         </div>
 
         {/*
-          Keyed by the tab, which is what replays the animation: a new key is a
-          new element, and a CSS animation runs when an element appears. Without
-          it React would keep this div across the switch and only swap what is
-          inside, and nothing would move.
+          Keyed by the tab, which is what replays the animations: a new key is
+          a new subtree, and a CSS animation runs when an element appears.
+          Without it React would keep these divs across the switch and only
+          swap what is inside, and nothing would move.
+
+          It reaches further than the two bands that slide — see `.tab-title`
+          and `.tab-scroll` in styles.css. Every cap in the grid is rebuilt
+          too, which is what fades in the numbers, bands and paint the new tab
+          puts on a keyboard that is otherwise holding still.
         */}
         <main className="content">
           <div key={tab.id} className="tab-in">
@@ -353,7 +365,25 @@ export default function App() {
               */}
               <div className="tab-actions" ref={setActionSlot} />
             </header>
-            <TabActionSlot value={actionSlot}>{tab.render()}</TabActionSlot>
+
+            {/*
+              Between the title and the panels, and outside the box that
+              scrolls: the key grid, on the three tabs that draw one. Empty on
+              the rest, where the stylesheet drops it — see `.tab-pin`.
+            */}
+            <div className="tab-pin" ref={setPinnedSlot} />
+
+            {/*
+              The only part of a tab that scrolls. The title above it, the grid
+              beside it in the band, and the sub-tab strip inside it — which
+              sticks to the top of this box rather than being lifted out of it
+              — all stay where they are while the panels move under them.
+            */}
+            <div className="tab-scroll">
+              <TabActionSlot value={actionSlot}>
+                <TabPinnedSlot value={pinnedSlot}>{tab.render()}</TabPinnedSlot>
+              </TabActionSlot>
+            </div>
           </div>
         </main>
       </div>

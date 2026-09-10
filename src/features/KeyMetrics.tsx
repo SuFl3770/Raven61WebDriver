@@ -173,6 +173,12 @@ export function KeyMetrics({
         selected={picking ? sel : undefined}
         onToggle={picking ? (i, on) => selection.setSelected(i, on) : undefined}
         subClass={calibration ? undefined : isPair(metric) ? 'pair' : undefined}
+        /* What the line is about, so that changing section fades the numbers
+           in rather than swapping them where they stand — see `subKey`. A
+           pass is its own kind of line, and one name for the whole of it: the
+           scale on a cap is rewritten as fast as the board reports it, and a
+           key that followed the value would rebuild every cap each time. */
+        subKey={calibration ? 'calibration' : metric}
         onHover={hover.set}
         stripe={
           !calibration && metric === 'switch' ? (k) => switchStripe(configs[k.index]) : undefined
