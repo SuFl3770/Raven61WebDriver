@@ -51,6 +51,14 @@ export const writeAdvancedKey = (
   rec: Parameters<NonNullable<EngineCodec['writeAdvancedKey']>>[2],
 ) => raven61Codec.writeAdvancedKey!(link, record, rec)
 
+/** The macro store, plus the keymap entries that start a macro. */
+export const readMacros = (link: HidLink) => raven61Codec.readMacros!(link)
+
+export const writeMacros = (
+  link: HidLink,
+  macros: Parameters<NonNullable<EngineCodec['writeMacros']>>[1],
+) => raven61Codec.writeMacros!(link, macros)
+
 /** The stored per-key colour layer. */
 export const readKeyColors = (link: HidLink) => raven61Codec.readKeyColors!(link)
 

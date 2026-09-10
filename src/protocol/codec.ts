@@ -10,9 +10,11 @@ import type {
   KeymapWriteResult,
   KeyPerfWriteResult,
   KeyRgbWriteResult,
+  MacroWriteResult,
 } from './engine'
 import type { GlobalPatch, GlobalWriteResult } from './global'
 import type { Rgb } from './keyRgb'
+import type { Macro } from './macros'
 import type { ProfileSupport } from './layers'
 import type { SlotMap } from './slotMap'
 import type {
@@ -24,6 +26,7 @@ import type {
   KeyRgbSnapshot,
   KeySample,
   KeymapEntry,
+  MacroSnapshot,
 } from './types'
 import type { AdvancedKeySnapshot } from './types'
 
@@ -270,6 +273,39 @@ export interface KeyboardCodec {
   restoreAdvancedKeys?(link: HidLink, blobs: AdvancedKeyBlobs): Promise<void>
 
   /**
+   * The macro store, plus every keymap entry that starts a macro.
+   *
+   * Together for the reason `readAdvancedKeys` reads three tables at once: a
+   * body says what it types and nothing about which key runs it. And a second
+   * reason of its own — `MacroSnapshot.canonical` says whether a macro key can
+   * safely be bound at all, and that is a fact about the store, not about the
+   * key. See `protocol/macros.ts`.
+   */
+  readMacros?(link: HidLink): Promise<MacroSnapshot>
+
+  /**
+   * Writes the macro store, and checks that the write took.
+   *
+   * The **whole store**, unlike every other write here, and deliberately so.
+   * The offsets are the only index into the region and the player has no bound
+   * on its cursor, so a body that does not stop makes every macro key on the
+   * board unsafe — laying all 32 slots out at once is what removes that state
+   * rather than preserving it. Read-modify-write still holds: the caller passes
+   * back the macros it read, so bodies it did not edit go out as they were.
+   *
+   * A verified write means *the bodies are in the store*. Whether a key plays
+   * one depends on the keymap entry pointing at it, which is a separate
+   * write — see `writeKeymap`.
+   */
+  writeMacros?(link: HidLink, macros: readonly Macro[]): Promise<MacroWriteResult>
+
+  /**
+   * Puts a whole macro store back, byte for byte — the undo for the write
+   * above, using the bytes the board had rather than this app's idea of them.
+   */
+  restoreMacros?(link: HidLink, blob: Uint8Array): Promise<void>
+
+  /**
    * The LED frame the board is displaying right now, effects and the firmware's
    * calibration overlay included.
    *
@@ -376,6 +412,9 @@ export type Capability =
   | 'readAdvancedKeys'
   | 'writeAdvancedKey'
   | 'restoreAdvancedKeys'
+  | 'readMacros'
+  | 'writeMacros'
+  | 'restoreMacros'
   | 'readLightFrame'
   | 'watchLightFrame'
   | 'readActiveProfile'

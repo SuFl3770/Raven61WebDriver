@@ -15,6 +15,7 @@ import { t, type MessageKey } from '../i18n'
 import type { AdvancedKeyBlobs, AdvancedKind } from './advancedKeys'
 import type { KeyBinding } from './keymap'
 import type { Rgb } from './keyRgb'
+import type { Macro } from './macros'
 import type { LightingSettings } from './lighting'
 
 /**
@@ -286,6 +287,44 @@ export interface AdvancedKeySnapshot {
   slotMap: SlotMapInfo
   uses: AdvancedKeyUse[]
   orphans: number[]
+}
+
+/** A key on some layer that starts a macro. See `protocol/macros.ts`. */
+export interface MacroUse {
+  layer: number
+  /** Key index in this project's key order. */
+  index: number
+  label: string
+  slot: number
+  /** Macro slot the entry's second byte names. */
+  macro: number
+  /**
+   * The entry's third byte — the repeat count.
+   *
+   * Read and reported, never acted on: `macroStart` stores it at `gp-0x781`
+   * and no code in the image reads that byte back. Shown so a store the stock
+   * driver wrote does not look like this app misread it.
+   */
+  repeat: number
+}
+
+/**
+ * The macro store, plus what the keymap says about it.
+ *
+ * `canonical` is the safety answer, not a tidiness one. The player has no bound
+ * on its cursor, so a slot with no body or no stop record makes *every* macro
+ * key on the board unsafe, not just that slot's — see `protocol/macros.ts`. A
+ * panel must not offer to bind a key while this is false; writing the store
+ * first is what makes it true.
+ */
+export interface MacroSnapshot {
+  blob: Uint8Array
+  macros: Macro[]
+  slotMap: SlotMapInfo
+  uses: MacroUse[]
+  canonical: boolean
+  /** Slots this app could not walk to a stop record. */
+  malformed: number[]
 }
 
 /** Structural view of a slot mapping, so panels need not import the codec. */

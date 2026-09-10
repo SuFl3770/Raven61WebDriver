@@ -117,6 +117,9 @@ export interface CommandSpec {
   /** The stored per-key custom colour layer. See `protocol/keyRgb.ts`. */
   readKeyRgb: number | null
   writeKeyRgb: number | null
+  /** The macro store — see `protocol/macros.ts`. */
+  readMacros: number | null
+  writeMacros: number | null
   /**
    * The LED frame the board is displaying right now, effects included — a RAM
    * buffer, not the stored layer above. Read-only: it is what the effect engine
@@ -227,6 +230,22 @@ export interface AdvancedKeySpec {
   pairBlobSize: number
   toggleRecordSize: number
   toggleBlobSize: number
+}
+
+/**
+ * Geometry of the macro store. See `protocol/macros.ts`.
+ *
+ * `blobBytes` is what the read command transfers and what the firmware's write
+ * handler bounds against; `hostBytes` is how much of it a host should use — the
+ * stock driver stops at 3584, and staying inside that keeps a board this app
+ * configures readable in the stock driver. The gap between the two is
+ * deliberate and is left alone.
+ */
+export interface MacroSpec {
+  slots: number
+  eventBytes: number
+  blobBytes: number
+  hostBytes: number
 }
 
 /** Geometry of the keymap blocks. See `protocol/keymap.ts` and `protocol/slotMap.ts`. */
@@ -479,6 +498,7 @@ export interface ProtocolSpec {
   keyRgb: KeyRgbSpec
   keymap: KeymapSpec
   advancedKeys: AdvancedKeySpec
+  macros: MacroSpec
   global: GlobalSpec
   monitor: MonitorSpec
   factoryReset: FactoryResetSpec

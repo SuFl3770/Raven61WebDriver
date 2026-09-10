@@ -34,6 +34,7 @@ import { FACTORY_GLOBAL } from '../protocol/global'
 import { encodeKeyPerfRecord } from '../protocol/keyPerf'
 import { ADVANCED_KEY_BLOCKS } from '../protocol/advancedKeys'
 import { keyRgbBlobSize } from '../protocol/keyRgb'
+import { macroBlobSize } from '../protocol/macros'
 import {
   LIGHT_CONTROL,
   LIGHT_LIMITS,
@@ -45,7 +46,7 @@ import {
 import { encodeRecord, factoryBinding } from '../protocol/keymap'
 import { fallbackSlotMap } from '../protocol/slotMap'
 import { demoSpec } from './spec'
-import { isModifierUsage, modifierBit, usageForCode } from './keys'
+import { isModifierUsage, modifierBit, usageForCode } from '../keyboard/hostKeys'
 
 /**
  * What the demo board's firmware calls itself.
@@ -111,6 +112,17 @@ export class DemoBoard {
   private advancedDks!: Uint8Array
   private advancedPair!: Uint8Array
   private advancedToggle!: Uint8Array
+  /**
+   * The macro store, zeroed — and zeroed is not a shortcut here, it is the
+   * state worth demonstrating.
+   *
+   * A factory reset fills 0x21100 with zeros (docs §3.8), which leaves all 32
+   * offsets pointing into the offset table rather than at a body. On real
+   * hardware that is the state in which binding a macro key sends the player
+   * walking out of the region, so it is the state the panel has to notice and
+   * offer to fix. A demo that started with a tidy store would never show that.
+   */
+  private macros!: Uint8Array
 
   /** Latched by 0xa8 and never cleared, the way the real board behaves. */
   private reporting = false
@@ -250,6 +262,12 @@ export class DemoBoard {
         return this.blockReply(request, command, this.advancedToggle)
       case COMMAND.writeAdvancedToggle:
         this.blockWrite(request, this.advancedToggle)
+        return this.ack(request)
+
+      case COMMAND.readMacros:
+        return this.blockReply(request, command, this.macros)
+      case COMMAND.writeMacros:
+        this.blockWrite(request, this.macros)
         return this.ack(request)
 
       case COMMAND.readLightRgb:
@@ -393,6 +411,7 @@ export class DemoBoard {
     this.advancedDks = new Uint8Array(ADVANCED_KEY_BLOCKS.dks.blobSize)
     this.advancedPair = new Uint8Array(ADVANCED_KEY_BLOCKS.pair.blobSize)
     this.advancedToggle = new Uint8Array(ADVANCED_KEY_BLOCKS.toggle.blobSize)
+    this.macros = new Uint8Array(macroBlobSize(this.spec.macros))
   }
 
   private buildGlobal(): Uint8Array {
@@ -787,16 +806,9 @@ export class DemoBoard {
 }
 
 /** Read commands this app does not decode. The board answers; the blob is empty. */
-const UNDECODED_READS: readonly number[] = [
-  COMMAND.readMacros,
-  COMMAND.readReserved,
-]
+const UNDECODED_READS: readonly number[] = [COMMAND.readReserved]
 
-const UNDECODED_WRITES: readonly number[] = [
-  COMMAND.writeMacros,
-  COMMAND.writeLightRgb,
-  COMMAND.writeReserved,
-]
+const UNDECODED_WRITES: readonly number[] = [COMMAND.writeLightRgb, COMMAND.writeReserved]
 
 const ZERO_BLOB = new Uint8Array(4096)
 

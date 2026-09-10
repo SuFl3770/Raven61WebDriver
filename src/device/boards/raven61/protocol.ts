@@ -25,6 +25,7 @@ import { DEFAULT_GLOBAL } from '../../../protocol/global'
 import { DEFAULT_KEYMAP } from '../../../protocol/keymap'
 import { DEFAULT_KEY_PERF } from '../../../protocol/keyPerf'
 import { KEY_RGB } from '../../../protocol/keyRgb'
+import { DEFAULT_MACROS } from '../../../protocol/macros'
 import { UNUSED_SLOTS } from '../../../protocol/slotMap'
 import type { ProtocolSpec } from '../../spec'
 
@@ -37,7 +38,13 @@ import type { ProtocolSpec } from '../../spec'
  * straight into the colour registers (docs §3.8). The lighting **effect**
  * settings — mode, brightness, speed, direction — are still not decoded, so no
  * command names them and the panel says so rather than sending a byte nobody
- * has read. Same for the macro block.
+ * has read.
+ *
+ * `macros` **is** named, and from the firmware as well: the player at 0x94e8 /
+ * 0x957e gives the offset table, the 4-byte event record and the millisecond
+ * delay unit (`protocol/macros.ts`). Like the advanced keys it has **not been
+ * confirmed on hardware** — and unlike them it carries a hazard the panel is
+ * explicit about, because the player has no bound on its cursor.
  *
  * `advancedKeys` **is** named, from the firmware: the three tables and the six
  * commands that reach them are decoded (`protocol/advancedKeys.ts`), and the
@@ -54,6 +61,7 @@ export const RAVEN61_PROTOCOL: ProtocolSpec = {
   keyRgb: KEY_RGB,
   keymap: DEFAULT_KEYMAP,
   advancedKeys: DEFAULT_ADVANCED_KEYS,
+  macros: DEFAULT_MACROS,
   global: DEFAULT_GLOBAL,
   monitor: { ...MONITOR_DEFAULTS },
   factoryReset: { ...FACTORY_RESET_DEFAULTS },

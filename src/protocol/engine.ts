@@ -79,6 +79,17 @@ import {
   rgbRecordHex,
   type Rgb,
 } from './keyRgb'
+import {
+  decodeMacros,
+  encodeMacros,
+  isCanonical,
+  macroBlobSize,
+  macroBodyHex,
+  macroWriteBytes,
+  malformedSlots,
+  sameMacro,
+  type Macro,
+} from './macros'
 import { fallbackSlotMap, slotMapFromKeymap, type SlotMap } from './slotMap'
 import type {
   AdvancedKeySnapshot,
@@ -91,6 +102,8 @@ import type {
   KeyRgbEntry,
   KeyRgbSnapshot,
   KeySample,
+  MacroSnapshot,
+  MacroUse,
 } from './types'
 
 /**
@@ -269,6 +282,32 @@ export interface AdvancedKeyWriteResult {
   mismatch: { wanted: string; got: string } | null
 }
 
+/**
+ * What a macro-store write did.
+ *
+ * The whole store goes out, not one slot, and that is the safety rule rather
+ * than laziness — the offset table indexes every body, so moving one body moves
+ * the offsets of the ones after it, and a store with one unterminated body is a
+ * store where every macro key is unsafe. See `protocol/macros.ts`.
+ *
+ * `changed` is the slots whose events differ from what the board held, which is
+ * what a status line should name. `mismatch` is the slots that did not read back
+ * as written — the same rule as every other block here, because an acknowledged
+ * write the firmware ignored reads exactly like one that worked.
+ */
+export interface MacroWriteResult {
+  /** False when the store already held these bodies and nothing was sent. */
+  sent: boolean
+  /** Bytes transferred — the offset table plus the bodies, not the whole 4 KB. */
+  bytes: number
+  changed: number[]
+  /** The store as the board had it before the write — enough to undo it. */
+  before: Uint8Array
+  /** The store read back afterwards. */
+  after: Uint8Array
+  mismatch: { slot: number; wanted: string; got: string }[]
+}
+
 export interface FactoryResetResult {
   /** Milliseconds waited before reading anything back. */
   waitedMs: number
@@ -329,6 +368,8 @@ export interface ProtocolEngine {
   writeKeyRgbBlob(link: HidLink, blob: Uint8Array): Promise<void>
   readAdvancedKeyBlobs(link: HidLink): Promise<AdvancedKeyBlobs>
   writeAdvancedKeyBlob(link: HidLink, block: AdvancedBlock, blob: Uint8Array): Promise<void>
+  readMacroBlob(link: HidLink): Promise<Uint8Array>
+  writeMacroBlob(link: HidLink, blob: Uint8Array, bytes?: number): Promise<void>
   readCalTable(link: HidLink): Promise<CalRecord[]>
   /**
    * Present only when the board's spec names an analog test-mode command.
@@ -1218,6 +1259,145 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     }
   }
 
+  // --- macros --------------------------------------------------------------
+
+  /**
+   * The macro store — 4 KB at flash 0x21100, read whole.
+   *
+   * Whole rather than "the table plus the bodies it points at", even though a
+   * two-pass read would be shorter. The offsets are the only index into the
+   * region and a store this app did not write can put a body anywhere in it, so
+   * a read that trusted the table would decode bodies it had not fetched. 4 KB
+   * is 74 packets and the tab reads once when it opens.
+   */
+  async function readMacroBlob(link: HidLink): Promise<Uint8Array> {
+    const command = needCommand(cmd.readMacros, 'readMacros')
+    return inTransaction(link, 'macros', () =>
+      readBlock(link, command, macroBlobSize(spec.macros), { note: 'macros' }),
+    )
+  }
+
+  /**
+   * Puts the store back.
+   *
+   * `bytes` is how much of the blob to send, defaulting to all of it. The
+   * caller passes the shorter figure `macroWriteBytes` computes — the offset
+   * table plus the bodies — because the rest is zeros the board already holds
+   * and every 56 of them is another packet. It is always a prefix, so the
+   * offset table can never be sent without the bodies it points at.
+   *
+   * The firmware's handler (0x6bd6) bounds `offset + length` against 4096, so a
+   * blob longer than the block is refused there; this refuses it here, where
+   * the number can be named.
+   */
+  async function writeMacroBlob(link: HidLink, blob: Uint8Array, bytes?: number): Promise<void> {
+    const command = needCommand(cmd.writeMacros, 'writeMacros')
+    const expected = macroBlobSize(spec.macros)
+    if (blob.length !== expected) {
+      throw new Error(t('protocol.blobSize', { size: blob.length, expected }))
+    }
+    const length = Math.min(bytes ?? expected, expected)
+    await inTransaction(link, 'macro write', () =>
+      writeBlock(link, command, blob.subarray(0, length), { label: 'macro write' }),
+    )
+  }
+
+  /**
+   * The store, plus every keymap entry across the readable layers that starts a
+   * macro.
+   *
+   * The keymap sweep is the same necessity it is for advanced keys: a body says
+   * what it types and nothing about which key runs it. Here it carries a second
+   * weight — a bound macro key on a board whose store is not canonical is a key
+   * that types whatever lies past the end of the region, so a panel needs to
+   * know both facts at once to say anything true about it.
+   */
+  async function readMacros(link: HidLink): Promise<MacroSnapshot> {
+    const { map } = await readSlotMap(link)
+    const blob = await readMacroBlob(link)
+    const macros = decodeMacros(blob, spec.macros)
+    const uses: MacroUse[] = []
+    for (let layer = 0; layer < spec.keymap.layers; layer++) {
+      const layerBlob = await readKeymapLayerBlob(link, layer)
+      for (let slot = 0; slot < spec.keymap.slots; slot++) {
+        const binding = decodeRecord(layerBlob, slot * spec.keymap.entrySize)
+        if (binding.kind !== 'macro') continue
+        const key = map.keyBySlot.get(slot)
+        uses.push({
+          layer,
+          index: key?.index ?? -1,
+          label: key?.label ?? '',
+          slot,
+          macro: binding.slot,
+          repeat: binding.repeat,
+        })
+      }
+    }
+    return {
+      blob,
+      macros,
+      slotMap: map,
+      uses,
+      canonical: isCanonical(blob, spec.macros),
+      malformed: malformedSlots(macros),
+    }
+  }
+
+  /**
+   * Writes the whole store, and reads it back to check it.
+   *
+   * There is no per-slot write and there is not meant to be. `encodeMacros`
+   * rebuilds the offset table and terminates every body, which is what makes
+   * the store safe to bind a key to at all — an in-place edit of one body would
+   * leave the other 31 offsets exactly as unsafe as it found them.
+   *
+   * Read-modify-write still applies, and this is where it lands: the caller
+   * passes the macros it got from `readMacros`, so bodies it did not edit go
+   * back as they were read, unknown kind nibbles included.
+   */
+  async function writeMacros(link: HidLink, macros: readonly Macro[]): Promise<MacroWriteResult> {
+    const before = await readMacroBlob(link)
+    const held = decodeMacros(before, spec.macros)
+    const wanted = encodeMacros(macros, spec.macros)
+
+    const changed: number[] = []
+    for (let slot = 0; slot < spec.macros.slots; slot++) {
+      const was = held[slot]
+      const now = macros[slot]
+      if (!now) continue
+      // A slot the board never programmed counts as changed even when both
+      // hold no events: the point of the write is the offset and the stop
+      // record, and "no events either way" is exactly the state that hides it.
+      if (!was || !was.programmed || !was.terminated || !sameMacro(was, now)) changed.push(slot)
+    }
+    if (changed.length === 0) {
+      return { sent: false, bytes: 0, changed, before, after: before, mismatch: [] }
+    }
+
+    const bytes = macroWriteBytes(macros, spec.macros)
+    await writeMacroBlob(link, wanted, bytes)
+    const after = await readMacroBlob(link)
+    const read = decodeMacros(after, spec.macros)
+    const mismatch: { slot: number; wanted: string; got: string }[] = []
+    for (let slot = 0; slot < spec.macros.slots; slot++) {
+      const want = macros[slot]
+      const got = read[slot]
+      if (!want) continue
+      if (got && got.programmed && got.terminated && sameMacro(want, got)) continue
+      mismatch.push({
+        slot,
+        wanted: macroBodyHex(want),
+        got: got ? macroBodyHex(got) : '—',
+      })
+    }
+    return { sent: true, bytes, changed, before, after, mismatch }
+  }
+
+  /** Puts a whole store back, byte for byte — the undo for the write above. */
+  async function restoreMacros(link: HidLink, blob: Uint8Array): Promise<void> {
+    await writeMacroBlob(link, blob)
+  }
+
   // --- per-key colour ------------------------------------------------------
 
   /**
@@ -1713,6 +1893,8 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
     writeKeyRgbBlob,
     readAdvancedKeyBlobs,
     writeAdvancedKeyBlob,
+    readMacroBlob,
+    writeMacroBlob,
     readCalTable,
     parseEvent,
     decodePerKey,
@@ -1784,6 +1966,21 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
       has(cmd.writeAdvancedToggle) &&
       has(cmd.readKeymapLive) &&
       has(cmd.readKeymapDefaults) && { writeAdvancedKey, restoreAdvancedKeys }),
+    /*
+     * The macro read sweeps the keymap the same way, and for the same reason.
+     * The write is gated on the *keymap* write as well as the store's own —
+     * not because writing bodies needs it, but because a store nothing points
+     * at does nothing, and a panel that could fill 32 slots and never bind one
+     * of them would be a panel with no way to finish the job.
+     */
+    ...(has(cmd.readMacros) &&
+      has(cmd.readKeymapLive) &&
+      has(cmd.readKeymapDefaults) && { readMacros }),
+    ...(has(cmd.readMacros) &&
+      has(cmd.writeMacros) &&
+      has(cmd.readKeymapLive) &&
+      has(cmd.writeKeymapLive) &&
+      has(cmd.readKeymapDefaults) && { writeMacros, restoreMacros }),
     ...(has(cmd.readLightFrame) &&
       has(cmd.readKeymapDefaults) && { readLightFrame, watchLightFrame }),
     ...(has(cmd.readCalibration) && { readCalibration: readCalTable }),

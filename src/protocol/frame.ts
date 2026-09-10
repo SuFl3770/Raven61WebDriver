@@ -666,6 +666,8 @@ export const DEFAULT_COMMANDS: CommandSpec = {
   writeKeyPerf: COMMAND.writeKeyPerf,
   readKeyRgb: COMMAND.readKeyRgb,
   writeKeyRgb: COMMAND.writeKeyRgb,
+  readMacros: COMMAND.readMacros,
+  writeMacros: COMMAND.writeMacros,
   readAdvancedDks: COMMAND.readAdvancedDks,
   writeAdvancedDks: COMMAND.writeAdvancedDks,
   readAdvancedPair: COMMAND.readAdvancedPair,
