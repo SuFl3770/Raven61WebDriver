@@ -1474,8 +1474,11 @@ div.rail { position: sticky; top: 0; }
  *
  * The sidebar's tabs are a column, so its content rises into place; the
  * sub-tabs are a row, so a section arrives from the side it sits on — from the
- * right going forwards, from the left going back. Both are short and both end
- * at `transform: none`, so nothing is left transformed once they finish: an
+ * right going forwards, from the left going back. One or the other, never
+ * both: which of the two strips was used is what decides the direction, so
+ * opening a tab is only ever a rise and moving along its sections only ever a
+ * slide. Both are short and both end at
+ * `transform: none`, so nothing is left transformed once they finish: an
  * ancestor with a transform becomes the containing block for anything fixed
  * inside it, and that is not a thing to leave switched on.
  *
@@ -1503,7 +1506,16 @@ div.rail { position: sticky; top: 0; }
  * of this on purpose.
  */
 .tab-title, .tab-scroll { animation: tab-in 180ms ease-out; }
-.section-in { animation: section-in-forward 160ms ease-out; }
+/*
+ * The sideways move belongs to the strip being used, not to the section
+ * existing. A tab that opens on its first section is a tab arriving, and the
+ * rule above is already carrying that section up with everything else in the
+ * scroller — so a bare `.section-in` stays still and only a section that was
+ * moved to slides. ui/SubTabs.tsx is what withholds the direction until the
+ * first click; without that split both ran at once and a tab switch read as a
+ * diagonal, sideways more than up, because 14px beats 10px.
+ */
+.section-in.fwd { animation: section-in-forward 160ms ease-out; }
 .section-in.back { animation: section-in-back 160ms ease-out; }
 
 /*
@@ -1656,7 +1668,7 @@ div.rail { position: sticky; top: 0; }
   .select-menu, .select-menu.up, .select-menu.closing, .select-menu.up.closing { animation: none; }
   button, .keycap { transition: none; }
   /* The movement is the whole point of these, so there is nothing to keep. */
-  .tab-title, .tab-scroll, .section-in { animation: none; }
+  .tab-title, .tab-scroll, .section-in.fwd, .section-in.back { animation: none; }
   /* Not movement, but the same answer: what these do is delay a value the
      reader asked to see, and a preference for less motion is not a preference
      for waiting. */

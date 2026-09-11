@@ -51,8 +51,15 @@ export function SubTabs({
    * controlled, so `active` and this land in the same batch and the render that
    * shows the new section already knows which way it arrived — no ref written
    * during a render, and nothing to get wrong when a render is repeated.
+   *
+   * `null` until the strip is actually used, which is the state the strip is in
+   * the moment a tab opens: nobody has moved sideways yet, and the section is
+   * only here because the whole tab arrived. It slid in from the right anyway
+   * while the tab was still rising, and two movements at once read as one
+   * diagonal — so the first section makes no movement of its own and comes up
+   * with the tab. See `.tab-scroll` in styles.css, which is what lifts it.
    */
-  const [back, setBack] = useState(false)
+  const [dir, setDir] = useState<'fwd' | 'back' | null>(null)
   const indexOf = (id: string) => tabs.findIndex((s) => s.id === id)
 
   return (
@@ -64,7 +71,7 @@ export function SubTabs({
             role="tab"
             aria-selected={s.id === active}
             onClick={() => {
-              setBack(indexOf(s.id) < indexOf(active))
+              setDir(indexOf(s.id) < indexOf(active) ? 'back' : 'fwd')
               onActive(s.id)
             }}
           >
@@ -76,7 +83,7 @@ export function SubTabs({
         Keyed by the section for the same reason as the tab above: a new key is
         a new element, which is what replays the slide.
       */}
-      <div key={current.id} className={`section-in${back ? ' back' : ''}`}>
+      <div key={current.id} className={dir ? `section-in ${dir}` : 'section-in'}>
         {current.render()}
       </div>
     </>
