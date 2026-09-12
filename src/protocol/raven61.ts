@@ -42,6 +42,27 @@ export const writeKeymapLayer = (
   entries: Parameters<NonNullable<EngineCodec['writeKeymap']>>[2],
 ) => raven61Codec.writeKeymap!(link, layer, entries)
 
+/** The three advanced-key tables, plus the keymap entries that name a record. */
+export const readAdvancedKeys = (link: HidLink) => raven61Codec.readAdvancedKeys!(link)
+
+export const writeAdvancedKey = (
+  link: HidLink,
+  record: number,
+  rec: Parameters<NonNullable<EngineCodec['writeAdvancedKey']>>[2],
+) => raven61Codec.writeAdvancedKey!(link, record, rec)
+
+/** The macro store, and — unless `opts.uses` says otherwise — the keymap
+    entries that start a macro. */
+export const readMacros = (
+  link: HidLink,
+  opts?: Parameters<NonNullable<EngineCodec['readMacros']>>[1],
+) => raven61Codec.readMacros!(link, opts)
+
+export const writeMacros = (
+  link: HidLink,
+  macros: Parameters<NonNullable<EngineCodec['writeMacros']>>[1],
+) => raven61Codec.writeMacros!(link, macros)
+
 /** The stored per-key colour layer. */
 export const readKeyColors = (link: HidLink) => raven61Codec.readKeyColors!(link)
 

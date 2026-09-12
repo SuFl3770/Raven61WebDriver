@@ -108,9 +108,15 @@ export const FLASH = {
   keymap: { base: 0x20b00, size: 0x400, layers: 2 },
   keyRgb: { base: 0x20f00, size: 0x180 },
   macros: { base: 0x21100, size: 0x1000 },
-  advancedKeys: { base: 0x22100, size: 0x400, recordSize: 24 },
-  lightConfigA: { base: 0x224f0, size: 0x100 },
-  lightConfigB: { base: 0x225f0, size: 0x100 },
+  /**
+   * Advanced keys, in three tables indexed by the same record number. The two
+   * small ones were down as lighting until the driver's apply path was read:
+   * it sends 0xa3, 0xa5 and 0xa7 together, and no LED code in the firmware
+   * reads either address. See `protocol/advancedKeys.ts`.
+   */
+  advancedDks: { base: 0x22100, size: 0x400, recordSize: 24 },
+  advancedPair: { base: 0x224f0, size: 0x100, recordSize: 6 },
+  advancedToggle: { base: 0x225f0, size: 0x100, recordSize: 3 },
   /** Allocated and zeroed, referenced by no runtime code. */
   reserved: { base: 0x226f0, size: 0x400 },
 } as const

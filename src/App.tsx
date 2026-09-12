@@ -27,13 +27,15 @@ import { LanguageSelect } from './i18n/LanguageSelect'
 import { Debug } from './tools/Debug'
 import { DevicePanel } from './tools/DevicePanel'
 import { Sensors } from './tools/Sensors'
-import { useCalibrationMode } from './state/calibration'
+import { useWindowHeld } from './state/windowHold'
 import { DebugGesture } from './ui/DebugGesture'
 import { DeviceCard } from './ui/DeviceCard'
 import { TabActionSlot } from './ui/TabActions'
+import { TabPinnedSlot } from './ui/TabPinned'
 import { useExit } from './ui/useExit'
 import { VersionBadge } from './ui/VersionBadge'
 import { selection } from './state/selection'
+import { useLegendSync } from './state/legends'
 import { useCodecAutoSelect, useConnection } from './state/link'
 import { useSettings } from './state/settings'
 
@@ -106,6 +108,9 @@ const DEBUG_TABS: Tab[] = [
 
 export default function App() {
   useCodecAutoSelect()
+  // Reads the base layer on connect, so every grid's caps say what its keys
+  // actually send rather than what is printed on them — see state/legends.ts.
+  useLegendSync()
   const [active, setActive] = useState(TOP_TABS[0]!.id)
   /*
    * Whether the left column is showing, which only means anything on a narrow
@@ -120,16 +125,24 @@ export default function App() {
    * exists, and a ref changing tells nobody.
    */
   const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null)
+  /*
+   * The other slot: the band between the title and the panels, which is where
+   * a tab's key grid is drawn — see ui/TabPinned.tsx. State for the same
+   * reason as the one above.
+   */
+  const [pinnedSlot, setPinnedSlot] = useState<HTMLElement | null>(null)
   const { connected } = useConnection()
   const { debug } = useSettings()
   const t = useT()
   const locale = useLocale()
-  // Calibration holds the board in a mode where it cannot type, and only the
-  // button inside that mode ends it cleanly — so while it runs the chrome is
-  // dimmed and cannot be clicked. Switching tabs would unmount the run, and
-  // disconnecting would leave the board unable to type until it was unplugged,
-  // because the release packet cannot go through a closed device.
-  const calibrating = useCalibrationMode()
+  // Calibration and macro recording each take the window for the length of a
+  // run, and only the control inside the run ends it cleanly — so while one is
+  // on the chrome is dimmed and cannot be clicked. Switching tabs would unmount
+  // the run: for calibration that leaves the board unable to type until it is
+  // unplugged, because the release packet cannot go through a closed device;
+  // for a recording it loses the events recorded so far. See
+  // state/windowHold.ts.
+  const held = useWindowHeld()
   /*
    * The veil behind the drawer, held in the tree for the length of its fade so
    * that it can leave rather than blink out. 200ms is the rule in styles.css
@@ -137,7 +150,7 @@ export default function App() {
    * other's comments instead of one reading the other.
    */
   const scrim = useExit(railOpen, 200)
-  const blocked = calibrating ? ' blocked' : ''
+  const blocked = held ? ' blocked' : ''
   const tabs = [...TOP_TABS, ...BOTTOM_TABS, ...(debug ? DEBUG_TABS : [])]
   // Turning debug mode off while one of its tabs is open falls back to the
   // first tab rather than rendering nothing.
@@ -166,7 +179,7 @@ export default function App() {
       aria-selected={tb.id === active}
       // The backdrop stops the mouse; `disabled` stops the keyboard, which
       // would otherwise tab straight through it.
-      disabled={calibrating}
+      disabled={held}
       onClick={() => {
         setActive(tb.id)
         // Picking a tab is what the drawer was opened for, so it has done its
@@ -194,7 +207,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className={`topbar${blocked}`} aria-hidden={calibrating || undefined}>
+      <header className={`topbar${blocked}`} aria-hidden={held || undefined}>
         {/*
           The bar carries the wordmark and nothing else. What used to sit here
           — the app's name, and the codec in use — is said better elsewhere:
@@ -218,7 +231,7 @@ export default function App() {
           aria-controls="rail"
           aria-label={t('app.menu')}
           title={t('app.menu')}
-          disabled={calibrating}
+          disabled={held}
           onClick={() => setRailOpen((open) => !open)}
         >
           <IconMenu2 aria-hidden />
@@ -238,8 +251,8 @@ export default function App() {
           and every unapplied change gone.
 
           `pointer-events: none` on `.blocked` stops the mouse during
-          calibration but not the keyboard, so the link is taken out of the tab
-          order for the length of the run the same way the tabs are.
+          a held window but not the keyboard, so the link is taken out of the
+          tab order for the length of the run the same way the tabs are.
         */}
         <a
           className="repo"
@@ -248,7 +261,7 @@ export default function App() {
           rel="noreferrer"
           title={t('app.repo')}
           aria-label={t('app.repo')}
-          tabIndex={calibrating ? -1 : undefined}
+          tabIndex={held ? -1 : undefined}
         >
           <IconBrandGithub aria-hidden />
         </a>
@@ -276,7 +289,7 @@ export default function App() {
         <div
           id="rail"
           className={`rail${railOpen ? ' open' : ''}${blocked}`}
-          aria-hidden={calibrating || undefined}
+          aria-hidden={held || undefined}
         >
           <DeviceCard />
 
@@ -309,10 +322,15 @@ export default function App() {
         </div>
 
         {/*
-          Keyed by the tab, which is what replays the animation: a new key is a
-          new element, and a CSS animation runs when an element appears. Without
-          it React would keep this div across the switch and only swap what is
-          inside, and nothing would move.
+          Keyed by the tab, which is what replays the animations: a new key is
+          a new subtree, and a CSS animation runs when an element appears.
+          Without it React would keep these divs across the switch and only
+          swap what is inside, and nothing would move.
+
+          It reaches further than the two bands that slide — see `.tab-title`
+          and `.tab-scroll` in styles.css. Every cap in the grid is rebuilt
+          too, which is what fades in the numbers, bands and paint the new tab
+          puts on a keyboard that is otherwise holding still.
         */}
         <main className="content">
           <div key={tab.id} className="tab-in">
@@ -349,14 +367,32 @@ export default function App() {
               */}
               <div className="tab-actions" ref={setActionSlot} />
             </header>
-            <TabActionSlot value={actionSlot}>{tab.render()}</TabActionSlot>
+
+            {/*
+              Between the title and the panels, and outside the box that
+              scrolls: the key grid, on the three tabs that draw one. Empty on
+              the rest, where the stylesheet drops it — see `.tab-pin`.
+            */}
+            <div className="tab-pin" ref={setPinnedSlot} />
+
+            {/*
+              The only part of a tab that scrolls. The title above it, the grid
+              beside it in the band, and the sub-tab strip inside it — which
+              sticks to the top of this box rather than being lifted out of it
+              — all stay where they are while the panels move under them.
+            */}
+            <div className="tab-scroll">
+              <TabActionSlot value={actionSlot}>
+                <TabPinnedSlot value={pinnedSlot}>{tab.render()}</TabPinnedSlot>
+              </TabActionSlot>
+            </div>
           </div>
         </main>
       </div>
 
       {/*
         Outside the blocked chrome: it is a toast, not a control, and the
-        gesture behind it declines to fire during calibration anyway.
+        gesture behind it declines to fire while the window is held anyway.
       */}
       <DebugGesture />
     </div>

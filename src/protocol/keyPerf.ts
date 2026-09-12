@@ -87,6 +87,19 @@ export interface KeyPerfRecord {
    * so their meaning is unknown — they are preserved for an exact round trip.
    */
   switchFlags: number
+  /**
+   * `rec[1]`, kept whole — it is two nibbles.
+   *
+   * The low nibble is the rapid-trigger mode above, which is what the stock
+   * driver's performance tab builds and what the scan reads at 0xf098. The
+   * high nibble is the key's **SOCD resolution mode**: the scan pulls it out
+   * with `>> 12` and hands it to the advanced-key runtime struct (0xf82e), and
+   * the SOCD handler compares it against 2 and 3. See `advancedKeys.ts`.
+   *
+   * Whole rather than split because nothing here edits the high nibble, and
+   * splitting a field this app only carries would invite a write that rebuilt
+   * it from a part.
+   */
   keyMode: number
   actuationCounts: number
   rtPressCounts: number

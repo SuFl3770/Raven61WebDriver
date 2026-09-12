@@ -24,10 +24,16 @@ const REPEATS = new Set([
  *
  * Settings are written to the board as soon as they change, which is right for
  * a checkbox and wrong for a slider: a drag emits a change per pixel and each
- * one would be a seventy-packet block rewrite. Rather than making everything
- * wait — the first attempt, which put a 400 ms pause in front of every
- * checkbox — the controls that actually move continuously hold the write and
- * let it go on release.
+ * one would be a block rewrite — seventy packets for the per-key block, or a
+ * read-modify-write with a settle delay in the middle for the board-wide one.
+ * Rather than making everything wait — the first attempt, which put a 400 ms
+ * pause in front of every checkbox — the controls that actually move
+ * continuously hold the write and let it go on release.
+ *
+ * The hold covers **both** blocks. It used to gate only the per-key path, on
+ * the reasoning that the board-wide block held nothing draggable; the lighting
+ * effect put two sliders and a colour in it, and the writes queued up. See
+ * `BoardSync.applyGlobal`.
  *
  * Spread onto the input:
  *

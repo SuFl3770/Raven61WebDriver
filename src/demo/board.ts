@@ -32,7 +32,9 @@ import { mmToCounts } from '../protocol/encoding'
 import { COMMAND, DANGEROUS_COMMANDS, EVENT, sign } from '../protocol/frame'
 import { FACTORY_GLOBAL } from '../protocol/global'
 import { encodeKeyPerfRecord } from '../protocol/keyPerf'
+import { ADVANCED_KEY_BLOCKS } from '../protocol/advancedKeys'
 import { keyRgbBlobSize } from '../protocol/keyRgb'
+import { MACRO_STOCK, macroBlobSize } from '../protocol/macros'
 import {
   LIGHT_CONTROL,
   LIGHT_LIMITS,
@@ -44,7 +46,7 @@ import {
 import { encodeRecord, factoryBinding } from '../protocol/keymap'
 import { fallbackSlotMap } from '../protocol/slotMap'
 import { demoSpec } from './spec'
-import { isModifierUsage, modifierBit, usageForCode } from './keys'
+import { isModifierUsage, modifierBit, usageForCode } from '../keyboard/hostKeys'
 
 /**
  * What the demo board's firmware calls itself.
@@ -99,6 +101,37 @@ export class DemoBoard {
   private keyRgb!: Uint8Array
   /** Never restored by a factory reset — see FACTORY_RESET_DEFAULTS. */
   private calibration!: Uint8Array
+  /**
+   * The three advanced-key tables, zeroed.
+   *
+   * Zero is the factory state here rather than a stand-in: the reset routine
+   * fills 0x22100 with zeros (docs §3.8), and a record of all zeros is one no
+   * keymap entry points at. So the demo starts with no advanced keys and the
+   * panel can create one, which is the flow worth exercising.
+   */
+  private advancedDks!: Uint8Array
+  private advancedPair!: Uint8Array
+  private advancedToggle!: Uint8Array
+  /**
+   * The macro store, laid out the way the stock driver leaves it.
+   *
+   * Not zeroed, and not tidy either — both of those hide the two states this
+   * panel exists to cope with, and a real board sent back this shape:
+   *
+   * - an **empty slot carries the next body's offset**, because the stock
+   *   encoder's cursor does not advance for a body with no records. Nothing in
+   *   the bytes says "empty"; the driver knows from its own database, which is
+   *   why it never reads the store back at all.
+   * - the **22 entries it does not manage stay at zero**, pointing into the
+   *   offset table, which is the state where binding a macro key sends the
+   *   player walking through the flash.
+   *
+   * `buildMacros` writes the profile a real board was read from: QWER in slot
+   * 0, ASDF in 2, ZXCV in 4, 1234 in 6, and the four slots between them empty.
+   * A store the app has written is canonical; this one is not, and the panel
+   * has to say so before it will bind anything.
+   */
+  private macros!: Uint8Array
 
   /** Latched by 0xa8 and never cleared, the way the real board behaves. */
   private reporting = false
@@ -224,6 +257,28 @@ export class DemoBoard {
       // which is the one override this project has decoded (docs §3.3) — and
       // simulating it is what makes the difference between the two blocks
       // visible in the demo instead of only described in the panel.
+      case COMMAND.readAdvancedDks:
+        return this.blockReply(request, command, this.advancedDks)
+      case COMMAND.writeAdvancedDks:
+        this.blockWrite(request, this.advancedDks)
+        return this.ack(request)
+      case COMMAND.readAdvancedPair:
+        return this.blockReply(request, command, this.advancedPair)
+      case COMMAND.writeAdvancedPair:
+        this.blockWrite(request, this.advancedPair)
+        return this.ack(request)
+      case COMMAND.readAdvancedToggle:
+        return this.blockReply(request, command, this.advancedToggle)
+      case COMMAND.writeAdvancedToggle:
+        this.blockWrite(request, this.advancedToggle)
+        return this.ack(request)
+
+      case COMMAND.readMacros:
+        return this.blockReply(request, command, this.macros)
+      case COMMAND.writeMacros:
+        this.blockWrite(request, this.macros)
+        return this.ack(request)
+
       case COMMAND.readLightRgb:
         return this.blockReply(request, command, this.ledFrame())
 
@@ -362,6 +417,47 @@ export class DemoBoard {
      * to say.
      */
     this.keyRgb = new Uint8Array(keyRgbBlobSize(this.spec.keyRgb))
+    this.advancedDks = new Uint8Array(ADVANCED_KEY_BLOCKS.dks.blobSize)
+    this.advancedPair = new Uint8Array(ADVANCED_KEY_BLOCKS.pair.blobSize)
+    this.advancedToggle = new Uint8Array(ADVANCED_KEY_BLOCKS.toggle.blobSize)
+    this.macros = this.buildMacros()
+  }
+
+  /**
+   * A stock-shaped macro store. See the field's comment for why this shape.
+   *
+   * Four recorded slots and four empty ones between them, in the stock layout:
+   * offsets 64, 96, 96, 128, 128, 160, 160, 192, then the last two slots share
+   * the byte after the final body — the trailing-empty case, which reads back
+   * as unwritten space rather than as a body.
+   */
+  private buildMacros(): Uint8Array {
+    const spec = this.spec.macros
+    const blob = new Uint8Array(macroBlobSize(spec))
+    const words = [
+      [0x14, 0x1a, 0x08, 0x15], // QWER
+      [0x04, 0x16, 0x07, 0x09], // ASDF
+      [0x1d, 0x1b, 0x06, 0x19], // ZXCV
+      [0x1e, 0x1f, 0x20, 0x21], // 1234
+    ]
+    let cursor = spec.slots * 2
+    // Ten, because that is how many the stock driver writes — the rest of the
+    // table stays at zero, which is the state the panel has to notice.
+    for (let slot = 0; slot < MACRO_STOCK.slots; slot++) {
+      blob[slot * 2] = cursor & 0xff
+      blob[slot * 2 + 1] = (cursor >> 8) & 0xff
+      // Odd slots were left empty, so the cursor stays where it is and the
+      // entry ends up naming the next body.
+      const word = slot % 2 === 0 ? words[slot / 2] : undefined
+      if (!word) continue
+      word.forEach((usage, i) => {
+        const last = i === word.length - 1
+        blob.set([90, 0, 0x42, usage], cursor)
+        blob.set([120, 0, last ? 0x82 : 0x02, usage], cursor + spec.eventBytes)
+        cursor += spec.eventBytes * 2
+      })
+    }
+    return blob
   }
 
   private buildGlobal(): Uint8Array {
@@ -756,22 +852,9 @@ export class DemoBoard {
 }
 
 /** Read commands this app does not decode. The board answers; the blob is empty. */
-const UNDECODED_READS: readonly number[] = [
-  COMMAND.readMacros,
-  COMMAND.readAdvancedKeys,
-  COMMAND.readLightConfigA,
-  COMMAND.readLightConfigB,
-  COMMAND.readReserved,
-]
+const UNDECODED_READS: readonly number[] = [COMMAND.readReserved]
 
-const UNDECODED_WRITES: readonly number[] = [
-  COMMAND.writeMacros,
-  COMMAND.writeAdvancedKeys,
-  COMMAND.writeLightConfigA,
-  COMMAND.writeLightConfigB,
-  COMMAND.writeLightRgb,
-  COMMAND.writeReserved,
-]
+const UNDECODED_WRITES: readonly number[] = [COMMAND.writeLightRgb, COMMAND.writeReserved]
 
 const ZERO_BLOB = new Uint8Array(4096)
 

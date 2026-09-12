@@ -21,6 +21,27 @@
   font-display: swap;
 }
 
+/*
+ * Two colours the canvas reads back — see `--trace-line` below and drawTrace in
+ * tools/Sensors.tsx.
+ *
+ * Registering them is what lets them be derived. An unregistered custom
+ * property computes to the text it was written as, so `getComputedStyle` on a
+ * `color-mix()` hands back the expression and a canvas cannot use it; a
+ * property declared as `<color>` computes to a resolved colour instead. The
+ * initial values are the pre-theme fallbacks and should never be reached.
+ */
+@property --trace-line {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #4c9aff;
+}
+@property --trace-grid {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2a3441;
+}
+
 :root {
   /*
    * Flat: a ladder of fills, with a hairline where two of them meet.
@@ -138,16 +159,18 @@
    * The travel trace on the sensors tab, which is drawn into a canvas rather
    * than laid out — see tools/Sensors.tsx.
    *
-   * Plain colours, and the only two in this block that are not allowed to be
-   * mixed from anything: a canvas context takes a colour *string*, and what
-   * `getComputedStyle` hands back for a derived token is the `color-mix()`
-   * expression itself. Kept apart from `--press` for the same reason the
-   * rapid-trigger pair is kept apart from the accent — a graph line and half a
-   * keycap setting are not the same fact, and one theme change should not be
-   * able to make them the same colour.
+   * These were the two plain colours in this block, on the grounds that a
+   * canvas takes a colour *string* while `getComputedStyle` hands back the
+   * `color-mix()` expression itself for a derived token. That holds for an
+   * ordinary custom property and not for a registered one: the `@property`
+   * rules below give these a `<color>` syntax, which makes their computed
+   * value a resolved colour the canvas will take. So the line is the point
+   * colour, like every other live reading in the app, and the grid is a few
+   * percent of the foreground over the well it is drawn in. Both follow the
+   * theme, and neither has to be restated for the light one.
    */
-  --trace-grid: #2a3441;
-  --trace-line: #4c9aff;
+  --trace-line: var(--accent);
+  --trace-grid: color-mix(in srgb, var(--fg) 14%, var(--sunk));
   --err: #f4787a;
   /* The one other colour that has to fill something: a destructive control
      under the pointer, which must not go green like everything else does. */
@@ -199,6 +222,16 @@
    * disagree. The value is what the bar measured before it was given one.
    */
   --topbar-h: 3.875rem;
+  /*
+   * How wide a scrollbar is, which the app decides for itself further down —
+   * see `::-webkit-scrollbar`.
+   *
+   * Named because the tab's title and its key grid do not scroll and the
+   * panels below them do, so the scrollbar is laid out inside the panels
+   * alone. Padding the other two by the same amount is what keeps the three
+   * right-hand edges in one line — see `.tab-scroll`.
+   */
+  --scrollbar: 12px;
   --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
   /*
    * What the wordmark falls back to while its own face loads, or if the file
@@ -268,8 +301,6 @@
   --press: #1f56bd;
   --release: #b83430;
   --err: #b32f2f;
-  --trace-grid: #d2d7e0;
-  --trace-line: #2b66d9;
   color-scheme: light;
 }
 
@@ -328,6 +359,28 @@ body {
    * looks exactly like it did before. See assets/fonts/noto-sans-kr.css.
    */
   font: 0.9375rem/1.5 "Noto Sans KR", system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
+  /*
+   * The app is a panel of controls, not a page of prose, and a drag across it
+   * is aimed at a key, a slider or a curve rather than at the words on them.
+   * Letting those drags leave a highlight behind is noise: the selection is
+   * never wanted, it survives the gesture that made it, and it paints half a
+   * label blue in the middle of an interaction. Off for the whole document,
+   * and back on below for the few places where the text itself is the point.
+   */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/*
+ * The exceptions: anything typed into, and anything printed to be read off and
+ * copied — the hex dumps, the report console, the inline byte listings. Their
+ * content is the only content in the app a person has a reason to take out of
+ * it, so the selection they would make is a real one. (`.version-badge` says
+ * the same thing for itself further down, for the commit it carries.)
+ */
+input, textarea, select, [contenteditable="true"], pre, code, kbd, samp {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button, input, textarea { font: inherit; color: inherit; }
@@ -395,6 +448,83 @@ input[type="text"], input[type="number"], textarea {
   border-radius: var(--r-sm);
   padding: 0.45rem 0.6rem;
 }
+
+/*
+ * The slider, which was the last control still drawn by the platform.
+ *
+ * A well for the track and the point colour for the thumb, so it says the same
+ * thing the switch and the selected tab say: this is the part you move, and it
+ * is the colour everything you have chosen is.
+ *
+ * `-webkit-` only, like the scrollbars further down. The app needs WebHID, so
+ * it needs Chrome, and a second set of `-moz-` rules would be dead text.
+ */
+input[type="range"] {
+  appearance: none;
+  height: 1.15rem;
+  background: none;
+  cursor: pointer;
+}
+/*
+ * Filled to the thumb, empty after it.
+ *
+ * Chrome draws the track as one piece — there is no pseudo-element for the part
+ * behind the thumb — so the two halves are one gradient with a hard stop, and
+ * the stop is `--fill`, which ui/Slider.tsx works out from the value and hands
+ * down as a percentage. Without it both halves are the same well and the
+ * control says nothing about where it is set until you find the thumb.
+ */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--fill, 0%),
+    var(--sunk) var(--fill, 0%) 100%
+  );
+  transition: border-color 120ms ease;
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  background: var(--accent);
+  /* Half the difference between the thumb and the track it straddles, plus the
+     track's own border, which is what centres it on the line. */
+  margin-top: calc((0.35rem - 0.9rem) / 2 - 1px);
+  /* A ring of the panel behind it. The thumb sits at the end of the filled
+     half and is the same colour as it, so without this the two run together
+     and the knob stops having an edge. */
+  box-shadow: 0 0 0 2px var(--surface);
+  transition: transform 120ms ease;
+}
+input[type="range"]:hover:not(:disabled)::-webkit-slider-runnable-track {
+  border-color: var(--accent);
+}
+input[type="range"]:active:not(:disabled)::-webkit-slider-thumb { transform: scale(1.15); }
+input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/*
+ * The colour input keeps its own contents — the whole point of it is the
+ * colour inside — and takes the app's frame around them.
+ */
+input[type="color"] {
+  appearance: none;
+  width: 2.4rem;
+  height: 1.9rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+input[type="color"]:hover:not(:disabled) { border-color: var(--accent); }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+input[type="color"]:disabled { opacity: 0.45; cursor: not-allowed; }
 /*
  * The dropdown — see ui/Select.tsx, which is a listbox rather than a select.
  *
@@ -858,8 +988,66 @@ div.rail { position: sticky; top: 0; }
 .rail-foot .version-badge { justify-content: center; border-radius: var(--r-sm); }
 
 /* `min-width: 0` so a wide child — a table, a log line — makes itself scroll
-   instead of pushing the whole row wider than the column. */
-.content { flex: 1; min-width: 0; }
+   instead of pushing the whole row wider than the column.
+
+   As tall as the row rather than as tall as what is in it, the way the rail
+   beside it already is: the tab inside divides that height between the part
+   that stays put and the part that scrolls, and it cannot divide a height
+   nobody has stated. The percentage resolves because .body is a flex item of
+   a 100vh column. */
+.content { flex: 1; min-width: 0; height: 100%; }
+
+/*
+ * A tab, in three bands: its title, its key grid, and the panels — and only
+ * the last of them scrolls.
+ *
+ * It used to be one column that scrolled as a whole, which meant reading the
+ * second panel on a tab took the keyboard off the screen. That is the wrong
+ * thing to lose: every panel below the grid is about the keys picked in it,
+ * and the sub-tab strip that chooses between them went with it. So the tab is
+ * a fixed-height column now, and what is long inside it is given its own box
+ * to be long in.
+ *
+ * The grid gets there by being rendered into `.tab-pin` from wherever it is
+ * declared — see ui/TabPinned.tsx. The sub-tab strip stays where it is
+ * written and sticks to the top of the scrolling box instead, which is enough
+ * for something that starts at the top of it — see `.subtabs`.
+ */
+.tab-in {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.tab-in > .tab-title, .tab-in > .tab-pin { flex: 0 0 auto; }
+/*
+ * Nothing on the tabs that draw no grid, and on those it should take no room
+ * at all — not even the flex gap it would otherwise be given a share of.
+ */
+.tab-pin:empty { display: none; }
+/*
+ * The panels, and the only part of a tab that moves.
+ *
+ * `min-height` rather than nothing: on a window short enough that the title,
+ * the grid and a readable panel do not all fit, this box holds its floor and
+ * the column overflows .body instead — which scrolls, so the grid can be
+ * pushed off the top by hand. Squeezing the panels to a slot too small to
+ * read would be the worse of the two failures, and there is no third option
+ * short of dropping the grid.
+ */
+.tab-scroll {
+  flex: 1 1 auto;
+  min-height: 10rem;
+  overflow: auto;
+  /* Reserved whether or not it is needed, so a short section and a long one
+     do not lay their panels out at two different widths. */
+  scrollbar-gutter: stable;
+}
+/* The bands above it are not scroll containers and get no gutter of their
+   own, so they are padded by what one costs — otherwise the grid and the
+   tab's controls would sit a scrollbar's width to the right of every panel
+   under them. */
+.tab-title, .tab-pin { padding-right: var(--scrollbar); }
 
 /*
  * The open tab's name, at the head of its content: the name in the reader's
@@ -1074,13 +1262,37 @@ div.rail { position: sticky; top: 0; }
   .topbar .menu, .scrim { display: none; }
 }
 
-/* Tool navigation inside the debug tab. Sits in the content flow rather than
-   against the window edge, so it reads as a level below the tab it is in. */
+/*
+ * Navigation between the sections of one tab. Sits in the content flow rather
+ * than against the window edge, so it reads as a level below the tab it is
+ * in.
+ *
+ * Held at the top of the scrolling box while the section under it moves. On
+ * the tabs that draw a key grid the strip is the first thing in that box, so
+ * it never actually travels — it simply stays under the grid, which is where
+ * it was; the debug tab, where an analysis panel comes first, is the one
+ * place it slides up before it catches.
+ *
+ * Sticky is enough here and would not be for the grid: a sticky element is
+ * scrolled *through* on the way to its perch, and the grid is far too tall to
+ * be worth that. It is lifted out of the box entirely — see `.tab-pin`.
+ *
+ * The room above the strip is padding rather than the margin it was, so it
+ * belongs to the strip and travels with it. As a margin it would be scrolled
+ * away and the strip would jump the last few pixels into place.
+ */
 .subtabs {
+  position: sticky;
+  top: 0;
+  /* Over the section, which scrolls under it. */
+  z-index: 2;
+  /* The page's own ground: the panels below carry no fill of their own, so
+     without this they would show through the strip they are sliding under. */
+  background: var(--bg);
   display: flex;
   justify-content: center;
   gap: 4px;
-  margin-top: 6px;
+  padding-top: 6px;
   padding-bottom: 2px;
   border-bottom: 1px solid var(--line);
 }
@@ -1150,7 +1362,7 @@ div.rail { position: sticky; top: 0; }
 
 .panel {
   padding: 1rem 1.1rem;
-  margin-bottom: 0.875rem;
+  /* margin-bottom: 0.875rem; */
 }
 /*
  * The one panel that is still a box — see ui/Panel.tsx and features/Calibration.tsx.
@@ -1173,7 +1385,513 @@ div.rail { position: sticky; top: 0; }
    heading is the separator, so it is sized to be found while scrolling. */
 .panel > h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); margin: 0 0 12px; }
 
+/*
+ * The macro tab, in two columns — see features/Macro.tsx.
+ *
+ * One column below the breakpoint, and the columns are plain blocks there:
+ * the panels stack exactly as they would have without this wrapper, in the
+ * order they are written. Nothing to undo, so nothing to get wrong.
+ *
+ * The same 1280px stop the rail uses, and for the same reason rather than by
+ * coincidence: that is the width at which this app stops having to give the
+ * window's space to one thing at a time. Written in px like the rest of them
+ * — a breakpoint in `rem` would be read against the browser's initial font
+ * size and not against the root this file scales with the viewport (see the
+ * note above `@media (max-width: 1279px)`).
+ */
+@media (min-width: 1280px) {
+  /*
+   * The tab fills the box it is given, and nothing in it pushes the page.
+   *
+   * `.tab-scroll` has a definite height — see `.tab-in`, which is what makes
+   * the key grid stay put on every other tab — so a column of `height: 100%`
+   * inside it is exactly the room there is. The slot panel takes what it
+   * takes, the grid below takes the rest, and the record list inside it is
+   * held to that. Nothing here is a measurement of the chrome above: the last
+   * version of this was a `--stick-h` of every rem between the top of the
+   * window and the top of the grid, and it was wrong from the moment a panel
+   * was put above the grid — the column it sized ran a panel's height past the
+   * fold, and the page scrolled to make up the difference, carrying the list's
+   * own controls off the top with it.
+   */
+  .macro-tab {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .macro-cols {
+    /*
+     * What the panel above it did not take. `min-height: 0` so this can be
+     * shorter than its own content — without it a long list would push the
+     * grid past the foot of the page, which is the thing being prevented.
+     */
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    /*
+     * One row, exactly as tall as the box. `1fr` and not `auto`, because the
+     * left column is capped at `100%` of its grid area and a percentage
+     * against an auto row resolves to nothing at all — the cap would silently
+     * do nothing and the list would grow to whatever the board holds.
+     */
+    grid-template-rows: minmax(0, 1fr);
+    /*
+     * Not halves. The left column holds a six-column table with a number
+     * field and a button in it; the right holds label-and-control rows that
+     * are as wide as their longest label and no wider. Splitting the width
+     * evenly would leave the table wrapping while the forms sat in a column
+     * of their own whitespace.
+     */
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    /* `--grid-breathe` is the room around the key grid and means something
+       else; this is the gutter between two columns of panels, and the panels
+       already carry 1.1rem of their own padding on each side. */
+    column-gap: 1.25rem;
+    /*
+     * Each column as tall as its own panels. Stretched, the shorter one would
+     * end in a rule of empty page, and a panel that is only padding has
+     * nothing to stretch anyway.
+     */
+    align-items: start;
+  }
+  /*
+   * The last panel in a column drops its bottom margin, so the two columns
+   * end where their content does rather than a gap below it. `.panel` carries
+   * that margin to separate itself from the next one, and at the foot of a
+   * column there is no next one.
+   *
+   * Written against the panel's own parent rather than against `.macro-col`,
+   * because the right column keeps its panels in a scrolling box inside it.
+   */
+  .macro-cols .panel:last-child { margin-bottom: 0; }
+
+  /*
+   * The event list stays put while the column beside it scrolls.
+   *
+   * The two columns are nothing like the same height — the right one is the
+   * two editors and, in the lab, the table of bound keys, and with a short
+   * body on the left it can run twice as long. Scrolling through them used to
+   * take the list off the top of the screen, and the list is the one thing on
+   * this tab you want to still be looking at while you work beside it.
+   *
+   * `top: 0` against the panels' own scrolling box — `.tab-scroll`, the
+   * nearest scrolling ancestor. The travel comes from the grid row, which is
+   * as tall as the taller column, so there is room to stick through the whole
+   * of the right-hand one.
+   */
+  .macro-col:first-child {
+    position: sticky;
+    top: 0;
+    /*
+     * And a bound, because a pinned box taller than the window is a box whose
+     * last rows can never be reached: `top: 0` holds its head at the top of
+     * the scroller for good, and everything past the fold stays there. A body
+     * can run to eighty-odd records, so this is the ordinary case and not the
+     * edge one.
+     *
+     * `100%` is the grid area, which is the row above, which is what the slot
+     * panel left of the tab — so a body of one record and a body of eight
+     * hundred both end where the page does.
+     */
+    max-height: 100%;
+    /*
+     * A column of flex rather than a block that scrolls, so the scroll can be
+     * given to one part of the panel instead of all of it.
+     *
+     * The panel is the only item and is left at `flex: 0 1 auto`: as tall as
+     * its content while that fits, shrunk to the column when it does not —
+     * and the shrinking lands on `.macro-list`, which is the only thing in it
+     * that can give. Stretching it instead would leave a short list sitting
+     * in a box the height of the window.
+     *
+     * `overflow: hidden` is the backstop for that arrangement and not the
+     * scroller: nothing here should ever reach it, since the list takes the
+     * overflow first.
+     */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .macro-col:first-child > .panel { display: flex; flex-direction: column; min-height: 0; }
+  /*
+   * The records scroll; the heading, the record and clear buttons and whatever
+   * notice is up do not.
+   *
+   * Those two buttons are what the tab is for and one of them is how a
+   * recording is stopped, so they are held out of the scroll rather than
+   * carried away by it — at record 400 of 850 they are still where they were
+   * at record 1. The panel's padding is the gutter, so the box is given no
+   * more of its own.
+   *
+   * `min-height: 0` because a flex item's floor is its content, and a table of
+   * 850 rows has a tall one: without it the box grows to fit the table, the
+   * panel grows with it, and the column's `overflow: hidden` — which is meant
+   * to be unreachable — clips the end of the list instead.
+   */
+  .macro-list { min-height: 0; overflow-y: auto; }
+
+  /*
+   * The right column does the same, one level in.
+   *
+   * It is short in the ordinary case — two editors — and long in the lab,
+   * where the table of bound keys is as long as the board has macro keys.
+   * Left to grow it would scroll the page, and a page that scrolls takes the
+   * list and its buttons with it: the grid row is exactly the height of the
+   * box, so the pinned column has nowhere left to be pinned to.
+   *
+   * The scroll is given to a box *inside* the column rather than to the column
+   * itself so that `.blocked` still covers it: that overlay is positioned
+   * against the column's padding box and scrolls with its content, so a
+   * scrolled scroll-container would be dimmed everywhere but where you are
+   * looking. The column stays put and the panels move under it.
+   */
+  .macro-col:last-child {
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .macro-col-scroll { min-height: 0; overflow-y: auto; }
+  /*
+   * And the column head with them: what a number in the third column means is
+   * the same question at record 400 as at record 1, and a table whose head has
+   * scrolled away answers it by making you scroll back.
+   *
+   * `background` because the head would otherwise be transparent and the rows
+   * would run under it — panels here are a run of padding on the page rather
+   * than a surface (see `.panel`), so what it paints is the page's own ground.
+   *
+   * The rule under it is drawn as an inset shadow rather than left to the
+   * border, because `border-collapse: collapse` hands collapsed borders to the
+   * table and not to the cell: the border stays where the row was while the
+   * head moves off it. The border is kept at its width and made transparent so
+   * that nothing in the layout moves for this.
+   */
+  .macro-list thead th {
+    position: sticky;
+    top: 0;
+    /* Above the rows, which are not positioned — including the delay fields
+       inside them. */
+    z-index: 1;
+    background: var(--bg);
+    border-bottom-color: transparent;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+}
+
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/*
+ * Room between the rows of the macro tab's editors — see features/Macro.tsx.
+ *
+ * `.row` carries the gap *along* itself and nothing across, which is right
+ * where one sits alone in a panel and wrong where four are stacked: a column
+ * of label-and-field rows with a button row under it read as one block of
+ * controls with no seam, and the seam is what says which field belongs to
+ * which label.
+ *
+ * The tab rather than `.row` everywhere, because that is the panel that has
+ * stacks of them; the rest of the app is one or two to a panel with a heading
+ * or a notice doing the separating.
+ */
+.macro-tab .row + .row { margin-top: 0.625rem; }
+/*
+ * The same seam, through the advanced-key panel — see features/Advanced.tsx.
+ *
+ * That panel is the other place in the app with a stack of label-and-field
+ * rows and a row of buttons under it, so it needs what the macro tab's does:
+ * the gap `.row` carries along itself says nothing across it, and a column of
+ * rows with no seam reads as one block of controls — which is the thing that
+ * says which field belongs to which label, and which button row is what is
+ * *done* with the fields rather than one more of them.
+ *
+ * Classes rather than `.adv-tab .row + .row`, because there is no such
+ * element: the tab is a grid and a strip of sub-tabs, and every panel under it
+ * is drawn by the section that is open. `.adv-row` is what `Row` puts on every
+ * row it draws, so the rule reaches the rows of all six kinds and nothing else.
+ *
+ * The DKS stroke is untouched by both and wants to be: it is not a stack of
+ * rows at all but four tracks and their depths, spaced by the block below.
+ */
+.adv-row + .adv-row { margin-top: 0.625rem; }
+.adv-actions { margin-top: 0.625rem; }
+/*
+ * The advanced-key panel waiting for a cap — see `PickPrompt` in
+ * features/Advanced.tsx.
+ *
+ * A slot per cap the open kind is about, and the line under them. The slot is
+ * the grid's keycap at the size a cap is drawn on the board, and a filled one
+ * is that cap's `selected` state exactly: this is a stand-in for the thing lit
+ * up on the keyboard above it, so it is drawn out of the same two rules rather
+ * than out of a second opinion about what a picked key looks like.
+ */
+.adv-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.75rem 0 1.25rem;
+}
+.adv-pick-slots { display: flex; gap: 0.75rem; }
+.adv-pick-slot {
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--keycap);
+  /* The same 120ms the caps use, so a slot filling in and the cap lighting up
+     on the board are the one movement seen twice. */
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.adv-pick-slot.filled { background: var(--accent-dim); border-color: var(--accent); }
+/* The `+` is the point colour because it is the thing being asked for; a cap's
+   legend is a legend, and reads as one. */
+.adv-pick-mark { color: var(--accent); font-size: 1.125rem; line-height: 1; }
+.adv-pick-slot.filled .adv-pick-mark { color: var(--fg); font-size: 0.8125rem; }
+.adv-pick-say { color: var(--fg-dim); font-size: 0.8125rem; text-align: center; }
+/*
+ * The DKS stroke, drawn down the page as the axis it is — see
+ * features/Advanced.tsx.
+ *
+ * Four rows for the four depth points in stroke order, a column per binding,
+ * and a bar down the stages a binding is held for. The two halves are the
+ * firmware's own: points 1 and 2 are tested on the way down, 3 and 4 on the
+ * way back up, which is why the seam sits at the middle row and nowhere else.
+ *
+ * Flex both ways rather than a grid, so the depth rows and every column's
+ * stages land on the same four centres without the two having to agree about
+ * a track definition: `.dks-body` stretches its children to one height, and
+ * `flex: 1` cells inside each of them divide that height identically. Stage
+ * `n` is centred at `(n + 0.5) / 4` of the track, and the bar's inline `top`
+ * and `height` are that same fraction — one arithmetic, in one place, or the
+ * bar ends up between two stages.
+ */
+/*
+ * The slack sits outside the block rather than inside it.
+ *
+ * It used to be between the stroke and the depths, which pushed one to each
+ * edge of the panel and put the whole of the gap in the middle of the one
+ * thing being read. `justify-content: center` gives it to the two ends
+ * instead: the two are one block, and what is left over is margin.
+ *
+ * Centred this way rather than by sizing `.dks` to its contents, because the
+ * two rows have to lay out *identically* — a picker has to sit over the track
+ * it names. Same columns, same widths, same centring, whatever the panel is
+ * wide enough for; the head row carries a spacer for the depths it has nothing
+ * to put over, for exactly that reason.
+ */
+.dks { margin-top: 0.625rem; padding: 0 1rem; }
+.dks-heads, .dks-body { display: flex; gap: 0.75rem; justify-content: center; }
+/* Stretch, so the tracks are as tall as the depth columns the sliders size. */
+.dks-body { align-items: stretch; }
+.dks-heads { margin-bottom: 0.35rem; }
+/*
+ * A column is as wide as its picker needs, not as wide as the stroke in it.
+ *
+ * The stroke is four nodes and a bar and would sit happily in half this, but
+ * the binding's name is over it and some of the catalog's run long. Narrower
+ * columns did not wrap those names, they *overflowed* — see `.dks-head .select`
+ * below — and a name from one column ended up drawn across the next.
+ *
+ * 10rem is the width the longest names in the catalog need: `.select-value`
+ * ends one it cannot fit in an ellipsis, and the point of the measurement is
+ * that it rarely has to.
+ *
+ * Shrinkable rather than fixed, and the depths shrink three times as fast: a
+ * slider is elastic and reads the same at any length, while a picker that
+ * loses width starts losing the name it is showing. None of it is reached
+ * until the panel is too narrow for the block — at which point something has
+ * to give, and this is the order to give it in.
+ */
+.dks-head, .dks-track { flex: 0 1 10rem; min-width: 5rem; }
+.dks-side { flex: 0 3 15rem; min-width: 8rem; }
+/*
+ * The picker fills its column exactly, which is what keeps it off its
+ * neighbours: `.select` is `inline-block`, so left alone it is as wide as the
+ * name inside it and a long one reaches across the column beside it. As a
+ * block it is the column's width, centred on the stroke by being the same
+ * thing, and `.select-value` already ends a name it cannot fit in an ellipsis.
+ */
+.dks-head .select { display: block; }
+.dks-body .dks-side { display: flex; flex-direction: column; }
+/*
+ * Which way the key is travelling, read down the margin the rows start at.
+ *
+ * Vertical because the axis is: a horizontal label here would need a column
+ * wide enough for the words, and the two halves are two rows each — exactly
+ * the halves a two-cell column of the same height divides into.
+ */
+.dks-halves { flex: none; width: 1.4rem; display: flex; flex-direction: column; }
+.dks-half {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+}
+.dks-depth {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.4rem;
+}
+.dks-depth input[type="range"] { flex: 1; min-width: 0; }
+.dks-way { color: var(--fg-dim); font-size: 0.75rem; }
+/* Fixed, so four depths being dragged do not shuffle the sliders beside them
+   every time one crosses a tenth. */
+.dks-mm { width: 3.6rem; text-align: right; }
+/*
+ * `touch-action: none` and no text selection, the way the key grid's band is:
+ * the track is dragged along, and without them a drag scrolls the page under
+ * the pointer or paints a selection down the column.
+ */
+.dks-track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+/*
+ * The seam between the two halves of the stroke.
+ *
+ * Full width of every column and drawn on the track itself, so the columns
+ * stack into one continuous rule across the block.
+ */
+.dks-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--line);
+}
+.dks-cell {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/*
+ * A stage, as something to aim at.
+ *
+ * Round and small, and the `+` inside it is the invitation the stock driver's
+ * is: an empty stage is somewhere the bar can be taken. A stage the bar
+ * already covers loses the `+` and takes the point colour, because it is no
+ * longer an invitation — clicking it is what leaves a tap there.
+ */
+.dks-node {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dks-node.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-dim);
+}
+/* The point colour is already the fill; a hover that recoloured the text would
+   be repainting a node with nothing written on it. */
+.dks-node.on:hover:not(:disabled) { color: var(--bg); }
+.dks-node:disabled { opacity: 0.4; }
+/*
+ * The span itself. Under the nodes (`z-index` 0 against the cells' 1) so the
+ * two ends read as caps on it rather than as beads laid over it, and a tap —
+ * where press and release are the same stage — is a bar of no height at all,
+ * which is exactly the one lit node it should look like.
+ */
+.dks-bar {
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  width: 1.6rem;
+  margin-left: -0.8rem;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+/*
+ * How full the macro store is — see features/Macro.tsx.
+ *
+ * A rail of the same well the slider's track uses, filled with the point
+ * colour the same way, so "how much of it is taken" is drawn here the way
+ * every other proportion in this app is. Thin: it is a readout and not
+ * something to aim at, and the two numbers under it are the precise answer.
+ *
+ * The fill goes red at the point where the draft no longer fits — the only
+ * state in this panel where the bar is saying something has to change, and it
+ * is saying it beside the notice that says what.
+ */
+.macro-gauge {
+  /*
+   * In the slot row, beside the picker: the bar and its reading, one line
+   * deep.
+   *
+   * It does not take the space the row leaves. Stretched across the gap
+   * between the picker and the buttons it was the widest thing on the tab and
+   * read as a rule drawn under the title; what it has to show is a proportion,
+   * and a proportion is as legible in a short rail as in a long one when the
+   * exact numbers are sitting next to it. So the track is a fixed width, the
+   * pair sits at its natural size, and the empty middle of the row goes back
+   * to being the gap between the picker and the buttons.
+   */
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* The numbers are the precise answer and must not be broken across lines to
+   make room for the bar, which is the approximate one. */
+.macro-gauge-read { white-space: nowrap; }
+/*
+ * The break between the slot being edited and what is left of the store.
+ *
+ * The same rule the tab-actions band draws between its two kinds of control,
+ * and written out rather than shared with it: that one is sized to the buttons
+ * it stands between, this one to a row whose tallest thing is a picker, and a
+ * selector that had to suit both would be doing neither well. Height in `em`
+ * so it tracks the type rather than a pixel count, and `margin` on top of the
+ * row's own gap so it reads as a gap with a line in it.
+ */
+.macro-tab .row > .sep {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 0;
+  min-height: 1.5em;
+  margin: 0 4px;
+  border: 0;
+  border-left: 1px solid var(--line);
+}
+.macro-gauge-track {
+  /* Fixed, and not much smaller than this: at 3584 bytes over 8rem a byte is
+     already worth a fiftieth of a pixel, which is past the point where the
+     rail says anything the numbers beside it do not say better. */
+  flex: 0 0 12rem;
+  height: 0.4rem;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  overflow: hidden;
+}
+.macro-gauge-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms ease;
+}
+.macro-gauge-fill.over { background: var(--err); }
 /*
  * The point-colour dots — see ui/AccentPicker.tsx.
  *
@@ -1233,8 +1951,15 @@ div.rail { position: sticky; top: 0; }
  */
 .dot.demo { background: var(--warn); }
 
-/* Transient confirmation for something with no visible control behind it —
-   currently only the Shift gesture that toggles debug mode. */
+/*
+ * Transient confirmation: the Shift gesture that toggles debug mode, the keys a
+ * write just put on the board (ui/ApplyToast.tsx), and the macro store's own
+ * write (features/Macro.tsx).
+ *
+ * What they have in common is that the news is over as soon as it is read. A
+ * panel's notice is for a state that stays true until something changes it;
+ * this is for the thing that just happened, and it leaves by itself.
+ */
 .toast {
   position: fixed;
   left: 50%;
@@ -1276,16 +2001,19 @@ div.rail { position: sticky; top: 0; }
 @keyframes toast-out {
   to { opacity: 0; transform: translate(-50%, -6px); }
 }
-/* The 160ms is written again in ui/ApplyToast.tsx and ui/DebugGesture.tsx,
-   which is where the element's lifetime is decided. */
+/* The 160ms is written again in ui/ApplyToast.tsx, ui/DebugGesture.tsx and
+   features/Macro.tsx, which is where the element's lifetime is decided. */
 .toast.closing { animation: toast-out 160ms ease-in forwards; }
 /*
  * Switching a tab, as a short movement in the direction the switch came from.
  *
  * The sidebar's tabs are a column, so its content rises into place; the
  * sub-tabs are a row, so a section arrives from the side it sits on — from the
- * right going forwards, from the left going back. Both are short and both end
- * at `transform: none`, so nothing is left transformed once they finish: an
+ * right going forwards, from the left going back. One or the other, never
+ * both: which of the two strips was used is what decides the direction, so
+ * opening a tab is only ever a rise and moving along its sections only ever a
+ * slide. Both are short and both end at
+ * `transform: none`, so nothing is left transformed once they finish: an
  * ancestor with a transform becomes the containing block for anything fixed
  * inside it, and that is not a thing to leave switched on.
  *
@@ -1302,9 +2030,147 @@ div.rail { position: sticky; top: 0; }
 @keyframes section-in-back {
   from { opacity: 0; transform: translateX(-14px); }
 }
-.tab-in { animation: tab-in 180ms ease-out; }
-.section-in { animation: section-in-forward 160ms ease-out; }
+/*
+ * What a tab switch moves, and what it leaves alone.
+ *
+ * This was one rule on the whole column, so the keyboard slid in with
+ * everything else — and the keyboard is the one thing that is the same on
+ * every tab. Naming the two bands either side of it instead says what is
+ * actually happening: the name is new and the panels are new, the board is
+ * the board. See `.tab-pin`, which is the band between them and is left out
+ * of this on purpose.
+ */
+.tab-title, .tab-scroll { animation: tab-in 180ms ease-out; }
+/*
+ * The sideways move belongs to the strip being used, not to the section
+ * existing. A tab that opens on its first section is a tab arriving, and the
+ * rule above is already carrying that section up with everything else in the
+ * scroller — so a bare `.section-in` stays still and only a section that was
+ * moved to slides. ui/SubTabs.tsx is what withholds the direction until the
+ * first click; without that split both ran at once and a tab switch read as a
+ * diagonal, sideways more than up, because 14px beats 10px.
+ */
+.section-in.fwd { animation: section-in-forward 160ms ease-out; }
 .section-in.back { animation: section-in-back 160ms ease-out; }
+
+/*
+ * The advanced-key panel's contents arriving, once a cap has been picked — see
+ * features/Advanced.tsx.
+ *
+ * The heading stays put and only what is under it moves. The panel does not
+ * appear when a key is picked; it was already there, saying what it was waiting
+ * for, and a title that jumped every time would say the section had changed
+ * when only its answer had. So this is on the body alone, and `Panel`'s `h2` is
+ * outside it.
+ *
+ * The same rise as a tab's, a little shorter: it is one panel's worth of
+ * content rather than a page of it, and the full 10px on something this size
+ * reads as the panel being rebuilt.
+ *
+ * The mark inside a slot is a fade with no move at all. It is replacing a `+`
+ * in a box that is not going anywhere — the box runs its own transition on the
+ * fill and the edge — and a legend that slid into a keycap would be the one
+ * thing on screen behaving unlike a keycap.
+ */
+@keyframes adv-body-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes adv-mark-in {
+  from { opacity: 0; }
+}
+.adv-body { margin-top: 0.5rem; animation: adv-body-in 180ms ease-out; }
+.adv-pick-mark { animation: adv-mark-in 200ms ease-out; }
+
+/*
+ * What the caps say about the setting, arriving.
+ *
+ * A tab switch rebuilds the grid, so every cap is a new element and these run
+ * without anything having to ask whether the tab changed. That is the whole
+ * of the effect now that the board itself holds still: the numbers, the
+ * switch bands and the paint fade up in place on a keyboard that never moved.
+ *
+ * The legend is left out. It is the key's name, it is the same name on the
+ * tab just left, and a name that fades in reads as a name that changed. So is
+ * the travel bar, which is live data on the monitor and has no business
+ * fading every time it is drawn.
+ */
+@keyframes cap-info-in {
+  from { opacity: 0; }
+}
+.keycap .sub { animation: cap-info-in 240ms ease-out; }
+
+/*
+ * A keyboard appearing where there was none: a board just plugged in, or a
+ * tab that draws one opened from a tab that does not.
+ *
+ * Only then. Moving between two tabs that both draw a keyboard leaves the
+ * keyboard alone — it never went anywhere, and animating it would say it did
+ * (see `.tab-title` above, and `bandOnScreen` in ui/GridFrame.tsx for how the
+ * two cases are told apart). It rises the way the rest of a tab does, a
+ * little further and a little slower: it is the largest thing on the page,
+ * and the same distance in the same time reads as hurried on something that
+ * size.
+ */
+@keyframes grid-in {
+  from { opacity: 0; transform: translateY(14px); }
+}
+.gridband.arriving { animation: grid-in 260ms ease-out; }
+
+
+/*
+ * The room the second line takes, which opens and closes rather than
+ * appearing and vanishing.
+ *
+ * A cap centres what it holds, so a line that simply stopped being rendered
+ * dropped the legend a few pixels in one frame — on a keyboard of eighty-odd
+ * caps, all at once. This is the grid trick for animating to the height of
+ * content nobody measured: one row at `1fr` is exactly as tall as what is in
+ * it, `0fr` is nothing, and unlike `auto` the two interpolate. The line
+ * inside hides its own overflow, which is what lets the row close over it.
+ *
+ * Height and opacity together, so the line is gone before the gap is.
+ */
+.keycap .sub-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  /*
+   * Never squeezed. A slot that could shrink would take the cap's shortage
+   * out of the value rather than out of the cap — a long binding on a 1u key
+   * would lose its last line to a flex box rather than to the cap's own edge,
+   * which is where this app already clips.
+   */
+  flex: 0 0 auto;
+  transition: grid-template-rows 240ms ease, opacity 240ms ease;
+}
+.keycap .sub-slot.shut { grid-template-rows: 0fr; opacity: 0; }
+/*
+ * A slot that only closes slowly — see `subLive` in ui/KeyGrid.tsx.
+ *
+ * The rule is on the shut state rather than on the open one, which is what
+ * makes it one-way: a transition is run with the properties the element has
+ * *after* the change, so shutting finds a duration here and opening finds
+ * none. No class to add and take away on a timer, and nothing to get out of
+ * step with what the line is doing.
+ */
+.keycap .sub-slot.at-once { transition: none; }
+.keycap .sub-slot.at-once.shut {
+  transition: grid-template-rows 240ms ease, opacity 240ms ease;
+}
+.keycap .sub-slot > .sub { min-height: 0; overflow: hidden; }
+/*
+ * The paint, from the cap's own colour rather than from nothing — a lit key
+ * fading up from transparent would show the page through the board. The
+ * legend colour comes with it, because the tab that painted the cap chose
+ * that colour to be read against the paint and not against the black it
+ * starts from.
+ *
+ * A `from` with no `to`, like the rules above: where it ends is inline on the
+ * element and known only to the tab that put it there.
+ */
+@keyframes cap-tint-in {
+  from { background: var(--keycap); color: var(--fg); }
+}
+.keycap.tinted { animation: cap-tint-in 240ms ease-out; }
 
 @media (prefers-reduced-motion: reduce) {
   /*
@@ -1322,7 +2188,20 @@ div.rail { position: sticky; top: 0; }
   .select-menu, .select-menu.up, .select-menu.closing, .select-menu.up.closing { animation: none; }
   button, .keycap { transition: none; }
   /* The movement is the whole point of these, so there is nothing to keep. */
-  .tab-in, .section-in { animation: none; }
+  .tab-title, .tab-scroll, .section-in.fwd, .section-in.back { animation: none; }
+  .adv-body { animation: none; }
+  /* The slot and what is in it change together, so they are answered together:
+     dropping one would leave a cap fading into a box that had already filled. */
+  .adv-pick-mark { animation: none; }
+  .adv-pick-slot { transition: none; }
+  /* Not movement, but the same answer: what these do is delay a value the
+     reader asked to see, and a preference for less motion is not a preference
+     for waiting. */
+  .keycap .sub, .keycap.tinted { animation: none; }
+  .gridband.arriving { animation: none; }
+  /* Written as specifically as the rules they override — `.keycap` alone does
+     not reach a span inside it. */
+  .keycap .stripe, .keycap .sub-slot { transition: none; }
   /*
    * The drawer and its veil. `transition: none` on the rail also drops the
    * delay that held `visibility` back for the length of the slide — which is
@@ -1331,22 +2210,40 @@ div.rail { position: sticky; top: 0; }
    */
   div.rail, div.rail.open { transition: none; }
   .scrim, .scrim.closing { animation: none; }
+  /* Both halves of the dialog, in both directions. ui/Dialog.tsx drops the
+     hold it keeps for the exit when this is set, so there is nothing left for
+     an animation to cover. */
+  .modal, .modal.closing { animation: none; }
+  .modal::backdrop, .modal.closing::backdrop { animation: none; }
 }
 
 /* A step down from the panel, because a notice is something the panel is
    holding rather than something stacked on top of it. */
+/*
+ * Each notice tinted by the colour on its own edge, at the same 8% the
+ * accent-tinted surfaces use.
+ *
+ * They all sat on the plain well before, which left the info notice — the one
+ * whose edge is the point colour — as the only tinted panel on a screen full
+ * of flat grey ones, and made every other notice look like it had been missed.
+ * Eight percent is a long way from a coloured slab: it reads as the stripe
+ * having a shadow rather than as a second stripe.
+ */
 .notice {
   border-left: 3px solid var(--warn);
-  background: var(--sunk);
+  background: color-mix(in srgb, var(--warn) 8%, var(--sunk));
   padding: 0.7rem 0.85rem;
   border-radius: var(--r-sm);
 }
-.notice.err { border-left-color: var(--err); }
-/* The one notice whose colour is the point colour, so its fill follows too.
-   The other three keep the plain sunk fill — a warning tinted with its own
-   amber would be a second warning stripe the width of the panel. */
+.notice.err {
+  border-left-color: var(--err);
+  background: color-mix(in srgb, var(--err) 8%, var(--sunk));
+}
+.notice.ok {
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, var(--sunk));
+}
 .notice.info { border-left-color: var(--accent); background: var(--sunk-accent); }
-.notice.ok { border-left-color: var(--ok); }
 
 table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
 th, td { text-align: left; padding: 0.35rem 0.55rem; border-bottom: 1px solid var(--line); }
@@ -1358,8 +2255,9 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 /*
  * Chrome that a full-window mode has taken away.
  *
- * Calibration puts the board in a state where it does not type, and only the
- * control inside that mode ends it cleanly (see state/calibration.ts). Dimming
+ * Calibration puts the board in a state where it does not type; macro
+ * recording takes every key on the window before the page sees it. Only the
+ * control inside the run ends either cleanly (see state/windowHold.ts). Dimming
  * is the visible half; `pointer-events: none` is the half that matters, and it
  * covers the element's own ::after too, so nothing here can be clicked.
  */
@@ -1551,6 +2449,19 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 /* Mixed rather than faded: the same colour it was at 55% opacity, but a solid
    fill, so nothing on the board is see-through. Mixed into the cap's own black
    rather than a fixed colour, so it stays a shade of the cap it fills. */
+/*
+ * A cap reading what the key was remapped to send, rather than what is printed
+ * on it (see state/legends.ts).
+ *
+ * The accent, which on a cap already means "this is what the board holds" — the
+ * value on the second line is in it for the same reason. A remapped legend is
+ * the same claim about the same key, so it is the same colour, and the caps
+ * that were never touched stay the plain white of a keyboard nobody has edited.
+ */
+.keycap.remapped .cap-label { color: var(--accent); }
+/* Except on a painted cap, where the caller chose a legend colour that can be
+   read against its own paint and the accent may be neither. */
+.keycap.tinted.remapped .cap-label { color: inherit; }
 .keycap .fill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 55%, var(--keycap)); pointer-events: none; }
 .keycap .cap-label { position: relative; z-index: 1; }
 .swatch { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; border: 1px solid currentColor; vertical-align: baseline; }
@@ -1585,7 +2496,39 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
  * moving, and a band that vanished under it would look like the switch had
  * changed.
  */
-.keycap .stripe { position: absolute; left: 0; right: 0; bottom: 0; height: 0.3rem; z-index: 2; pointer-events: none; }
+.keycap .stripe {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.3rem;
+  z-index: 2;
+  pointer-events: none;
+  /*
+   * It slides rather than fades, out through the bottom of the cap it is
+   * already sitting on. The cap clips its own overflow, so a band pushed down
+   * by its own height is simply gone behind the edge — and it arrives the
+   * same way, which is what makes switching into the switch section and back
+   * out of it one movement rather than two effects.
+   *
+   * A transform rather than the colour: a switch with no colour on file is
+   * drawn as `--hatch`, and a gradient does not interpolate to nothing. The
+   * colour stays put and only the band moves — see `CapSaid` in
+   * ui/KeyGrid.tsx for what keeps it there once the caller has stopped
+   * naming it.
+   *
+   * No arrival animation to go with it, and it would be worse than useless:
+   * a grid rebuilt by a tab switch is built holding what the last one held,
+   * so this transition is what runs there too, and an animation on the same
+   * property would take the transform away from it and hand back a band that
+   * simply blinks. A keyboard appearing where there was none brings its bands
+   * with it — see `.gridband.arriving`.
+   */
+  transition: transform 240ms ease;
+}
+/* Nothing to say: pushed out through the edge, with the colour it last had
+   still on it. */
+.keycap .stripe.gone { transform: translateY(100%); }
 
 /*
  * A cap painted with the colour stored for that key — the lighting tab.
@@ -1728,7 +2671,7 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
  * grey slab down the edge is exactly where the eye goes. Chrome-only syntax,
  * which this app already is — it needs WebHID.
  */
-::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar { width: var(--scrollbar); height: var(--scrollbar); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
@@ -1771,6 +2714,61 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
   stroke-linejoin: round;
 }
 
+/* --- modal dialog --------------------------------------------------------
+   The one thing in this app that stops the page to ask a question — see
+   ui/Dialog.tsx. A panel says something; this waits for an answer, so it is
+   drawn as a card with an edge, over a veil, the way the framed panel is
+   drawn for the same reason. */
+.modal {
+  /* The top layer gives it the window; `auto` on all four sides is what
+     centres it there. `inset: 0` with it, because the UA sheet pins a modal
+     dialog to the top and the margins have nothing to divide without it. */
+  inset: 0;
+  margin: auto;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  overflow: auto;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--fg);
+  animation: modal-in 160ms ease-out;
+}
+/* The edge carries what the dialog is for, so a destructive question does not
+   look like a neutral one at a glance. */
+.modal.danger { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); }
+.modal > h2 { font-size: 1.05rem; margin: 0 0 10px; }
+/*
+ * The same veil as the drawer's, and the same keyframes.
+ *
+ * `::backdrop` is a child of the element it belongs to for the purpose of
+ * inheritance, which is what lets `var(--backdrop)` reach it at all — it is
+ * not in the document tree, so the custom property arrives through the dialog
+ * above it rather than from the root.
+ */
+.modal::backdrop { background: var(--backdrop); animation: scrim-in 160ms ease-out; }
+/*
+ * On the way out. `forwards` on both, because the dialog is still mounted and
+ * still open for the length of this — ui/Dialog.tsx holds it there for exactly
+ * 160ms — and without it the last frame would snap back to fully drawn.
+ */
+.modal.closing { animation: modal-out 160ms ease-in forwards; }
+.modal.closing::backdrop { animation: scrim-out 160ms ease-in forwards; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes modal-out { to { opacity: 0; transform: translateY(8px) scale(0.98); } }
+
+/* Buttons against the trailing edge, which is where a dialog's answer goes.
+   `wrap-reverse` so that on a narrow window the last button — the one being
+   asked for — stays on top of the stack rather than under it. */
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 /* --- the corner ----------------------------------------------------------
    Two badges stacked against the bottom-right of the window: what the board is
    doing, over what this build is. Right-aligned rather than stretched, so each
@@ -1808,6 +2806,105 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
    badge that goes green under the pointer. */
 .sync-badge.failed:hover { color: var(--fg); border-color: var(--err); background: var(--err-dim); }
 .sync-badge.failed:active { background: var(--sunk); }
+
+/*
+ * The remap picker's own keyboard — a full-size 104-key board, drawn out of
+ * ordinary buttons.
+ *
+ * Two grids on one page, doing different jobs. `.keygrid` above is *the board*:
+ * absolutely positioned from the layout's real rectangles, because it has to be
+ * the keyboard in front of the user. This one is a catalog laid out the way a
+ * keyboard is, so it is a plain grid of quarter units — 90 columns to a row,
+ * `span (u × 4)` per cap (see `span` in features/Keymap.tsx) — which lines the
+ * rows up at any width without a rectangle for every key.
+ *
+ * The gap is a margin rather than the grid's own `gap`, so a column is exactly
+ * a quarter unit: with `gap` the track sizing would shrink by the gaps and a
+ * 6.25u space would come out proportionally wider than a 1u cap.
+ */
+/*
+ * The keyboard scrolls sideways rather than shrinking past legibility.
+ *
+ * `aspect-ratio` keeps the caps square down to any width, but square and 10px
+ * across is not a keyboard anyone can read — and a 104-key board simply does
+ * not fit a narrow panel. Below the floor it scrolls, which is the same thing
+ * the tables in this app do.
+ */
+.kbpick-scroll { overflow-x: auto; }
+.kbpick { display: flex; flex-direction: column; min-width: 40rem; }
+/*
+ * A row is exactly one key unit tall, and the ratio is what says so: the box is
+ * 22.5u wide, so `aspect-ratio: 22.5 / 1` makes it 1u high at any width and the
+ * caps come out square, the way the board grid's do.
+ *
+ * Before this the rows were whatever height the buttons' padding gave them —
+ * about two thirds of a unit on a 104-key board, which is a keyboard drawn in
+ * letterbox.
+ */
+.kbpick-row {
+  display: grid;
+  grid-template-columns: repeat(90, 1fr);
+  aspect-ratio: 22.5 / 1;
+}
+/*
+ * The half unit under the function row, which is the one gap a full-size board
+ * has between rows. In percent because a percentage margin resolves against
+ * the container's *width*: half a unit is 0.5/22.5 of it, at any size.
+ */
+.kbpick-row:first-child { margin-bottom: 1%; }
+.kbpick-row > * { margin: 1.5px; min-width: 0; }
+.kbpick-row > button {
+  /* No padding: the cap's size is the key's size, and the row's height already
+     set it. Same legend size as the board grid above, so the two read as the
+     same kind of thing. */
+  padding: 0;
+  font-size: 0.75rem;
+  /* The legend must not be able to push the row taller than its one unit,
+     which is what decides the cap is square. */
+  line-height: 1;
+  /* A legend too long for its cap is clipped rather than wrapped or widened:
+     the cap's width is the key's width, and every one of them has its full name
+     on the button's tooltip and in the line under the grid. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+/*
+ * The catalog groups that are split into sections, side by side.
+ *
+ * Stacked, a group like Multimedia is five headers and five rows — a column of
+ * text taller than the keyboard it sits under, for twenty buttons. Laid out
+ * across, the sections pack into two or three lines and the whole group is
+ * visible at once, which is the only reason to have grouped it.
+ *
+ * Each section is a column of its own so its header stays over its own buttons;
+ * the gap does the separating, because a rule between them would land in the
+ * wrong place as soon as the row wraps.
+ */
+.picker-sections { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: flex-start; }
+.picker-section { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }
+
+/*
+ * A catalog entry, sized like a cap on the keyboard next door.
+ *
+ * The two are the same choice — "make this key send that" — and they were two
+ * different-looking controls: a 43px cap under Basic, and a cramped 24px chip
+ * under every other category. The minimums here are one key unit of the
+ * keyboard above, so a one-character entry like `~` comes out square and a
+ * worded one like `Web Favorites` grows sideways only.
+ *
+ * Not applied to the modifier strip or to the panel's own buttons. Those act on
+ * the binding rather than being one, and a row of caps that are not choices is
+ * the confusion this is meant to remove.
+ */
+.picker-choice {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  min-width: 2.6875rem;
+  min-height: 2.6875rem;
+}
 
 .version-badge {
   display: flex;

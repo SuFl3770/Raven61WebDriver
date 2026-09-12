@@ -53,6 +53,8 @@ const SECTIONS: Record<string, Record<string, LeafKind>> = {
     writeKeyPerf: 'byte?',
     readKeyRgb: 'byte?',
     writeKeyRgb: 'byte?',
+    readMacros: 'byte?',
+    writeMacros: 'byte?',
     readLightFrame: 'byte?',
     readCalibration: 'byte?',
     analogTestOn: 'byte?',
@@ -96,6 +98,12 @@ const SECTIONS: Record<string, Record<string, LeafKind>> = {
     recordSize: 'size',
     slots: 'size',
     framePollMs: 'size',
+  },
+  macros: {
+    slots: 'size',
+    eventBytes: 'size',
+    blobBytes: 'size',
+    hostBytes: 'size',
   },
   keymap: {
     entrySize: 'size',
@@ -537,6 +545,27 @@ function checkConsistency(spec: DeviceSpec, at: (f: string) => string): string[]
     errors.push(
       at(
         `layout has ${spec.layout.keys.length} keys but keymap.slots is ${spec.keymap.slots} — the block cannot hold them`,
+      ),
+    )
+  }
+  if (spec.macros.hostBytes > spec.macros.blobBytes) {
+    errors.push(
+      at(
+        `macros.hostBytes (${spec.macros.hostBytes}) is more than macros.blobBytes (${spec.macros.blobBytes}) — a write past the block is refused by the board`,
+      ),
+    )
+  }
+  /*
+   * Every slot needs its offset *and* a stop record, or the player walks off
+   * the end of the store — see protocol/macros.ts. So a store that cannot hold
+   * an offset and a stop record for every slot is not one this app can write
+   * safely, and saying so here beats finding out at the first write.
+   */
+  const macroFloor = spec.macros.slots * (2 + spec.macros.eventBytes)
+  if (macroFloor > spec.macros.hostBytes) {
+    errors.push(
+      at(
+        `macros.hostBytes (${spec.macros.hostBytes}) cannot hold ${spec.macros.slots} offsets and ${spec.macros.slots} stop records (${macroFloor} bytes)`,
       ),
     )
   }

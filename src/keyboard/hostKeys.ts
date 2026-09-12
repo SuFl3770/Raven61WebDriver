@@ -1,13 +1,23 @@
 /**
- * The host keyboard, as a source of analog events.
+ * The host keyboard as a source of HID usages — `KeyboardEvent.code` to the
+ * number the board would store.
  *
- * The demo board has no switches, so the thing it reports travel for is the
- * keyboard the reader is already typing on: a `keydown` names a key by
- * `KeyboardEvent.code`, this turns that into the HID usage the board would put
- * in `payload[3]`, and the layout resolves the usage to one of its keys. Any
- * board's layout works, because the table below is the USB standard rather
- * than one keyboard's — a code this board has no key for simply resolves to
- * nothing and is dropped.
+ * Two callers, for two different reasons, and both want the same table.
+ *
+ * The **demo board** has no switches, so the thing it reports travel for is the
+ * keyboard the reader is already typing on: a `keydown` names a key by `code`,
+ * this turns that into the usage the board would put in `payload[3]`, and the
+ * layout resolves it to one of its keys. Any board's layout works, because the
+ * table below is the USB standard rather than one keyboard's — a code this
+ * board has no key for simply resolves to nothing and is dropped.
+ *
+ * The **macro recorder** wants it the other way round: a key the reader pressed
+ * has to become a usage to store in a macro body, whether or not the board in
+ * front of them has that key. A macro recorded on a full-size keyboard and
+ * played back by a 61-key board is the normal case, not an edge one.
+ *
+ * That second caller is why this lives here rather than under `demo/`. It is a
+ * fact about USB HID and about browsers, not about the fake board.
  *
  * Fn is deliberately absent. Browsers never report it: the key is consumed by
  * the keyboard's own firmware and no `code` reaches the page. On the demo board

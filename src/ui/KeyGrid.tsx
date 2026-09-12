@@ -1,7 +1,10 @@
-import { useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useActiveDevice, useLayout } from '../device/active'
 import type { KeyDef } from '../device/spec'
 import { useT } from '../i18n'
+import { useBand } from './GridFrame'
+import { legendFor, useLegends } from '../state/legends'
+
 import { useConnection } from '../state/link'
 
 export interface KeyGridProps {
@@ -33,6 +36,34 @@ export interface KeyGridProps {
   sub?: (key: KeyDef) => ReactNode
   /** Extra class for that line — `pair` when it holds two numbers. */
   subClass?: string
+  /**
+   * A name for what the second line is *about* — the metric, the layer.
+   *
+   * The grid stays mounted while a tab switches between its sections, so the
+   * line's text is swapped in place and sixty-one numbers change between two
+   * frames with nothing to say that they are now measuring something else.
+   * Naming it makes the line a new element whenever the meaning changes,
+   * which is what replays its fade — see `cap-info-in` in styles.css.
+   *
+   * It has to be a *name*, not the value: a key that changed every time the
+   * board was read would rebuild the line under a calibration pass sixty
+   * times a second.
+   */
+  subKey?: string
+  /**
+   * The second line is a live reading, not a setting.
+   *
+   * It changes what happens when a cap starts having something to say: the
+   * line is simply there, rather than the room for it opening under the
+   * legend. A quarter of a second is right for a value that changed because
+   * somebody changed it, and wrong for one that changed because a key moved
+   * — the answer to "what is this key reading" must not arrive late.
+   *
+   * Only the arrival. A reading that stops is still allowed to leave the way
+   * every other line does, and the room it was taking to close behind it —
+   * nothing is waiting on that.
+   */
+  subLive?: boolean
   /**
    * A thin band along the bottom edge of the cap, as a CSS background.
    *
@@ -82,8 +113,70 @@ export interface KeyGridProps {
    * distinguishable. Outside a pass nothing passes `done`.
    */
   status?: (key: KeyDef) => 'done' | 'marginal' | 'bad' | undefined
-  label?: (key: KeyDef) => string
+  /**
+   * Replaces the cap's legend.
+   *
+   * Return `undefined` for a key with nothing of the caller's own to say, and
+   * the cap falls back to the legend every other grid shows — the binding, or
+   * the board's printing when the two agree. Returning `''` blanks the cap,
+   * which is a different thing and almost never the one wanted.
+   */
+  label?: (key: KeyDef) => string | undefined
+  /**
+   * Draw the board's own printing, ignoring the keymap.
+   *
+   * For the grids that are about the key as a piece of hardware rather than as
+   * something that types: the debug tab's event grid binds a sensor to a
+   * physical key, and the remap tab carries the binding on the cap's second
+   * line so that the first can stay the thing being remapped *from*. See
+   * `state/legends.ts` for what the rest of the app shows instead.
+   */
+  physical?: boolean
 }
+
+/**
+ * What one cap is *saying* about the setting, which is not the same as what
+ * the caller returns for it this render.
+ *
+ * Neither the band nor the second line can be transitioned to nothing: the
+ * moment a section stops painting one, the caller stops naming it and there
+ * is nothing left on the element to animate. So both are kept after the
+ * caller has let go, drawn on their way out under a class that takes them off
+ * the cap — see `.keycap .stripe.gone` and `.sub-slot.shut` in styles.css.
+ *
+ * The second line needs one thing more. Three things happen to it and no two
+ * of them want the same element: a line whose *subject* changed — the same
+ * cap, now measuring something else — should be a new element, so the value
+ * fades in rather than being rewritten where it stands; a line going away
+ * should be the *same* element, because a new one cannot leave; and a line
+ * arriving where there was none should be the same element too, so the room
+ * opens under the legend rather than appearing under it. So the id changes on
+ * the first of those and holds still for the other two.
+ */
+interface CapSaid {
+  /** The band's colour, kept after it stops being painted. */
+  band?: string
+  /** Whether the band is on the cap, rather than on its way off it. */
+  banded: boolean
+  /** The second line's text, kept for the same reason as the colour. */
+  text?: ReactNode
+  /** Whether that line has anything to say at the moment. */
+  saying: boolean
+  /** What it is about, so a change of subject reads differently to a new value. */
+  about?: string
+  /** Which element is showing it — see the note above. */
+  id: number
+}
+
+/**
+ * The band's caps, remembered across the tab switch that rebuilds them.
+ *
+ * Module scope for the same reason `bandOnScreen` in ui/GridFrame.tsx is: the
+ * thing being remembered outlives every element that could hold it. Emptied
+ * by the first grid to arrive where there was none, which is the only moment
+ * at which what is in here could belong to a different keyboard.
+ */
+const BAND_SAID = new Map<number, CapSaid>()
 
 const PAD = 0.06 // gap between caps, in keyboard units
 
@@ -94,23 +187,76 @@ export function KeyGrid({
   fill,
   sub,
   subClass,
+  subKey,
+  subLive,
   stripe,
   tint,
   onHover,
   label,
   status,
+  physical,
 }: KeyGridProps) {
   // The board's own key table and size in units. A different keyboard is a
   // different grid, and nothing here knows which one it is drawing.
   const { keys, units } = useLayout()
   const { matched, forced } = useActiveDevice()
   const { device, connected } = useConnection()
+  /* The base layer, so a remapped key reads as what it now sends. Empty until
+     something has read it, and on every board that cannot be asked. */
+  const entries = useLegends()
   const t = useT()
   /** What the in-progress drag is painting, or null when none is running. */
   const painting = useRef<boolean | null>(null)
   /** Where the pointer was at the previous move, so the gap can be filled in. */
   const last = useRef<{ x: number; y: number } | null>(null)
   const grid = useRef<HTMLDivElement>(null)
+  /*
+   * What each cap is saying, and how — see `CapSaid`.
+   *
+   * A tab switch rebuilds the grid, so a per-grid memory would be thrown away
+   * at exactly the moment it is needed: the caps carrying a value on the tab
+   * being left have to keep it long enough to put it down. The band's memory
+   * therefore outlives the band, and only the band's — the debug tab draws a
+   * second grid of its own, and two grids sharing one memory would each keep
+   * finding the other's values where their own should be.
+   */
+  const band = useBand()
+  const own = useRef(new Map<number, CapSaid>())
+  const saidOn = band ? BAND_SAID : own.current
+  /*
+   * Whether this grid is done arriving.
+   *
+   * A grid replacing another one is built showing what that one was showing,
+   * and only then told what it is actually for — in two steps rather than
+   * one, so that what changed has a state to change *from*. Without it the
+   * caps would be new elements already holding their final values, and a new
+   * element has nothing to transition from.
+   *
+   * A grid arriving where there was none has nothing to carry on from, so it
+   * skips the extra frame and drops whatever the last board's grid left here.
+   */
+  const [settled, setSettled] = useState(() => {
+    if (!band) return true
+    if (band.arriving) BAND_SAID.clear()
+    return band.arriving
+  })
+  useLayoutEffect(() => {
+    if (settled) return
+    /*
+     * Measured, and the measurement thrown away. A transition starts when a
+     * property changes between two of the browser's own style calculations,
+     * and these caps were built moments ago in the same task — asking for
+     * their geometry is what forces the first calculation, so that the
+     * change made on the next line is a change *from* something.
+     *
+     * Not a frame later. Waiting on `requestAnimationFrame` would read
+     * better and be wrong: a window that is not being drawn — a background
+     * tab — never runs one, and the grid would sit there showing the values
+     * of the tab before it until somebody looked at it again.
+     */
+    grid.current?.getBoundingClientRect()
+    setSettled(true)
+  }, [settled])
 
   /**
    * The drag is tracked by hit-testing the pointer rather than by listening for
@@ -244,12 +390,42 @@ export function KeyGrid({
           height: `${((1 - PAD * 2) / units.height) * 100}%`,
         }
         const amount = fill?.(k) ?? 0
-        const band = stripe?.(k)
         const paint = tint?.(k)
-        const subText = sub?.(k)
+        /*
+          What this cap is saying. Left exactly as the grid before it left it
+          until this one has settled — a frame later, when what it is actually
+          for is put on and the difference is something the cap can animate.
+        */
+        let cap = saidOn.get(k.index)
+        if (settled) {
+          const colour = stripe?.(k)
+          const text = sub?.(k)
+          const saying = Boolean(text)
+          // A line already saying something about a different subject is
+          // replaced rather than rewritten.
+          const turned = cap?.saying === true && saying && cap.about !== subKey
+          cap = {
+            // The colour outlives the painting of it, and the text outlives
+            // the caller's returning of it: both are what is drawn leaving.
+            band: colour ?? cap?.band,
+            banded: colour !== undefined,
+            text: saying ? text : cap?.text,
+            saying,
+            about: saying ? subKey : cap?.about,
+            id: (cap?.id ?? 0) + (turned ? 1 : 0),
+          }
+          saidOn.set(k.index, cap)
+        }
         const state = status?.(k)
         const stateClass = state ? ` ${state}` : ''
         const isSelected = selected?.has(k.index) ?? false
+        /*
+          The caller's legend wins outright — including the decision that a cap
+          should be blank — and only a cap it had nothing to say about asks what
+          the key sends.
+        */
+        const given = label?.(k)
+        const legend = given === undefined && !physical ? legendFor(k, entries) : undefined
         return (
           <button
             key={k.index}
@@ -257,7 +433,7 @@ export function KeyGrid({
             data-key={k.index}
             className={`keycap${isSelected ? ' selected' : ''}${stateClass}${
               paint ? ' tinted' : ''
-            }`}
+            }${legend?.remapped ? ' remapped' : ''}`}
             /*
               The tint goes on the cap itself rather than on a layer inside it,
               so a selected cap keeps its accent edge and the legend inherits a
@@ -267,6 +443,9 @@ export function KeyGrid({
             */
             style={paint ? { ...style, background: paint.color, color: paint.fg } : style}
             aria-pressed={isSelected}
+            /* The printing stays in the tooltip whatever the cap reads, because
+               it is how the key is pointed at out loud — "the one where Caps
+               Lock is". */
             title={`#${k.index} ${k.label}`}
             onPointerDown={onToggle ? (e) => startPaint(e, k.index) : undefined}
             onPointerEnter={onHover ? () => onHover(k.index) : undefined}
@@ -289,10 +468,36 @@ export function KeyGrid({
             }}
           >
             {amount > 0 && <span className="fill" style={{ height: `${Math.min(1, amount) * 100}%` }} />}
-            {band && <span className="stripe" style={{ background: band }} />}
-            <span className="cap-label">{label?.(k) ?? k.label}</span>
-            {subText && (
-              <span className={`sub cap-label${subClass ? ` ${subClass}` : ''}`}>{subText}</span>
+
+            {/* Always drawn, even with nothing to say — see `lastBand`. An
+                empty one is transparent and covers nothing. */}
+            <span
+              className={`stripe${cap?.banded ? '' : ' gone'}`}
+              style={cap?.band ? { background: cap.band } : undefined}
+            />
+            <span className="cap-label">{given ?? legend?.text ?? k.label}</span>
+            {/*
+              Always here once a grid has a second line to give, even on the
+              caps and in the sections where there is nothing to put on it —
+              an empty slot is a closed slot, and it is the slot opening and
+              closing that moves the legend gently rather than in one step.
+              See `.sub-slot` in styles.css for how a row of no height is
+              animated to the height of its contents.
+            */}
+            {sub && (
+              <span
+                className={`sub-slot${subLive ? ' at-once' : ''}${
+                  cap?.saying ? '' : ' shut'
+                }`}
+              >
+                <span
+                  key={cap?.id ?? 0}
+                  className={`sub cap-label${subClass ? ` ${subClass}` : ''}`}
+                >
+                  {cap?.text}
+                </span>
+              </span>
+
             )}
           </button>
         )
