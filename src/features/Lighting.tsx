@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
 import { useDeviceSpec, useLayout } from '../device/active'
 import { supports } from '../protocol/codec'
-import { UNLIT, hexOf, isUnlit, luminanceOf, parseHex, sameRgb, type Rgb } from '../protocol/keyRgb'
+import { UNLIT, hexOf, isUnlit, luminanceOf, sameRgb, type Rgb } from '../protocol/keyRgb'
 import { LIGHT_CONTROL, effectOf, supportsControl } from '../protocol/lighting'
 import type { KeyRgbSnapshot } from '../protocol/types'
 import { useGlobalSettings } from '../state/global'
@@ -19,10 +19,7 @@ import { LightEffect } from './LightEffect'
 /**
  * Lighting — the effect the board runs, and the colour stored for each key.
  *
- * Two subjects, two sections, one grid above them. They were one page and it
- * read as two pages stacked; splitting them the way the input-point tab splits
- * its panels keeps the keyboard in one place rather than redrawing it under
- * each half.
+ * Two blocks, one screen, one grid over it:
  *
  *   - **Effect** is nine bytes of the board-wide settings block — the one 0x05
  *     reads and 0x06 writes. See `features/LightEffect.tsx` and
@@ -30,11 +27,12 @@ import { LightEffect } from './LightEffect'
  *   - **Per-key colour** is its own 384-byte block at flash 0x20f00, read with
  *     0x0a and written with 0x0b. See `protocol/keyRgb.ts`.
  *
- * The two meet at one place, and it is worth knowing about: the stored colours
- * are what **Custom Light** paints. Every other effect generates its own
- * colours and ignores the block. That is why this tab names the connection
- * rather than leaving someone to paint 61 keys and wonder — and it is the
- * answer to a question that was open here until the effect table was decoded.
+ * Two blocks, but not two subjects, and that is why they share a panel: the
+ * stored colours are what **Custom Light** paints, and every other effect
+ * generates its own and ignores the block. The colours are that one effect's
+ * parameter in everything but where the bytes live. So the settings panel
+ * holds both, colours on top — one page, with the effect list beside it and
+ * the keyboard over both.
  *
  * Three decisions worth the words:
  *
@@ -48,30 +46,16 @@ import { LightEffect } from './LightEffect'
  *     being read, and a hex triplet across 61 caps is a page of codes. What the
  *     grid cannot say — which key is which colour, by name — the line under it
  *     says for whichever cap the pointer is on.
- *   - **"Stored" and "on the board now" are two views, not one.** The stored
- *     layer is flash; the live frame is the RAM buffer the effect engine
- *     rewrites, with the firmware's calibration overlay on top. They disagree
- *     for good reasons, and only the live one answers "what is lit".
+ *   - **The grid is the frame the board is displaying, always.** The stored
+ *     layer is flash; the frame is the RAM buffer the effect engine rewrites,
+ *     with the firmware's calibration overlay on top. They disagree for good
+ *     reasons — but only one of them answers "what is lit", and a switch
+ *     between the two made that answer something you had to ask for. The
+ *     stored colours are still read, still written and still what the colour
+ *     controls edit; what they no longer do is take the grid over. Pending edits
+ *     are painted on top of the frame, because a colour being picked has to
+ *     look like something before it is applied.
  */
-
-/**
- * Somewhere to start, and the primaries in one click.
- *
- * Not a palette with a claim behind it: this block's factory defaults sit in
- * code flash and have never been dumped, so there is no "board colours" to
- * offer. These are the corners of the cube plus white — enough to make the
- * picker usable without pretending to be evidence.
- */
-const PRESETS: readonly Rgb[] = [
-  { r: 255, g: 255, b: 255 },
-  { r: 255, g: 0, b: 0 },
-  { r: 255, g: 128, b: 0 },
-  { r: 255, g: 255, b: 0 },
-  { r: 0, g: 255, b: 0 },
-  { r: 0, g: 255, b: 255 },
-  { r: 0, g: 0, b: 255 },
-  { r: 255, g: 0, b: 255 },
-]
 
 /**
  * A legend colour that can be read against a cap painted `color`.
@@ -101,23 +85,18 @@ export function Lighting() {
   const [frame, setFrame] = useState<KeyRgbSnapshot | null>(null)
   /** Pending colours by key index. Cleared by a read, a revert or a write. */
   const [edits, setEdits] = useState<Record<number, Rgb>>({})
-  const [view, setView] = useState<'stored' | 'live'>('stored')
   /**
-   * Whether the live view keeps re-reading, or holds the frame it has.
+   * Whether the frame watch is still running.
    *
-   * On by default, because a view called "on the board now" that needed a
-   * button press to be now would be a worse lie than not having it. Off is for
-   * reading a single frame in peace — an effect moves, and a key that is lit
-   * for two frames in ten is hard to point at while the grid is changing.
+   * There is no switch for it and nothing to switch to: the grid shows what
+   * the board is displaying, and a "now" that needed a button press to be now
+   * would be a worse lie than not having the view at all. This goes false only
+   * when a read fails, and what it prevents is a board that is answering
+   * nothing being asked again every poll. Reconnecting turns it back on;
+   * otherwise leaving the tab and coming back is the retry, as it is for the
+   * stored block.
    */
   const [watching, setWatching] = useState(true)
-  /**
-   * Which half of the tab is open.
-   *
-   * The grid stays above it either way. Only the per-key section has anything
-   * to select in the grid, so the selection gestures follow the section.
-   */
-  const [section, setSection] = useState('effect')
   const [picked, setPicked] = useState('#ff8000')
   /** What is in the hex box, which is not a colour yet while it is being typed. */
   const [typed, setTyped] = useState<string | null>(null)
@@ -139,9 +118,14 @@ export function Lighting() {
 
   const targets = targetKeys(sel)
   const dirty = Object.keys(edits).length
-  const live = view === 'live'
-  /** True while the grid is a painting surface rather than a readout. */
-  const painting = !live && section === 'perkey'
+  /**
+   * True while the grid is a painting surface rather than a readout.
+   *
+   * Which is whenever this board has a colour block to paint. It used to follow
+   * the open sub-tab, back when the colours were a section of their own; now
+   * they are part of the effect's settings and there is nothing to follow.
+   */
+  const painting = canRead
 
   const readStored = useCallback(async () => {
     if (!codec.readKeyColors) return
@@ -187,8 +171,8 @@ export function Lighting() {
     void boardSync.read()
   }, [connected])
 
-  /** One frame, for the moments the watch is off. */
-  const readFrame = async () => {
+  /** One frame, for a board that can read one but cannot be watched. */
+  const readFrame = useCallback(async () => {
     if (!codec.readLightFrame) return
     setBusy('frame')
     setError(null)
@@ -199,27 +183,47 @@ export function Lighting() {
     } finally {
       setBusy(null)
     }
-  }
+  }, [codec])
 
   /*
-   * While the live view is open, keep reading the frame.
+   * A board with no watch command still gets a frame — one, on the way in, and
+   * one after a write changes what it should be showing (see `apply`). There is
+   * no button to ask for another: what this tab can promise such a board is a
+   * frame, not a live one, and a refresh button would only move the gap around
+   * rather than close it.
+   */
+  useEffect(() => {
+    if (!connected || canWatch || !canFrame) return
+    void readFrame()
+  }, [connected, canWatch, canFrame, readFrame])
+
+  /*
+   * A watch that failed stays off until something has changed about the board
+   * it was reading. Reconnecting is that something.
+   */
+  useEffect(() => {
+    if (connected) setWatching(true)
+  }, [connected])
+
+  /*
+   * While the tab is open, keep reading the frame.
    *
    * This is the stock driver's own behaviour — its worker reads the LED frame
    * every time its job queue is empty (docs §3.0) — and it is what makes the
-   * view answer "which keys are lit" rather than "which keys were lit when you
+   * grid answer "which keys are lit" rather than "which keys were lit when you
    * pressed the button". The cadence and the one-read-at-a-time rule belong to
    * the codec, not here; see `watchLightFrame` in protocol/engine.ts.
    *
    * `cancelled` rather than only the stop function: the watch reads the slot
-   * map before its first frame, so the panel can be left — or the view switched
-   * back — while the promise is still outstanding, and the stop it eventually
-   * hands over would then arrive after nothing is listening.
+   * map before its first frame, so the panel can be left while the promise is
+   * still outstanding, and the stop it eventually hands over would then arrive
+   * after nothing is listening.
    *
-   * A failure turns the watch off and shows why, instead of retrying. The
-   * button it turns off is the retry.
+   * A failure turns the watch off and shows why, instead of retrying — see
+   * `watching`.
    */
   useEffect(() => {
-    if (!live || !watching || !connected || !canWatch || !codec.watchLightFrame) return
+    if (!watching || !connected || !canWatch || !codec.watchLightFrame) return
     let cancelled = false
     let stop: (() => void) | undefined
     codec
@@ -249,12 +253,21 @@ export function Lighting() {
       cancelled = true
       stop?.()
     }
-  }, [live, watching, connected, canWatch, codec])
+  }, [watching, connected, canWatch, codec])
 
-  /** The colour a key shows: the pending edit if there is one, else the board's. */
+  /**
+   * The colour a key shows.
+   *
+   * A pending edit first — it is the one colour here that is not on the board,
+   * and painting a cap has to look like something before it is applied. Then
+   * the frame the board is displaying. A board whose spec names no frame
+   * command falls back to the stored layer, which is the only thing it has.
+   */
   const shownColor = (index: number): Rgb | undefined => {
-    if (live) return frame?.entries[index]?.color
-    return edits[index] ?? stored?.entries[index]?.color
+    const edit = edits[index]
+    if (edit) return edit
+    if (canFrame) return frame?.entries[index]?.color
+    return stored?.entries[index]?.color
   }
 
   /**
@@ -344,8 +357,11 @@ export function Lighting() {
         )
       }
       // The stored layer just changed, so a frame fetched before it is stale.
-      // Dropping it beats showing it beside a colour it predates.
+      // Dropping it beats showing the grid a colour it predates. A watched
+      // board fills it again within the poll; one that cannot be watched is
+      // asked once here, because nothing else would ask.
       setFrame(null)
+      if (!canWatch && canFrame) void readFrame()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -361,30 +377,7 @@ export function Lighting() {
    * is plain that there is a setting here and a reason it cannot be touched.
    */
   const none = targets.length === 0
-  const hexText = typed ?? picked
-  const hexBad = typed !== null && parseHex(typed) === null
   const unmapped = stored ? keys.filter((k) => stored.entries[k.index]?.slot === undefined) : []
-
-  /**
-   * Where the slot mapping came from, for whichever block is on screen.
-   *
-   * Both views need it and for the same reason: every colour here is addressed
-   * by slot, so a guessed map puts the right colours on the wrong caps. Written
-   * with the performance tab's own strings rather than a second set — the fact
-   * is the board's, not that tab's, and two translations of it could drift.
-   */
-  const slotMapOf = live ? frame?.slotMap : stored?.slotMap
-  const slotMapNote = slotMapOf ? (
-    <span className="small dim">
-      {t('perf.slotMap.label')}{' '}
-      {slotMapOf.source === 'keymap' ? (
-        <b style={{ color: 'var(--ok)' }}>{t('perf.slotMap.keymap')}</b>
-      ) : (
-        <b style={{ color: 'var(--warn)' }}>{t('perf.slotMap.guess')}</b>
-      )}{' '}
-      · {t('perf.slotMap.count', { resolved: slotMapOf.slotByKey.size, total: keys.length })}
-    </span>
-  ) : null
 
   /**
    * The keys the board is lighting right now, in layout order.
@@ -405,23 +398,35 @@ export function Lighting() {
     : []
 
   /*
-   * The readout is worded per view, because the same three zero bytes mean
-   * different things in the two blocks. In the stored layer they are *no custom
-   * colour*, a setting that is absent; in the live frame they are an LED the
-   * firmware is not driving right now. Reading "no custom colour" off a frame
-   * would be this tab's own confusion, printed back at the user.
+   * The readout is worded per layer, because the same three zero bytes mean
+   * different things in each. A pending edit of them is *clear the custom
+   * colour*, an instruction not yet given; in the frame they are an LED the
+   * firmware is not driving right now; in the stored block — which is what a
+   * board with no frame command falls back to — they are a setting that is
+   * absent. Reading "no custom colour" off a frame would be this tab's own
+   * confusion, printed back at the user.
+   *
+   * An edit is called out as unapplied rather than read like any other colour.
+   * It is the one thing on the grid that the board has not been told about, and
+   * the dot on the cap says *that* a key is pending where this says what it is
+   * pending as.
    *
    * The empty state differs for a plainer reason: there is nothing to select
    * unless the per-key section is open, so telling someone to drag across the
    * caps is otherwise an instruction that does nothing.
    */
   const hoveredKey = hovered === undefined ? undefined : keys.find((k) => k.index === hovered)
+  const hoveredEdit = hovered === undefined ? undefined : edits[hovered]
   const hoveredColor = hovered === undefined ? undefined : shownColor(hovered)
   const readout = !hoveredKey
     ? t(painting ? 'light.pickNone' : 'light.hoverNone')
-    : !hoveredColor || isUnlit(hoveredColor)
-      ? t(live ? 'light.hoveredOff' : 'light.pickedUnlit', { key: hoveredKey.label })
-      : t('light.picked', { key: hoveredKey.label, color: hexOf(hoveredColor) })
+    : hoveredEdit
+      ? isUnlit(hoveredEdit)
+        ? t('light.pendingUnlit', { key: hoveredKey.label })
+        : t('light.pendingPick', { key: hoveredKey.label, color: hexOf(hoveredEdit) })
+      : !hoveredColor || isUnlit(hoveredColor)
+        ? t(canFrame ? 'light.hoveredOff' : 'light.pickedUnlit', { key: hoveredKey.label })
+        : t('light.picked', { key: hoveredKey.label, color: hexOf(hoveredColor) })
 
   /**
    * Whether the stored colours are the ones the board is showing.
@@ -434,15 +439,29 @@ export function Lighting() {
    */
   const effect = global?.lighting ? effectOf(spec.lightEffects, global.lighting.mode) : undefined
   const perKeyLive = supportsControl(effect, LIGHT_CONTROL.perKey)
-  const perKeyEffect = spec.lightEffects?.find((e) => supportsControl(e, LIGHT_CONTROL.perKey))
 
-  /** The per-key colour section. */
-  const perKeyPanels = (
-    <>
-      <Panel title={t('light.title')}>
-        {/* A notice is something a panel holds rather than something stacked on
-            the page, so the ones that belong to the grid live at the top of the
-            first panel under it — the way the other tabs do it. */}
+  /**
+   * The per-key colour controls, for the settings panel to put over its
+   * sliders.
+   *
+   * Not a panel of its own any more. The stored colours are what one effect
+   * reads, which makes them that effect's settings in everything but where the
+   * bytes live — and a second panel under a second heading made them look like
+   * a second subject. What is left here is the controls and the two warnings
+   * that stop a press from being wasted; the prose that used to sit under them
+   * said what the panel already shows.
+  /**
+   * The keys as a colour target, for the settings panel's one colour control.
+   *
+   * Values and callbacks rather than the controls themselves: the panel decides
+   * whether this or the effect's own colour byte is what the picker writes, and
+   * it cannot decide that for a block of finished markup. What stays here is
+   * everything the decision does not touch — the selection, the pending edits,
+   * and the warnings that say whether a press will reach the LEDs.
+   */
+  const perKey = {
+    notices: (
+      <>
         {connected && !stored && busy === null && !error && (
           <div style={{ marginBottom: 10 }}>
             <Notice kind="warn">{t('light.unread')}</Notice>
@@ -458,202 +477,82 @@ export function Lighting() {
             </Notice>
           </div>
         )}
-
-        <div className="row" style={{ alignItems: 'center' }}>
-          <span className="small dim">{t('light.color')}</span>
-          <input
-            type="color"
-            disabled={none}
-            value={picked}
-            onChange={(e) => choose(parseHex(e.target.value) ?? UNLIT)}
-            style={{ width: 56, height: 30, padding: 2 }}
-          />
-          {/*
-            The same colour as text, because a colour picked on one keyboard is
-            a value someone wants to type into another — and because the native
-            picker cannot be read out loud.
-          */}
-          <input
-            type="text"
-            disabled={none}
-            value={hexText}
-            spellCheck={false}
-            aria-label={t('light.hex')}
-            className="mono"
-            onChange={(e) => {
-              setTyped(e.target.value)
-              const parsed = parseHex(e.target.value)
-              if (parsed) choose(parsed)
-            }}
-            onBlur={() => setTyped(null)}
-            style={{ width: 100 }}
-          />
-          <span style={{ flex: 1 }} />
-          <button disabled={none} onClick={() => paint(UNLIT)}>
-            {t('light.clear')}
-          </button>
-        </div>
-
-        {hexBad && (
-          <div className="small dim" style={{ marginTop: 6 }}>
-            <T k="light.hexInvalid" />
+        {/*
+          The one fact that decides whether any of this reaches the LEDs. It is
+          a warning rather than an explanation: the effect list is on the same
+          screen, so what to do about it is a click away and does not need
+          describing. It is only ever shown while the keys are what the colour
+          control writes — on an effect that mixes its own colour, the control
+          is that colour and there is nothing here to warn about.
+        */}
+        {global?.lighting && !perKeyLive && (
+          <div style={{ marginBottom: 10 }}>
+            <Notice kind="warn">
+              <T k="light.notCustom" />
+            </Notice>
           </div>
         )}
+      </>
+    ),
+    picked,
+    typed,
+    none,
+    onType: setTyped,
+    onPick: choose,
+    onClear: () => paint(UNLIT),
+  }
 
-        <div className="row" style={{ marginTop: 12, alignItems: 'center' }}>
-          <span className="small dim">{t('light.preset')}</span>
-          <div className="swatches">
-            {PRESETS.map((color) => (
-              <button
-                key={hexOf(color)}
-                className="accent-swatch"
-                disabled={none}
-                // As the accent picker does it: the swatch is the control, and
-                // what the dot is filled with is the stylesheet's call.
-                style={{ '--swatch': hexOf(color) } as CSSProperties}
-                aria-label={hexOf(color)}
-                title={hexOf(color)}
-                onClick={() => choose(color)}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="row" style={{ marginTop: 10, alignItems: 'baseline' }}>
-          <span className="small dim" style={{ flex: 1 }}>
-            <T k="light.clearHint" />
-          </span>
-          {slotMapNote}
-        </div>
-      </Panel>
-
-      {/*
-        Where these colours actually show up.
-        This used to be a panel saying nobody knew, because nobody did: the
-        block was decoded and the mode that reads it was not. It is Custom
-        Light — so the honest thing now is a pointer to that effect and a button
-        that switches to it.
-      */}
-      <Panel title={t('light.showsIn.title')}>
-        {perKeyLive ? (
-          <Notice kind="ok">
-            <T k="light.showsIn.active" />
-          </Notice>
-        ) : (
-          <>
-            <div className="small dim">
-              <T k="light.showsIn.body" />
-            </div>
-            {perKeyEffect && (
-              <div className="row" style={{ marginTop: 10, alignItems: 'baseline' }}>
-                <button
-                  className="primary"
-                  disabled={!connected || !global?.lighting}
-                  onClick={() =>
-                    void boardSync.applyGlobal({ lighting: { lightMode: perKeyEffect.mode } })
-                  }
-                >
-                  {t('light.showsIn.switch')}
-                </button>
-                {global?.lighting && (
-                  <span className="small dim">
-                    {t('light.showsIn.current', {
-                      mode: effect ? effect.name : String(global.lighting.mode),
-                    })}
-                  </span>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </Panel>
-    </>
-  )
-
+  /*
+   * One section, and the strip stays.
+   *
+   * It was two — the effect and the colours — and they were folded into one
+   * settings panel because they are one effect's settings. What is left is a
+   * strip that names what is under it rather than offering a choice, which is
+   * what it was doing on the first of the two tabs anyway.
+   */
   const sections: SubTab[] = [
-    { id: 'effect', labelKey: 'light.section.effect', render: () => <LightEffect /> },
-    { id: 'perkey', labelKey: 'light.section.perKey', render: () => perKeyPanels },
+    {
+      id: 'effect',
+      labelKey: 'light.section.effect',
+      render: () => <LightEffect perKey={perKey} />,
+    },
   ]
 
   return (
     <>
       {/*
-        The live view is a readout, not an editor — the frame it shows is a RAM
-        buffer the firmware rewrites — so the selection gestures go away with
-        it, as they do during a calibration pass. So do they on the effect
-        section, which has nothing to select either.
+        The caps are picked and painted, unless this board has no colour block —
+        then the selection gestures go, as they do during a calibration pass,
+        rather than offering a selection nothing can act on.
+
+        There is nothing here to choose what the grid shows. It shows the frame
+        the board is displaying, which is the only thing on this tab that can
+        answer "what is lit" — see the note at the top of the file.
       */}
       <GridFrame
         selectable={painting}
         marquee={painting}
         top={
-          <>
-            <button
-              className={live ? '' : 'primary'}
-              aria-pressed={!live}
-              onClick={() => setView('stored')}
-            >
-              {t('light.view.stored')}
-            </button>
-            <button
-              className={live ? 'primary' : ''}
-              aria-pressed={live}
-              disabled={!canFrame}
-              onClick={() => {
-                setView('live')
-                // Opening it is enough: the watch effect starts on the view, and
-                // a board with no watch capability still gets the one-shot read
-                // below. Neither is asked for by name here.
-                if (!canWatch && !frame && connected) void readFrame()
-              }}
-            >
-              {t('light.view.live')}
-            </button>
-            {live && canWatch && (
+          painting && (
+            <>
               <button
-                className={watching ? 'primary' : ''}
-                aria-pressed={watching}
-                disabled={!connected}
-                onClick={() => {
-                  // Turning it back on clears the error that turned it off, so a
-                  // stale message cannot sit under a view that is working again.
-                  if (!watching) setError(null)
-                  setWatching((on) => !on)
-                }}
+                className="primary"
+                disabled={!connected || !canWrite || busy !== null || dirty === 0}
+                onClick={() => void apply()}
               >
-                {t('light.view.watch')}
+                {dirty === 0 ? t('light.apply') : t('light.applyCount', { count: dirty })}
               </button>
-            )}
-            {live && (
-              <button
-                disabled={!connected || watching || busy !== null}
-                onClick={() => void readFrame()}
-              >
-                {t('light.view.refresh')}
+              <button disabled={dirty === 0 || busy !== null} onClick={() => setEdits({})}>
+                {t('light.revert')}
               </button>
-            )}
-            {painting && (
-              <>
-                <hr className="sep" />
-                <button
-                  className="primary"
-                  disabled={!connected || !canWrite || busy !== null || dirty === 0}
-                  onClick={() => void apply()}
-                >
-                  {dirty === 0 ? t('light.apply') : t('light.applyCount', { count: dirty })}
-                </button>
-                <button disabled={dirty === 0 || busy !== null} onClick={() => setEdits({})}>
-                  {t('light.revert')}
-                </button>
-              </>
-            )}
-          </>
+            </>
+          )
         }
         foot={
           <>
-            {/* In the live view the count replaces the selection count the
-                frame took away, and stands where it stood. */}
-            {live && (
+            {/* Beside the selection count, and answering what the effect
+                cards leave open: what the one you just picked is doing. */}
+            {canFrame && (
               <span>
                 {frame
                   ? t('light.lit', { count: litKeys.length, total: keys.length })
@@ -686,54 +585,16 @@ export function Lighting() {
         />
       </GridFrame>
 
-      {live ? (
-        <Panel title={t('light.live.title')}>
-          {!frame && !error && (
-            <div style={{ marginBottom: 10 }}>
-              <Notice kind="warn">
-                <T k={canWatch ? 'light.live.starting' : 'light.live.unread'} />
-              </Notice>
-            </div>
-          )}
-          {frame && (
-            <div className="row" style={{ alignItems: 'baseline', marginBottom: 10 }}>
-              <span className="small dim">
-                {t('light.lit', { count: litKeys.length, total: keys.length })}
-              </span>
-              {/* The names, because a colour on a cap says *that* a key is lit
-                  and a list says *which* — and the two questions are asked at
-                  different distances from the screen. Capped: an effect lights
-                  the whole board, and 61 names is not a readout. */}
-              {litKeys.length > 0 && (
-                <span className="small">
-                  {litKeys
-                    .slice(0, 16)
-                    .map((k) => k.label)
-                    .join(', ')}
-                  {litKeys.length > 16 && ` … +${litKeys.length - 16}`}
-                </span>
-              )}
-              <span style={{ flex: 1 }} />
-              {slotMapNote}
-            </div>
-          )}
-          <div className="small dim">
-            <T k="light.live.body" />
-          </div>
-          <div className="small dim" style={{ marginTop: 8 }}>
-            <T k="light.live.poll" params={{ ms: spec.keyRgb.framePollMs }} />
-          </div>
-        </Panel>
-      ) : canRead ? (
+      {canRead ? (
         <SubTabs
           tabs={sections}
           label={t('light.sections')}
-          active={section}
-          onActive={setSection}
+          active="effect"
+          onActive={() => {}}
         />
       ) : (
         /*
-         * A board whose spec names no colour command keeps the effect half —
+         * A board whose spec names no colour command keeps the effect settings —
          * the two are different blocks and one being undecoded says nothing
          * about the other — and gets the usual notice for the half it lacks.
          */

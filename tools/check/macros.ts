@@ -305,6 +305,20 @@ function imageOf(blob: Uint8Array): Uint8Array {
     SPEC.slots,
   )
   eq('the budget is the capacity less those', macroEventBudget(SPEC), 880 - 32)
+  // What the panel's capacity bar is drawn against. The table and the
+  // terminators are 192 bytes the store carries empty or not, so the bar
+  // measures what is left after them — otherwise an empty store reads as 192
+  // bytes gone with nothing in it. See the gauge in features/Macro.tsx.
+  eq(
+    'and in bytes it is the block less table and terminators',
+    macroEventBudget(SPEC) * SPEC.eventBytes,
+    SPEC.hostBytes - SPEC.slots * 2 - SPEC.slots * SPEC.eventBytes,
+  )
+  eq(
+    'which is what an empty store leaves free',
+    SPEC.hostBytes - macroWriteBytes(Array.from({ length: 32 }, (_, i) => emptyMacro(i)), SPEC),
+    macroEventBudget(SPEC) * SPEC.eventBytes,
+  )
   eq('the store holds 32 slots', SPEC.slots, 32)
   eq('so the first body is at 64', blob[0]! | (blob[1]! << 8), 64)
 

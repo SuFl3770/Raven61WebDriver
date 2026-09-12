@@ -1,8 +1,8 @@
 {
   "//": "The Raven61's switch table, as data. Where each number came from, which columns reach the hardware and which are only description: switches.ts, beside this file. Same shape as the switchTypes list in a src/device/user/*.device.json, so a row copies either way.",
   "switchTypes": [
-    { "value": 0, "vendor": "Gateron", "name": "Magnetic Orange", "magnetGauss": 700, "travelMm": 4.0, "selectable": true, "color": "#ef8a3c" },
-    { "value": 1, "vendor": "Gateron", "name": "Magnetic White", "magnetGauss": 700, "travelMm": 4.0, "selectable": true, "color": "#e8e8e6" },
+    { "value": 0, "vendor": "Gateron", "name": "Magnetic Orange", "magnetGauss": 905, "travelMm": 4.0, "selectable": true, "color": "#ef8a3c" },
+    { "value": 1, "vendor": "Gateron", "name": "Magnetic White", "magnetGauss": 905, "travelMm": 4.0, "selectable": true, "color": "#e8e8e6" },
     { "value": 2, "vendor": "Gateron", "name": "Magnetic Jade", "magnetGauss": 700, "travelMm": 3.32, "selectable": true, "color": "#3fae8e" },
     { "value": 3, "vendor": "Teamwolf", "name": "Light Breeze", "magnetGauss": 750, "travelMm": 4.0, "selectable": true, "color": "#97e4e2" },
     { "value": 4, "vendor": "Teamwolf", "name": "Light Breeze V2", "magnetGauss": 750, "travelMm": 3.8, "selectable": true, "color": "#336ca7" },
