@@ -11,6 +11,7 @@ import { unknownCodec } from '../protocol/unknown'
 import { configStore } from './config'
 import { firmwareStore } from './firmware'
 import { globalStore } from './global'
+import { macroSnapshotStore } from './macroSnapshot'
 import { forcedProtocol, setForcedProtocol, subscribeForcedProtocol } from './forcedProtocol'
 import { selection } from './selection'
 
@@ -24,6 +25,7 @@ link.onChange(() => {
   if (link.connected) return
   globalStore.clear()
   firmwareStore.clear()
+  macroSnapshotStore.clear()
 })
 
 /**
@@ -41,6 +43,8 @@ subscribeActiveSpec(() => {
   lastSpec = activeSpec()
   configStore.clear()
   selection.clear()
+  // Kept by key index and by slot, both of which are the old board's.
+  macroSnapshotStore.clear()
 })
 
 let codec: KeyboardCodec = unknownCodec

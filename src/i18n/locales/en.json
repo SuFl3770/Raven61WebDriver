@@ -56,8 +56,6 @@
 
   "keygrid": {
     "label": "Raven61 key layout",
-    "hide": "Hide key layout",
-    "show": "Show key layout",
     "unknown": {
       "title": "No definition for this device",
       "body": "No registered board definition matches this VID:PID, so the decoded protocol is not used. If you have confirmed this keyboard speaks it, add a definition under src/device/."
@@ -154,14 +152,14 @@
     "what": "the factory reset (0xee)",
     "hint": "Puts the board back to how it left the factory. Actuation, rapid trigger, dead zones, the keymap, lighting, the polling rate and the debounce level are all <b>overwritten with the defaults baked into the firmware.</b> There is no undo.",
     "start": "Factory reset…",
-    "startNote": "One press turns this into a confirmation. The same button has to be pressed again to reset.",
+    "startNote": "One press opens a confirmation, and nothing is sent until it is answered.",
     "cancel": "Cancel",
     "confirm": {
       "title": "This resets the board, and it cannot be undone",
       "body": "<b>Every setting on the board</b> goes: per-key actuation, rapid trigger and dead zones, the keymap, lighting, and the polling rate and debounce level with them. Neither this app nor the stock driver keeps a backup.",
       "kept": "<b>Key calibration survives.</b> The firmware's reset routine was read, and it never writes the calibration table at flash <c>0x20300</c> — what the board learned about each switch stays.",
-      "go": "Press again to reset the board",
-      "wait": "Wait {seconds}s, then press again"
+      "go": "Reset the board",
+      "wait": "Wait {seconds}s to confirm"
     },
     "stage": {
       "sending": "Sending the reset…",
@@ -348,25 +346,32 @@
     "layers": "Layer",
     "key": "Key",
     "kind": "Kind",
-    "kindNone": "— none —",
+    "otherKind": "This key is already bound as {kind}, in record #{record}. Applying here moves it to this kind and leaves that record pointed at by nothing.",
     "record": "Record",
     "param": "Argument",
     "bytes": "Bytes",
     "apply": "Apply",
+    "bindsNothing": "Nothing is bound, so there is nothing to apply. A record that binds nothing reads back as a free one, and the next advanced key would be given the same number.",
     "applying": "Applying…",
     "revert": "Revert",
     "unbind": "Unbind",
-    "unbound": "The key is back to its factory binding, and record #{record} was cleared.",
-    "unboundShared": "The key is back to its factory binding. Record #{record} was left alone — another key still uses it.",
+    "unboundOk": "Back to the factory binding.",
+    "unbound": "Cleared {records}.",
+    "unboundShared": "Left {records} alone — another key still uses it.",
     "unbindUnavailable": "The board's factory table has no binding for this key, so there is nothing to put back.",
     "applied": "Record #{record} written, and the key bound to it as {kind}.",
+    "appliedPair": "Records {records} written, and both keys bound to them as {kind}.",
+    "noSlot": "The slot map has no slot for {key}, so the two keys cannot be told about each other.",
     "mismatch": "Record #{record} did not read back as written: {wanted} → {got}. The keymap was left alone.",
     "keymapMismatch": "The record was written, but the keymap entry did not read back as sent: {detail}. The key is not bound to it.",
     "noFreeRecord": "All {limit} records are in use. Free one by unbinding the key that uses it.",
     "capLabel": "{kind} · record {record}",
     "inUse": "Advanced keys on this layer",
+    "inUseTab": "In use",
     "noneBound": "No key on this layer is bound to an advanced key.",
-    "orphans": "Records with bytes in them that no layer points at: {records}. Left alone — from here a leftover and a record the stock driver wrote look the same.",
+    "orphans": "Records with bytes in them that no layer points at: {records}. Not cleared — either this board offers no record write, or the write was not taken.",
+    "orphansCleared": "Cleared {records}: bytes no key pointed at.",
+    "orphansFailed": "{records} could not be cleared — the write did not read back. Left alone for the rest of this session.",
     "unmappedSlot": "slot {slot}",
     "holdMs": "{ms} ms",
     "partnerSlot": "partner slot {slot}",
@@ -379,14 +384,14 @@
       "oks": "OKS"
     },
     "dks": {
-      "help": "Four depth points and four bindings. Each binding goes down at one point and comes up at another; setting both to the same point makes it a tap. Points 1 and 2 are tested pressing down, points 3 and 4 coming back up.",
+      "help": "Four depth points and four bindings. Each binding's bar runs from the point that sends it down to the point that lets it up — click a point outside the bar to reach for it, or one inside to leave a tap there. Points 1 and 2 are tested pressing down, points 3 and 4 coming back up.",
+      "onPress": "Pressing down",
+      "onRelease": "Coming back up",
       "point0": "Point 1 (down)",
       "point1": "Point 2 (down)",
       "point2": "Point 3 (up)",
       "point3": "Point 4 (up)",
       "binding": "Binding {n}",
-      "pressAt": "Press at",
-      "releaseAt": "Release at",
       "stage0": "Point 1",
       "stage1": "Point 2",
       "stage2": "Point 3",
@@ -403,10 +408,10 @@
       "time": "Hold time"
     },
     "rs": {
-      "help": "Two keys, and whichever is pressed deeper wins. Give the other key its own record too, with this key's slot as its partner."
+      "help": "Two keys, and whichever is pressed deeper wins. Pick both on the grid: each gets its own record, each is told the other's slot, and one apply writes all four pieces."
     },
     "socd": {
-      "help": "Two keys on the same axis, resolved so they never fight. Give the other key its own record too, with this key's slot as its partner.",
+      "help": "Two keys on the same axis, resolved so they never fight. Pick both on the grid: each gets its own record, each is told the other's slot, and one apply writes all four pieces.",
       "modeNote": "The resolution mode is not in this table — the firmware reads it from the high nibble of this key's performance record, which the input-point tab owns. Set it there."
     },
     "oks": {
@@ -415,9 +420,11 @@
     },
     "pair": {
       "own": "This key sends",
-      "partner": "Partner sends",
+      "sends": "What {key} sends",
+      "pickTwo": "Pick the two keys on the grid — the pair resolves between them.",
+      "pickSecond": "Now pick the second key of the pair.",
       "partnerSlot": "Partner slot",
-      "partnerSlotNote": "The other key's slot, as the table below reports it."
+      "partnerSlotNote": "The other key's slot, as the in-use list reports it."
     }
   },
 
@@ -540,7 +547,6 @@
       "slotsUnlocked": "Debug mode, so all {total} slots are open. The stock driver only manages the first ten, so writing the store from it would take the bodies in the rest with it.",
       "inUse": "Bound to"
     },
-
     "debug": {
       "usage": "HID usage",
       "usageApply": "Use this usage",
@@ -550,11 +556,8 @@
       "unsafe": "This app never writes actions <c>0x04</c> / <c>0x05</c> (layer latch).",
       "note": "This is where a value no list carries goes in as itself. Two things to know. First, <b>a type byte the firmware does not know, written to slot 0</b>, makes the boot check (<c>0xa7ae</c>) lay both keymap layers back down from the factory tables — it checks no other slot. Second, the key path puts a usage straight into the report, so a value the host does not know does nothing at all. The only thing refused before the write is the layer latch."
     },
-
     "categories": "Button categories",
     "apply": "Apply to board",
-    "applyCount": "Apply {count} keys",
-    "revert": "Discard edits",
     "picked": "{key} selected",
     "pickNone": "Click a cap to pick a key",
     "reset": "Factory binding",
@@ -566,7 +569,7 @@
       "fn1": "FN layer 1"
     },
     "unmapped": "{count} keys have no slot, so they could not be read or written: {keys}",
-    "applied": "Applied {count} keys and read them back to check",
+    "appliedOne": "Applied {key} and read it back to check",
     "noChange": "The board already holds these bytes, so nothing was sent.",
     "mismatch": "{count} slots did not read back as written: {detail}",
     "resetUnavailable": "The factory keymap read does not reach this slot, so it cannot be reset.",
@@ -597,7 +600,6 @@
       "buttons": "Buttons",
       "wheel": "Wheel"
     },
-
     "group": {
       "basic": "Basic",
       "symbols": "Symbols",
@@ -621,8 +623,13 @@
   },
 
   "keycode": {
-        "none": "None",
+    "none": "None",
     "error": "Error"
+  },
+
+  "keyCapture": {
+    "press": "Press a key",
+    "waiting": "Press any key…"
   },
 
   "overview": {
@@ -634,23 +641,13 @@
     "note": "This board's spec names no macro-store commands. If the same commands answer on another board, say so in its spec.",
     "title": "Macros",
     "layers": "Layer",
-    "unverified": "The format is decoded from the firmware and <b>confirmed field by field against the stock driver's own encoder</b> — the record layout, the stop and press bits, the mask-versus-usage split and the millisecond unit all agree at both ends. Writes are read back and compared like every other block here, so <b>the bytes are in the store</b>; whether the board plays them has not been confirmed on hardware.",
-    "store": "Store",
-    "storeReady": "All 32 table entries name a body and every body stops — the ten the board manages and the 22 it does not. Binding a macro key is safe.",
     "storeUnsafe": "⚠ Slots with no body or no stop record: <b>{slots}</b>. The player has no bound on its cursor, so pressing a macro key in this state sends it walking through flash four bytes at a time, emitting a keystroke for every record it passes. <b>Write the store first</b> — binding stays refused until you do.",
-    "capacity": "{used} of {total} events — what is left after the offset table and the one stop record each slot carries.",
-    "slotNumbering": "Slots count from 0 — the stock driver's \"M 1\" is #0 here. The store holds {total} and {shown} are shown. A write always lays out all {total}, stop records included.",
-    "slotsUnlocked": "Debug mode, so all {total} slots are open. The firmware takes a slot up to 31 (<c>macroStart</c>, 0x9500) and this app writes the whole table, so <b>the board is fine with it.</b> The <b>stock driver only knows about {stock}</b> — save a macro there once and it rewrites this block from its own database with {stock} slots, taking the rest with it.",
-    "aliasOf": "This slot <b>names the same offset as #{owner}.</b> The stock driver leaves an empty slot pointing at the next body, so that is what a slot it left empty looks like. This app treats it as empty, but <b>right now the board would play #{owner}'s body</b> — one store write makes it really empty.",
-    "overStock": "Past the stock driver's recording budget of {total} events. The firmware and this block hold more, but the stock driver may not handle a store this size if you go back to it.",
+    "storeUse": "Store use",
+    "storeFree": "{free} B free of {total} B",
+    "aliasOf": "This slot <b>names the same offset as M{owner}.</b> The stock driver leaves an empty slot pointing at the next body, so that is what a slot it left empty looks like. This app treats it as empty, but <b>right now the board would play M{owner}'s body</b> — one store write makes it really empty.",
     "slot": "Slot",
-    "slotPlain_one": "#{slot} · {count} event",
-    "slotPlain_other": "#{slot} · {count} events",
-    "slotNamed_one": "#{slot} {name} · {count} event",
-    "slotNamed_other": "#{slot} {name} · {count} events",
-    "name": "Name",
-    "namePlaceholder": "Macro {slot}",
-    "nameNote": "Names stay <b>in this browser</b>. The store is an offset table and 4-byte records with no room for one — the stock driver keeps its own in its database for the same reason. What identifies a macro to the board is its slot number.",
+    "slotPlain_one": "M{slot} - {count} event",
+    "slotPlain_other": "M{slot} - {count} events",
     "events": "Events",
     "noEvents": "This slot is empty. Record one below, or add keys by hand. An empty slot is still written with a stop record, so pressing it does nothing.",
     "eventKey": "Key",
@@ -666,7 +663,6 @@
     "record": "Record",
     "recordStop": "Stop recording",
     "recordingNow": "Recording — the keys you press now go into this list instead of to the page. The gap between two keystrokes is rounded and stored as the delay on the earlier event.",
-    "recordNote": "Browsers <b>never report Fn</b>: the keyboard's own firmware consumes it and no key event reaches the page. Auto-repeat is dropped too — the board has no concept of it, and a held key would fill the store.",
     "addTitle": "Add by hand",
     "addKey": "Key",
     "holdMs": "Hold for (ms)",
@@ -674,15 +670,12 @@
     "addTap": "Tap",
     "addDown": "Press only",
     "addUp": "Release only",
-    "modifierNote": "Modifiers ({mods}) go out as a <b>mask record</b> automatically. The player's key arm puts its value in the report's <i>usage array</i>, and a Shift that arrives there is not a Shift to the host.",
     "tools": "Bulk edits",
     "repeatTimes": "Repeat times",
     "repeatGap": "Gap between passes (ms)",
     "fixedDelay": "Fixed delay (ms)",
     "repeatApply": "Repeat the list",
     "flattenApply": "Set every delay",
-    "repeatNote": "The keymap record's repeat byte is <b>never read</b> by the firmware — <c>macroStart</c> stores it at <c>gp-0x781</c> and nothing in the image reads that byte back. So a repeat is <b>more records in the body</b>, which is what this does. The stock driver's <c>play_times</c> does not reach the store either — its encoder walks each record list exactly once, so <b>the bytes on the board carry no repeat count anywhere</b>.",
-    "applyTitle": "Apply",
     "apply": "Write the store",
     "applying": "Writing…",
     "revert": "Revert",
@@ -690,25 +683,11 @@
     "unchanged": "The board already held these bodies, so nothing was sent.",
     "capacityFull": "The store holds {total} event records and this needs {used}. Shorten it and apply again.",
     "mismatch": "Slots did not read back as written — {detail}",
-    "keymapMismatch": "The keymap record did not read back as written — {detail}",
-    "bindTitle": "Bind to a key",
-    "pickKey": "Pick a key in the grid above.",
     "key": "Key",
-    "boundTo": "Currently",
-    "bind": "Bind #{slot}",
-    "binding": "Writing…",
-    "unbind": "Unbind",
-    "bindNeedsStore": "The store is not safe yet. Write it first.",
-    "bindNote": "Binding is the <b>second</b> write — the body has to be in the store first. The remap tab's Macro category binds too, and keeps the same order: it reads the store itself, and locks its buttons and sends you here when the store is not sound.",
-    "unbindUnavailable": "The board returned no factory record for this key, so there is nothing to put back.",
-    "bound": "#{slot} is now bound to {key}.",
-    "unbound": "{key} no longer starts a macro. The body is still in the store.",
     "inUse": "Keys bound",
     "noneBound": "No key on this layer starts a macro.",
     "repeatColumn": "Repeat byte",
-    "repeatByte": "repeat byte {n}",
-    "repeatByteNote": "The repeat byte is <b>read only</b>. The firmware never uses it, so this app writes the stock driver's 1 — and reports whatever a slot already holds, so a store the stock driver wrote does not look misread.",
-    "capLabel": "Macro {slot}"
+    "repeatByteNote": "The repeat byte is <b>read only</b>. The firmware never uses it, so this app writes the stock driver's 1 — and reports whatever a slot already holds, so a store the stock driver wrote does not look misread."
   },
 
   "light": {

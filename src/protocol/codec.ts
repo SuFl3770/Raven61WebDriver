@@ -280,8 +280,14 @@ export interface KeyboardCodec {
    * reason of its own — `MacroSnapshot.canonical` says whether a macro key can
    * safely be bound at all, and that is a fact about the store, not about the
    * key. See `protocol/macros.ts`.
+   *
+   * `uses: false` leaves the sweep out and reads the store alone. It is two
+   * thirds of the packets — the sweep costs a keymap layer per layer plus the
+   * factory block the slot map comes from — and a caller that is not going to
+   * show which keys start a body should not wait for the answer. The fields it
+   * would have filled come back null rather than empty.
    */
-  readMacros?(link: HidLink): Promise<MacroSnapshot>
+  readMacros?(link: HidLink, opts?: { uses?: boolean }): Promise<MacroSnapshot>
 
   /**
    * Writes the macro store, and checks that the write took.

@@ -137,6 +137,18 @@ export function kindOfType(type: number): AdvancedKind | undefined {
 }
 
 /**
+ * How a kind is named, everywhere it is named.
+ *
+ * A bundle key rather than a name: the six are initialisms the bundles spell
+ * out, and both the editor and the in-use table list all six. Here rather than
+ * in either of them because they render each other — the tab draws the table
+ * — and a helper one of them exported would be a cycle.
+ */
+export function kindKey(kind: AdvancedKind) {
+  return `advanced.kinds.${kind}` as const
+}
+
+/**
  * Kinds that need a second physical key, and take its slot in the keymap
  * record's third byte.
  *
@@ -186,6 +198,23 @@ export function dksStepsToMm(steps: number, countsPerMm: number = COUNTS_PER_MM)
 
 export function dksMmToSteps(mm: number, countsPerMm: number = COUNTS_PER_MM): number {
   return Math.round((mm * countsPerMm) / DKS_COUNTS_PER_STEP)
+}
+
+/**
+ * The deepest point a switch with this stroke can be given, in steps.
+ *
+ * Floored, not rounded, and that is the whole reason this is not
+ * `dksMmToSteps(travelMm)`. A step is 0.1 mm and some of the vendor tables
+ * quote travel to the hundredth — 3.45 mm rounds *up* to 34.5 → 35 steps, a
+ * point 0.05 mm past where the switch stops. The firmware would simply never
+ * see the key reach it, and a slider whose top end cannot be reached is a
+ * slider with a dead inch on it.
+ *
+ * So the ceiling is the last whole step the switch actually gets to: 3.45 mm
+ * gives 34, which is 3.4 mm.
+ */
+export function dksMaxSteps(travelMm: number, countsPerMm: number = COUNTS_PER_MM): number {
+  return Math.max(0, Math.floor((travelMm * countsPerMm) / DKS_COUNTS_PER_STEP))
 }
 
 /**
@@ -513,6 +542,46 @@ export interface AdvancedKeyBlobs {
   toggle: Uint8Array
 }
 
+/**
+ * True when a record would do nothing — nothing bound, on any of the six.
+ *
+ * Two reasons a caller should refuse to write one.
+ *
+ * The plain one: it does not work. A TGL that toggles nothing and an MT with
+ * neither a tap nor a hold are a key that has been made advanced and then made
+ * inert, which is never what was meant by applying.
+ *
+ * The one that bites later: for the kinds whose empty record is all zeros, it
+ * is *indistinguishable from a free record*. `isFreeRecord` reads zeros as
+ * "nobody is using this", so a TGL bound to nothing occupies a number the
+ * allocator will hand straight back out, and the record the user thought they
+ * made is overwritten by the next one. It is not even an orphan, so the sweep
+ * cannot report it.
+ *
+ * RS, SOCD and OKS are not all-zero even when empty — `withPairUsages` writes
+ * a type byte whatever the usages are — so those are only the first reason.
+ * They are judged on the usages the firmware actually reads: bytes 2 and 5.
+ */
+export function bindsNothing(rec: AdvancedRecord): boolean {
+  if (rec.kind === 'dks') return rec.spans.every((s) => s.binding.kind === 'none')
+  if (rec.kind === 'tgl') return rec.binding.kind === 'none'
+  if (rec.kind === 'mt') {
+    const { tap, hold } = mtBindings(rec)
+    return tap.kind === 'none' && hold.kind === 'none'
+  }
+  if (rec.kind === 'oks') {
+    // Either half alone is a working key: a usage that only fires on release
+    // is the point of OKS, and one that only sounds while held is a plain key
+    // said the long way. Both empty is nothing.
+    const oks = oksBindings(rec)
+    return oks.own === 0 && oks.onRelease === 0
+  }
+  // RS and SOCD resolve *between* two usages. A half with none is a key that
+  // wins the comparison and then sends nothing, so both are required.
+  const { own, partner } = pairUsages(rec)
+  return own === 0 || partner === 0
+}
+
 export function emptyAdvancedRecord(kind: AdvancedKind): AdvancedRecord {
   if (kind === 'dks') return emptyDksRecord()
   if (kind === 'tgl') return emptyToggleRecord()
@@ -554,15 +623,45 @@ export function patchAdvancedRecord(
   return { ...blobs, [block]: next }
 }
 
-/** True when no table has a non-zero byte in this record. */
-export function isFreeRecord(blobs: AdvancedKeyBlobs, record: number): boolean {
-  const empty = (blob: Uint8Array, block: AdvancedBlock) => {
+/**
+ * The tables that have a non-zero byte in this record.
+ *
+ * Usually one: a record belongs to whichever table its kind uses. All three
+ * are possible, because a record's number is one index across the three and
+ * nothing in the firmware stops bytes being left in two of them — which is
+ * exactly the state a caller clearing a record it cannot name has to handle.
+ */
+export function recordBlocks(blobs: AdvancedKeyBlobs, record: number): AdvancedBlock[] {
+  const used = (blob: Uint8Array, block: AdvancedBlock) => {
     const size = ADVANCED_KEY_BLOCKS[block].recordSize
     const at = record * size
-    for (let i = 0; i < size; i++) if ((blob[at + i] ?? 0) !== 0) return false
-    return true
+    for (let i = 0; i < size; i++) if ((blob[at + i] ?? 0) !== 0) return true
+    return false
   }
-  return empty(blobs.dks, 'dks') && empty(blobs.pair, 'pair') && empty(blobs.toggle, 'toggle')
+  const out: AdvancedBlock[] = []
+  if (used(blobs.dks, 'dks')) out.push('dks')
+  if (used(blobs.pair, 'pair')) out.push('pair')
+  if (used(blobs.toggle, 'toggle')) out.push('toggle')
+  return out
+}
+
+/** True when no table has a non-zero byte in this record. */
+export function isFreeRecord(blobs: AdvancedKeyBlobs, record: number): boolean {
+  return recordBlocks(blobs, record).length === 0
+}
+
+/**
+ * A kind that writes each table, for a caller holding a block and no kind.
+ *
+ * The kind is in the keymap, so a record nothing points at has none — and
+ * zeroing it still has to pick one, because every write here goes through a
+ * record and a record is typed. Any of the four pair kinds serves for `pair`:
+ * an empty record of each is the same six zero bytes.
+ */
+export const KIND_OF_BLOCK: Record<AdvancedBlock, AdvancedKind> = {
+  dks: 'dks',
+  pair: 'mt',
+  toggle: 'tgl',
 }
 
 /**

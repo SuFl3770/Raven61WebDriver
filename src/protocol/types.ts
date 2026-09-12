@@ -277,10 +277,10 @@ export interface AdvancedKeyUse {
 /**
  * The advanced-key tables, plus what the keymap says about them.
  *
- * `orphans` are records with bytes in them that no layer points at. They are
- * reported rather than cleaned up: this app cannot tell a leftover from a
- * record the stock driver wrote and a profile switch will reach, and the two
- * spare records past the driver's limit of 40 are a legitimate place for either.
+ * `orphans` are records with bytes in them that no layer points at — a
+ * binding that was replaced, or a record written and never bound. The read
+ * only reports them; the advanced-keys tab is what clears them, and the note
+ * on its `read` says why that is a decision and not a tidy-up.
  */
 export interface AdvancedKeySnapshot {
   blobs: AdvancedKeyBlobs
@@ -320,8 +320,18 @@ export interface MacroUse {
 export interface MacroSnapshot {
   blob: Uint8Array
   macros: Macro[]
-  slotMap: SlotMapInfo
-  uses: MacroUse[]
+  /**
+   * Null when the read skipped the keymap sweep — see `readMacros`. The map is
+   * read for the sweep's sake and nothing else needs it, so a read that does
+   * not sweep does not fetch it either.
+   */
+  slotMap: SlotMapInfo | null
+  /**
+   * Null when the sweep was skipped, and an empty array when it ran and found
+   * nothing. The two are worth telling apart: one means no key on this board
+   * starts a macro, the other means nobody asked.
+   */
+  uses: MacroUse[] | null
   canonical: boolean
   /**
    * Slots that name no body, or one whose body does not stop — all 32, not the

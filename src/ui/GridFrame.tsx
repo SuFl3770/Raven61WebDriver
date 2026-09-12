@@ -61,7 +61,6 @@ export function useBand(): BandArrival | null {
 export function GridFrame({
   selectable = true,
   marquee = false,
-  collapsible = false,
   top,
   foot,
   children,
@@ -77,20 +76,6 @@ export function GridFrame({
   selectable?: boolean
   /** Whether a drag in the band draws a rubber band — see ui/Marquee.tsx. */
   marquee?: boolean
-  /**
-   * Whether the band can be put away, and comes with a button that does it.
-   *
-   * For a tab where the grid is a picker rather than the subject: the macro
-   * tab picks one cap and then spends the rest of the page on the recording,
-   * and on a short window the editor and the keyboard are competing for the
-   * same screen. Off everywhere else, because a tab whose panels are *about*
-   * the selection has nothing to offer once the selection cannot be seen.
-   *
-   * Not persisted, and rebuilt with the band: coming back to a tab shows the
-   * board. Hiding it is something you do to finish reading the thing below
-   * it, not a preference about how the app looks.
-   */
-  collapsible?: boolean
   /** The owner's controls, beside the selection's in the tab's title row. */
   top?: ReactNode
   /** The owner's readouts, beside the selection count in the line below it. */
@@ -102,7 +87,6 @@ export function GridFrame({
   const t = useT()
   // Decided once, on the way in, and true for the life of this band.
   const [band] = useState<BandArrival>(() => ({ arriving: !bandOnScreen }))
-  const [shut, setShut] = useState(false)
   useEffect(() => {
     bandOnScreen = true
     return () => {
@@ -112,11 +96,7 @@ export function GridFrame({
 
   // Nothing to put in a bar means no bar: an empty row would still take its
   // gap, and leave the grid sitting lower than it does on the tab next door.
-  //
-  // The toggle counts, and has to: it is the only way back to a band that has
-  // been put away, so a bar that vanished with the grid would take the handle
-  // with it.
-  const hasTop = selectable || top || collapsible
+  const hasTop = selectable || top
   const hasFoot = selectable || foot
 
   return (
@@ -124,12 +104,7 @@ export function GridFrame({
       {/* `arriving` only where there was no keyboard to begin with — see
           `bandOnScreen`. Switching between two tabs that both draw one leaves
           it off, because nothing has arrived. */}
-      <Marquee
-        className={`gridband${band.arriving ? ' arriving' : ''}${
-          collapsible ? ' collapsible' : ''
-        }${collapsible && shut ? ' shut' : ''}`}
-        disabled={!marquee}
-      >
+      <Marquee className={`gridband${band.arriving ? ' arriving' : ''}`} disabled={!marquee}>
         {hasTop && (
           <TabActions>
             {selectable && (
@@ -147,43 +122,21 @@ export function GridFrame({
             */}
             {selectable && top && <hr className="sep" />}
             {top}
-            {/*
-              Last, and behind a rule of its own: everything before it acts on
-              the grid or on what is picked in it, and this one decides whether
-              there is a grid on screen at all.
-            */}
-            {collapsible && (selectable || top) && <hr className="sep" />}
-            {collapsible && (
-              <button
-                onClick={() => setShut((v) => !v)}
-                aria-expanded={!shut}
-                aria-controls="gridband-body"
-              >
-                {shut ? t('keygrid.show') : t('keygrid.hide')}
-              </button>
-            )}
           </TabActions>
         )}
 
-        {/*
-          One box around everything the band can close over — the grid and the
-          line under it, but not the rubber band, which Marquee draws as a
-          sibling and positions against the band itself.
-        */}
-        <div className="gridband-body" id="gridband-body">
-          <BandContext.Provider value={band}>{children}</BandContext.Provider>
+        <BandContext.Provider value={band}>{children}</BandContext.Provider>
 
-          {hasFoot && (
-            <div className="gridfoot">
-              {selectable && (
-                <span>
-                  {sel.size === 0 ? t('selection.none') : t('selection.count', { count: sel.size })}
-                </span>
-              )}
-              {foot}
-            </div>
-          )}
-        </div>
+        {hasFoot && (
+          <div className="gridfoot">
+            {selectable && (
+              <span>
+                {sel.size === 0 ? t('selection.none') : t('selection.count', { count: sel.size })}
+              </span>
+            )}
+            {foot}
+          </div>
+        )}
       </Marquee>
     </TabPinned>
   )

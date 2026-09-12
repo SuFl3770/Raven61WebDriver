@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useT } from '../i18n'
-import { calibrationMode, useCalibrationMode } from '../state/calibration'
+import { calibrationMode, useCalibrationMode } from '../state/windowHold'
 import { useConnection } from '../state/link'
 import { boardSync } from '../state/sync'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
@@ -85,7 +85,7 @@ export function InputPoint() {
   const t = useT()
   const [active, setActive] = useState(SECTIONS[0]!.id)
   // Shared, not local: App dims and blocks its own chrome while this is on —
-  // see state/calibration.ts for why the rest of the window has to go away.
+  // see state/windowHold.ts for why the rest of the window has to go away.
   const calibrating = useCalibrationMode()
   const run = useCalibrationRun()
 

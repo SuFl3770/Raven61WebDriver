@@ -67,9 +67,11 @@ import {
   macroSlotsExposed,
   isCanonical,
   macroBlobSize,
+  macroEventBudget,
   macroEventCapacity,
   macroEventHex,
   macroEventsFree,
+  macroEventsStored,
   macroEventsUsed,
   macroWriteBytes,
   malformedSlots,
@@ -293,6 +295,16 @@ function imageOf(blob: Uint8Array): Uint8Array {
   eq('the write is table plus bodies', macroWriteBytes(macros, SPEC), 64 + (32 + 2) * 4)
   eq('records used counts the stop records', macroEventsUsed(macros, SPEC), 32 + 2)
   eq('and free is the rest', macroEventsFree(macros, SPEC), macroEventCapacity(SPEC) - 34)
+  // The panel counts in the other of the two units — see `macroEventBudget`.
+  // The store's 32 terminators are not events anyone put in a list, and a
+  // screen that counted them would report 882 beside a list of 850.
+  eq('events stored counts only the list', macroEventsStored(macros, SPEC), 2)
+  eq(
+    'and the two differ by exactly one stop record a slot',
+    macroEventsUsed(macros, SPEC) - macroEventsStored(macros, SPEC),
+    SPEC.slots,
+  )
+  eq('the budget is the capacity less those', macroEventBudget(SPEC), 880 - 32)
   eq('the store holds 32 slots', SPEC.slots, 32)
   eq('so the first body is at 64', blob[0]! | (blob[1]! << 8), 64)
 
@@ -420,6 +432,31 @@ function imageOf(blob: Uint8Array): Uint8Array {
   const edited = withMacro(macros, { ...emptyMacro(9), events: one })
   eq('only the named slot changes', edited.filter((m) => m.events.length > 0).map((m) => m.slot), [9])
 
+  /*
+   * The budget is the largest a list can be: it encodes, and one more does not.
+   * This is the check that keeps the panel's number honest — it is the one a
+   * reader is held to, so it has to be the one that actually fits.
+   */
+  const fills = (n: number): Macro[] =>
+    withMacro(macros, {
+      ...emptyMacro(0),
+      events: Array.from({ length: n }, () => eventForUsage(0x04, true, 0)),
+    })
+  let spilled: unknown = null
+  try {
+    encodeMacros(fills(macroEventBudget(SPEC)), SPEC)
+  } catch (e) {
+    spilled = e
+  }
+  ok('a list the size of the budget fits', spilled === null)
+  spilled = null
+  try {
+    encodeMacros(fills(macroEventBudget(SPEC) + 1), SPEC)
+  } catch (e) {
+    spilled = e
+  }
+  ok('and one event past it does not', spilled instanceof MacroCapacityError)
+
   /* Past capacity is refused with the numbers, not silently truncated. */
   const huge: MacroEvent[] = Array.from({ length: macroEventCapacity(SPEC) }, () =>
     eventForUsage(0x04, true, 0),
@@ -509,6 +546,33 @@ function fakeLink(board: FakeBoard): HidLink {
 
 const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
 
+// --- reading the store without the keymap sweep ---
+//
+// The macro tab asks for this whenever it is not going to show which keys
+// start a body. What is being pinned is that it costs nothing else: the same
+// 32 slots and the same safety verdict, with 0x07 and 0x08 left alone.
+{
+  const board = new FakeBoard()
+  const full = await readMacros(fakeLink(board))
+
+  const lean = new FakeBoard()
+  const snap = await readMacros(fakeLink(lean), { uses: false })
+
+  eq('the store still decodes whole', snap.macros.length, 32)
+  eq('and says the same about safety', snap.canonical, full.canonical)
+  eq('and names the same bad slots', snap.malformed.length, full.malformed.length)
+  ok('the sweep is reported as not done', snap.uses === null)
+  ok('and so is the map it needed', snap.slotMap === null)
+
+  ok('the factory keymap is never asked for', !lean.sent.some((r) => r.command === 0x07))
+  ok('nor any live layer', !lean.sent.some((r) => r.command === 0x08))
+  eq('the store is read all the same', lean.sent.filter((r) => r.command === 0x0c).reduce((n, r) => n + r.length, 0), 4096)
+  ok(
+    'which is fewer packets than the full read',
+    lean.sent.length < board.sent.length,
+  )
+}
+
 // --- reading a zeroed board ---
 {
   const board = new FakeBoard()
@@ -516,8 +580,8 @@ const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
   eq('32 slots come back', snap.macros.length, 32)
   ok('a factory board is not canonical', !snap.canonical)
   eq('and names every slot', snap.malformed.length, 32)
-  eq('nothing is bound', snap.uses.length, 0)
-  eq('the slot map came from the keymap', snap.slotMap.source, 'keymap')
+  eq('nothing is bound', snap.uses!.length, 0)
+  eq('the slot map came from the keymap', snap.slotMap!.source, 'keymap')
 
   const reads = board.sent.filter((s) => s.command === 0x0c)
   eq('the whole store is read', reads.reduce((n, r) => n + r.length, 0), 4096)
@@ -582,13 +646,13 @@ const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
   board.live[at + 2] = 3
 
   const snap = await readMacros(fakeLink(board))
-  eq('the bound key is found', snap.uses.length, 1)
-  eq('on the base layer', snap.uses[0]!.layer, 0)
-  eq('naming its key', snap.uses[0]!.label, 'A')
-  eq('and its macro slot', snap.uses[0]!.macro, 6)
+  eq('the bound key is found', snap.uses!.length, 1)
+  eq('on the base layer', snap.uses![0]!.layer, 0)
+  eq('naming its key', snap.uses![0]!.label, 'A')
+  eq('and its macro slot', snap.uses![0]!.macro, 6)
   // Reported, never acted on: the firmware stores this byte at gp-0x781 and
   // never reads it back.
-  eq('with the repeat byte as found', snap.uses[0]!.repeat, 3)
+  eq('with the repeat byte as found', snap.uses![0]!.repeat, 3)
 
   eq('and the record decodes the same way', decodeRecord(board.live, at), {
     kind: 'macro',
@@ -663,7 +727,8 @@ const A = RAVEN61_KEYS.find((k) => k.label === 'A')!
   ok('this block holds more than that', macroEventCapacity(SPEC) > MACRO_STOCK.events)
   const oneSlot = (events: MacroEvent[]): Macro[] =>
     [{ slot: 0, events, programmed: true, terminated: true, offset: 0 }]
-  // 330 taps is 660 records, and the 32 stop records put it further over.
+  // 330 taps is 660 events. Counted as the stock driver counts — its own
+  // records, of which a stock store has no terminators at all.
   ok('so 660 records is over the stock budget',
     overStockBudget(oneSlot(repeatEvents(tapEvents(0x04, 40, 30), 330)), SPEC))
   ok('while 200 is not', !overStockBudget(oneSlot(repeatEvents(tapEvents(0x04, 40, 30), 100)), SPEC))

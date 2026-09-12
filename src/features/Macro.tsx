@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useDeviceSpec, useLayout } from '../device/active'
+import { useDeviceSpec } from '../device/active'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
 import { usageForCode } from '../keyboard/hostKeys'
 import { KEYCODES, keycodeDefLabel, keycodeLabel } from '../keyboard/keycodes'
 import { supports } from '../protocol/codec'
-import { MODIFIERS, type KeyBinding } from '../protocol/keymap'
 import {
   MACRO_MAX_DELAY_MS,
   eventForUsage,
   isMacroEmpty,
-  MACRO_STOCK,
-  macroEventCapacity,
+  macroEventBudget,
   macroSlotsExposed,
   macroEventHex,
-  macroEventsUsed,
-  overStockBudget,
+  macroEventsStored,
+  macroWriteBytes,
   modifierMaskLabel,
   repeatEvents,
   tapEvents,
@@ -23,18 +21,18 @@ import {
   type Macro as MacroBody,
   type MacroEvent,
 } from '../protocol/macros'
-import type { KeymapEntry, MacroSnapshot, MacroUse } from '../protocol/types'
+import type { MacroSnapshot } from '../protocol/types'
 import { link, useCodec, useConnection } from '../state/link'
-import { macroNames, useMacroNames } from '../state/macroNames'
+import { macroSnapshotStore } from '../state/macroSnapshot'
 import { useSettings } from '../state/settings'
-import { GridFrame } from '../ui/GridFrame'
-import { KeyGrid } from '../ui/KeyGrid'
+import { macroRecording } from '../state/windowHold'
+import { KeyCapture } from '../ui/KeyCapture'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { Select, type SelectOption } from '../ui/Select'
-import { SubTabs, type SubTab } from '../ui/SubTabs'
+import { useExitValue } from '../ui/useExit'
 
 /**
- * Macros — the 32-slot store at flash 0x21100, and the keys that start one.
+ * Macros — the 32-slot store at flash 0x21100.
  *
  * `protocol/macros.ts` is the format and the evidence; this is the screen, and
  * three things about it are decided by the format rather than by taste.
@@ -47,23 +45,27 @@ import { SubTabs, type SubTab } from '../ui/SubTabs'
  * in one go. What the status line names is the slots that actually changed,
  * because "wrote 4 KB" is true and useless.
  *
- * ### Binding is the second write, and never the first
+ * ### Binding is not done here
  *
  * A body nothing points at does nothing; a key pointing at a body that does not
  * stop makes the board type the contents of its own flash — the player has no
  * bound on its cursor (see the module header). So the order is fixed: the store
- * goes out, and only then the keymap entry. That is also why the remap tab does
- * **not** offer macros in its picker even though the record type is decoded and
- * a bound macro shows up there by name: binding from a tab that cannot check
- * the store would be the one path around this rule.
+ * goes out, and only then the keymap entry.
  *
- * ### The repeat count is shown and not offered
+ * That rule is easier to keep in one place than in two, and the place that has
+ * it is the remap tab: its macro category reads the store itself and binds
+ * nothing until `canonical` comes back true. This tab had a bind button beside
+ * the recorder and it has been taken out — a second door onto the keymap, on a
+ * screen whose whole subject is the store, was a second thing to keep in step
+ * with the format for no gain. Record here, bind there.
+ *
+ * ### The repeat count is reported and not offered
  *
  * The keymap record's third byte is a repeat count the firmware stores and
  * never reads. Offering a control for it would be offering a setting that does
- * nothing, so the panel writes the stock driver's 1, reports whatever a slot
- * already holds, and gives the repeat that does work: more records in the body,
- * which is what "repeat" below does.
+ * nothing, so the debug list below reports whatever a slot already holds, and
+ * the repeat that does work is more records in the body — which is what
+ * "repeat" below does.
  *
  * Nothing on this tab is confirmed on hardware. Every write is read back and
  * compared, the same as everywhere else here, and that proves the bytes are in
@@ -77,7 +79,16 @@ const DEFAULT_GAP_MS = 40
 /** What a recorded pause is rounded to, so an event list stays readable. */
 const RECORD_ROUND_MS = 5
 
-type Busy = null | 'read' | 'write' | 'bind'
+/** How long the write's confirmation stays on screen. */
+const TOAST_MS = 2400
+
+/**
+ * And how long it takes to leave once it has. Must match `.toast.closing` in
+ * styles.css — see ui/useExit.ts on why the two are written twice.
+ */
+const TOAST_EXIT_MS = 160
+
+type Busy = null | 'read' | 'write'
 
 /** Every plain usage, plus the eight modifiers as themselves. */
 function usageOptions(): SelectOption[] {
@@ -87,6 +98,62 @@ function usageOptions(): SelectOption[] {
 }
 
 const USAGES = usageOptions()
+
+
+/**
+ * What a slot is called on screen.
+ *
+ * One-based and with the stock driver's letter: its ten are "M 1" to "M 10"
+ * and a reader coming from it counts from one, so the tab that edits the same
+ * store says the same thing. The number in the code stays what the board uses
+ * — a keymap record carries the index, `macroStart` rejects one above 31 — and
+ * this is the only place the two are allowed to differ. Every place that shows
+ * a slot goes through here, so the picker and the warnings cannot end up
+ * naming the same slot two ways.
+ */
+function slotName(slot: number): string {
+  return `M${slot + 1}`
+}
+
+/** A byte count with the reader's thousands separator. */
+function bytes(n: number): string {
+  return n.toLocaleString()
+}
+
+/**
+ * What a finished write says, and then stops saying.
+ *
+ * It used to be a green notice in the slot panel. A notice is the right shape
+ * for a state — the store is unsafe, the draft does not fit — because it is
+ * true until something changes it and it should sit there until it is. "The
+ * write landed and the read-back matched" is not a state: it is over the
+ * moment it is read, and a panel that keeps it is a panel that grows a line
+ * every time it is used, moving everything under it down, until the next edit
+ * quietly takes the line away again.
+ *
+ * So it goes where the app already puts the news of a write — the toast under
+ * the top bar, the same one the keymap's applies use (ui/ApplyToast.tsx) and
+ * the debug gesture's. Failures are not moved: a mismatch or an error is a
+ * state, it is what the reader has to act on, and a message that removed
+ * itself after two seconds would be the wrong half of this pair.
+ */
+function AppliedToast({ message, onDone }: { message: string | null; onDone: () => void }) {
+  useEffect(() => {
+    if (message === null) return
+    const id = setTimeout(onDone, TOAST_MS)
+    return () => clearTimeout(id)
+  }, [message, onDone])
+
+  // Held with its text for the length of its exit, so it withdraws rather than
+  // blanking halfway out — see ui/useExit.ts.
+  const { shown, closing } = useExitValue(message, TOAST_EXIT_MS)
+  if (shown === null) return null
+  return (
+    <div className={`toast${closing ? ' closing' : ''}`} role="status" aria-live="polite">
+      {shown}
+    </div>
+  )
+}
 
 function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
@@ -120,30 +187,40 @@ export function Macro() {
   const t = useT()
   const codec = useCodec()
   const spec = useDeviceSpec()
-  const { keys } = useLayout()
   const { connected } = useConnection()
-  const names = useMacroNames()
 
   const canRead = supports(codec, 'readMacros')
   const canWrite = supports(codec, 'writeMacros')
-  const canBind = canWrite && supports(codec, 'writeKeymap')
-  /** Unbinding puts the cap back to the board's own factory record. */
-  const canUnbind = canBind && supports(codec, 'readKeymapDefaults')
 
   const { debug } = useSettings()
-  const [layer, setLayer] = useState(0)
   const [slot, setSlot] = useState(0)
-  const [selectedKey, setSelectedKey] = useState<number | null>(null)
-  const [snapshot, setSnapshot] = useState<MacroSnapshot | null>(null)
+  /*
+   * Both start from whatever the last visit left behind — see
+   * state/macroSnapshot.ts. On the first visit that is null and the effect
+   * below reads; on every visit after it the list is in the first paint, which
+   * is the difference between the rows arriving with the tab's own animation
+   * and arriving after it.
+   *
+   * Read once, on the way in, rather than subscribed: while this tab is
+   * mounted, what is in that store is what this tab put there.
+   */
+  const [snapshot, setSnapshot] = useState<MacroSnapshot | null>(() => macroSnapshotStore.current())
   /** The whole store as edited. Null until a read, then always the full 32. */
-  const [draft, setDraft] = useState<MacroBody[] | null>(null)
+  const [draft, setDraft] = useState<MacroBody[] | null>(() => {
+    const kept = macroSnapshotStore.current()
+    return kept ? kept.macros.map((m) => ({ ...m, events: [...m.events] })) : null
+  })
   const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
+  /* Stable, so the toast's timer is not restarted by every render under it. */
+  const clearStatus = useCallback(() => setStatus(null), [])
   const [mismatch, setMismatch] = useState<string | null>(null)
 
   // Editor controls that are not part of the store.
   const [addUsage, setAddUsage] = useState(KEYCODES[0]?.code ?? 4)
+  /** Whether the next key pressed is the answer — see the effect below. */
+  const [picking, setPicking] = useState(false)
   const [holdMs, setHoldMs] = useState(DEFAULT_HOLD_MS)
   const [gapMs, setGapMs] = useState(DEFAULT_GAP_MS)
   const [repeatTimes, setRepeatTimes] = useState(2)
@@ -153,43 +230,96 @@ export function Macro() {
 
   const inFlight = useRef(false)
 
-  const read = useCallback(async () => {
-    if (!codec.readMacros) return
-    inFlight.current = true
-    setBusy('read')
-    setError(null)
-    setMismatch(null)
-    try {
-      const next = await codec.readMacros(link)
-      setSnapshot(next)
-      setDraft(next.macros.map((m) => ({ ...m, events: [...m.events] })))
-      setStatus(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      inFlight.current = false
-      setBusy(null)
-    }
-  }, [codec])
+  /**
+   * Reads the store, and the keymap sweep only when something will show it.
+   *
+   * The sweep is two thirds of the packets a read sends — the factory block
+   * the slot map comes from, then a live layer per layer, each in its own
+   * transaction — and the only thing on this tab that wants the answer is the
+   * "in use" list, which is behind the debug gate. So the ordinary open reads
+   * 4 KB and stops, and the lab pays for what the lab shows. See `readMacros`
+   * in protocol/engine.ts.
+   */
+  const read = useCallback(
+    async (uses: boolean) => {
+      if (!codec.readMacros) return
+      inFlight.current = true
+      setBusy('read')
+      setError(null)
+      setMismatch(null)
+      try {
+        const next = await codec.readMacros(link, { uses })
+        setSnapshot(next)
+        setDraft(next.macros.map((m) => ({ ...m, events: [...m.events] })))
+        // Keepable only if the sweep was skipped; the store decides that itself.
+        macroSnapshotStore.load(next)
+        setStatus(null)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        inFlight.current = false
+        setBusy(null)
+      }
+    },
+    [codec],
+  )
 
   /*
    * Opening the tab reads, and a failure is not retried — the same rule the
    * remap and advanced-key tabs follow. Leaving the tab and coming back is the
    * retry; without that, a board answering nothing would be asked once per
    * render.
+   *
+   * Switching the lab on is the one thing that reads twice, because the list
+   * it wants was never fetched. `uses === null` is the snapshot saying so —
+   * see protocol/types.ts, where that is kept apart from an empty list. Going
+   * the other way reads nothing: a snapshot with the sweep in it is a superset
+   * of one without, and throwing it away to save no packets would be the wrong
+   * trade.
    */
   useEffect(() => {
-    if (!connected || !canRead || inFlight.current || snapshot) return
-    void read()
-  }, [connected, canRead, read, snapshot])
+    if (!connected || !canRead || inFlight.current) return
+    if (snapshot && (snapshot.uses !== null || !debug)) return
+    void read(debug)
+  }, [connected, canRead, read, snapshot, debug])
 
   const current = draft?.[slot] ?? null
-  const capacity = macroEventCapacity(spec.macros)
-  const used = draft ? macroEventsUsed(draft, spec.macros) : 0
-  // Not a limit — the block holds more and the firmware would take more still.
-  // It is where the store stops being one the stock driver's recorder budgets
-  // for, which matters to anyone who still uses it (see protocol/macros.ts).
-  const overStock = draft ? overStockBudget(draft, spec.macros) : false
+  /*
+   * Counted in the reader's events, not in the store's records.
+   *
+   * The store holds 880 records and 32 of them are the stop record every slot
+   * is written whether or not anything is in it, so what a list here can put
+   * in is 848. Counting the terminators would make the panel say 882 beside a
+   * list of 850, which is the number for the bytes and not for anything on
+   * screen. Same comparison either way — both sides move by `spec.slots` — and
+   * `encodeMacros` still checks itself in records. See `macroEventBudget`.
+   */
+  const capacity = macroEventBudget(spec.macros)
+  const used = draft ? macroEventsStored(draft, spec.macros) : 0
+  /*
+   * The same store measured in bytes, which is the other thing a reader wants
+   * to know and the one the block is actually in.
+   *
+   * `macroWriteBytes` is not an estimate: it is what the write puts on the
+   * board — the 64-byte offset table, every record of every body, and the stop
+   * record each of the 32 slots is given. So an empty store is not 0 of 3584,
+   * it is 192, and that is the truth rather than a rounding.
+   *
+   * The total is `hostBytes` and not the block's 4096: this app stops where
+   * the stock driver's own write stops, so that a store written here stays one
+   * the stock driver can read back — see MACRO_BLOCK in protocol/macros.ts.
+   */
+  const storeBytes = spec.macros.hostBytes
+  const usedBytes = draft ? macroWriteBytes(draft, spec.macros) : 0
+  const freeBytes = Math.max(0, storeBytes - usedBytes)
+  const usedPct = Math.min(100, (usedBytes / storeBytes) * 100)
+  /*
+   * Nothing more fits. The same fact as `used >= capacity` — the bytes are
+   * 192 of table and terminators plus four a record — said in the unit the bar
+   * beside it is in, because "0 B free" is what the reader is looking at when
+   * the buttons stop answering.
+   */
+  const full = freeBytes === 0
   // Ten by default and all 32 in debug mode. Not a board limit — see
   // `macroSlotsExposed`. A slot past the tenth still gets written, terminated
   // and read back like any other; what it does not get is a stock driver that
@@ -198,7 +328,14 @@ export function Macro() {
 
   const editSlot = (events: MacroEvent[]) => {
     if (!draft || !current) return
-    setDraft(withMacro(draft, { ...current, events, programmed: true, terminated: true }))
+    setDraft(
+      withMacro(draft, {
+        ...current,
+        events,
+        programmed: true,
+        terminated: true,
+      }),
+    )
     setStatus(null)
   }
 
@@ -221,8 +358,28 @@ export function Macro() {
     if (!recording || !current) return
     let last = performance.now()
     const events: MacroEvent[] = [...current.events]
+    /*
+     * How long this body may get, worked out once and enforced here rather
+     * than left to the effect that watches `full`.
+     *
+     * That effect is a render behind: it sees the store only after the state
+     * it is counting has landed, and a fast burst of keystrokes — a held
+     * chord, a macro pad, anything faster than React — can push past the
+     * budget before it runs. This is the bound that cannot be outrun, because
+     * it is in the same synchronous step as the push it refuses.
+     *
+     * `capacity` is the whole store's, so what is left for this body is that
+     * less what the other slots hold. Read once: nothing else can edit the
+     * store while a pass is running (every control that could is disabled),
+     * which is the same reason the event list is copied rather than watched.
+     */
+    const room = capacity - (used - current.events.length)
 
     const push = (usage: number, press: boolean) => {
+      if (events.length >= room) {
+        setRecording(false)
+        return
+      }
       const now = performance.now()
       const gap = Math.min(
         MACRO_MAX_DELAY_MS,
@@ -264,15 +421,64 @@ export function Macro() {
      */
   }, [recording])
 
+  /*
+   * Recording takes the window, the way calibration does.
+   *
+   * The listeners above are on the window under capture and call
+   * `preventDefault` on everything they see, so while a pass runs no key
+   * reaches the chrome at all: the tab strip, the drawer and the disconnect
+   * button are already unusable by keyboard, and leaving them bright and
+   * clickable by mouse would be the page saying otherwise. Switching tabs
+   * mid-pass unmounts the recorder and loses what it has collected.
+   *
+   * Cleared on the way out as well as when the flag drops — the flag outlives
+   * this component, and a tab left mid-recording (or a disconnect, which swaps
+   * the whole app for the connect screen) must not leave the next session
+   * holding a window nothing can give back. See state/windowHold.ts.
+   */
+  useEffect(() => {
+    macroRecording.set(recording)
+    return () => macroRecording.set(false)
+  }, [recording])
+
+  /*
+   * A full store ends the pass.
+   *
+   * The recorder appends a record per key event and does not ask whether there
+   * is room, so without this it would keep taking keystrokes the store cannot
+   * hold — and the reader, whose keys are being swallowed by a window that
+   * says it is recording, would have no way to tell the difference between a
+   * pass that is working and one that is not. It stops at the last event that
+   * fits, which is the event the bar has just run out of room for.
+   */
+  useEffect(() => {
+    if (full) setRecording(false)
+  }, [full])
+
+  /*
+   * Recording wins. Both take every key on the window, and the recorder is the
+   * one with something to lose — a pass that swallowed one keystroke into the
+   * picker instead of the list would be a recording with a hole in it.
+   *
+   * The flag is cleared rather than left to the picker's `disabled`, which
+   * already stops it listening: the flag is what the button is drawn from, so
+   * leaving it set would re-arm the picker the moment the pass ended, waiting
+   * on a key nobody had asked it for.
+   */
+  useEffect(() => {
+    if (recording) setPicking(false)
+  }, [recording])
+
   // --- writing -------------------------------------------------------------
 
   /**
-   * Writes the store, then — if a cap is picked and not already bound to this
-   * slot — the keymap entry that starts it.
+   * Writes the store, and only the store — binding is the remap tab's, see the
+   * header.
    *
-   * Always in that order, and the keymap write is skipped entirely when the
-   * store write reported a mismatch. A key pointing at a body the board did not
-   * accept is the one outcome worth refusing outright.
+   * The read that follows is a full one in the sense that matters: it is what
+   * turns the draft back into what the board actually holds, mismatches and
+   * all. Whether it sweeps the keymap with it is the same question the opening
+   * read asks, and gets the same answer.
    */
   const apply = async () => {
     if (!draft || !codec.writeMacros) return
@@ -299,7 +505,7 @@ export function Macro() {
         )
         return
       }
-      await read()
+      await read(debug)
       setStatus(
         written.sent
           ? t('macro.applied', {
@@ -316,124 +522,36 @@ export function Macro() {
     }
   }
 
-  /**
-   * Points the selected cap at the selected slot.
+  /*
+   * No key grid on this tab, and nothing that picks a cap.
    *
-   * Refuses while the store on the board is not canonical, rather than writing
-   * the store itself: an implicit 4 KB write behind a button labelled "bind" is
-   * not what the button says, and the store button is right there. `repeat` goes
-   * out as 1 — the byte the firmware never reads (see the header).
-   */
-  const bind = async () => {
-    if (!snapshot || !codec.writeKeymap || selectedKey === null) return
-    if (!snapshot.canonical) {
-      setError(t('macro.bindNeedsStore'))
-      return
-    }
-    setBusy('bind')
-    setError(null)
-    setMismatch(null)
-    setStatus(null)
-    try {
-      const binding: KeyBinding = { kind: 'macro', slot, repeat: 1 }
-      const entries: (KeymapEntry | null)[] = keys.map((k) =>
-        k.index === selectedKey ? { binding } : null,
-      )
-      const result = await codec.writeKeymap(link, layer, entries)
-      if (result.mismatched.length > 0) {
-        setMismatch(
-          t('macro.keymapMismatch', {
-            detail: result.mismatched.map((m) => `#${m.slot} ${m.wanted} → ${m.got}`).join(', '),
-          }),
-        )
-        return
-      }
-      const label = keys.find((k) => k.index === selectedKey)?.label ?? ''
-      await read()
-      setStatus(t('macro.bound', { slot, key: label }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  /**
-   * Takes the macro off the selected cap.
+   * Every other tab that draws a grid is *about* the caps: what is picked
+   * there is what the panels below are setting, and the board is the subject.
+   * Here the keyboard was the tallest thing on screen and the least of what
+   * the tab does — one selection, used by one button, above a page of
+   * recording and store and event list that is longer than the window on any
+   * machine. Both went with the button; see the header.
    *
-   * The factory record comes from the board (0x07) rather than from this app's
-   * idea of the default, the same as the advanced-key tab: the two agree on the
-   * base layer and this app has no opinion at all about the Fn one. The body is
-   * left in the store — it is 32 slots of shared storage, and clearing one
-   * because a key stopped pointing at it would lose a macro the user still has.
+   * `uses` survives it, for the debug list at the bottom: which keys start
+   * which body is a fact about the board this tab read, and the one place
+   * left that says so.
+   *
+   * Unfiltered, and the layer strip above the panels went the same way as the
+   * grid. Picking a layer was only ever a question the bind button asked, and
+   * `readMacros` sweeps every readable layer anyway (see `protocol/engine.ts`)
+   * — so the list names the layer in a column rather than hiding the rows of
+   * the ones not picked. A lab readout that quietly drops half of what was
+   * read is worse than a longer table.
    */
-  const unbind = async () => {
-    if (!codec.writeKeymap || !codec.readKeymapDefaults || selectedKey === null) return
-    setBusy('bind')
-    setError(null)
-    setMismatch(null)
-    setStatus(null)
-    try {
-      const table = await codec.readKeymapDefaults(link, layer)
-      const factory = table[selectedKey]
-      if (!factory) {
-        setError(t('macro.unbindUnavailable'))
-        return
-      }
-      const entries: (KeymapEntry | null)[] = keys.map((k) =>
-        k.index === selectedKey ? { binding: factory.binding } : null,
-      )
-      const result = await codec.writeKeymap(link, layer, entries)
-      if (result.mismatched.length > 0) {
-        setMismatch(
-          t('macro.keymapMismatch', {
-            detail: result.mismatched.map((m) => `#${m.slot} ${m.wanted} → ${m.got}`).join(', '),
-          }),
-        )
-        return
-      }
-      const label = keys.find((k) => k.index === selectedKey)?.label ?? ''
-      await read()
-      setStatus(t('macro.unbound', { key: label }))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(null)
-    }
-  }
+  const uses = snapshot?.uses ?? []
 
-  // --- the grid ------------------------------------------------------------
-
-  const uses = snapshot?.uses.filter((u) => u.layer === layer) ?? []
-  const useByKey = new Map<number, MacroUse>()
-  for (const u of uses) if (u.index >= 0) useByKey.set(u.index, u)
-
-  const grid = (
-    // Collapsible here and nowhere else: the grid picks the one cap a macro
-    // is bound to, and everything below it — the recording, the store, the
-    // event list — is longer than the window. See ui/GridFrame.tsx.
-    <GridFrame selectable={false} marquee={false} collapsible>
-      <KeyGrid
-        selected={selectedKey === null ? undefined : new Set([selectedKey])}
-        onSelect={(index) => setSelectedKey(index)}
-        sub={(key) => {
-          const u = useByKey.get(key.index)
-          return u ? `M${u.macro}` : undefined
-        }}
-        label={(key) => {
-          const u = useByKey.get(key.index)
-          // `undefined` rather than `''`: a key with no macro keeps whatever
-          // legend the rest of the app gives it.
-          return u ? t('macro.capLabel', { slot: u.macro }) : undefined
-        }}
-      />
-    </GridFrame>
-  )
+  /** The names the layer strip used, now that the strip is gone. */
+  const layerLabel = (n: number) =>
+    n === 0 ? t('keymap.layer.main') : n === 1 ? t('keymap.layer.fn1') : `FN${n}`
 
   if (!canRead) {
     return (
       <>
-        {grid}
         <Panel title={t('macro.title')}>
           <NotDecoded what="macro.what" />
           <div className="small dim" style={{ marginTop: 8 }}>
@@ -444,428 +562,553 @@ export function Macro() {
     )
   }
 
-  const tabs: SubTab[] = Array.from({ length: spec.keymap.layers }, (_, i) => ({
-    id: String(i),
-    labelKey: i === 0 ? ('keymap.layer.main' as const) : ('keymap.layer.fn1' as const),
-    ...(i > 1 && { label: `FN${i}` }),
-    render: () => null,
+  /*
+   * A slot is its number and how much is in it, and that is the whole label.
+   *
+   * There was a name field here, kept in localStorage because the store has
+   * nowhere to put one — an offset table and 4-byte records, every bit of the
+   * four accounted for (see protocol/macros.ts). A name that never reaches the
+   * board, never leaves the browser it was typed in and is not what a keymap
+   * record carries was one more thing on screen than the tab needed. The slot
+   * number is the identity, here and in the keymap both.
+   */
+  const slotOptions: SelectOption[] = Array.from({ length: exposed }, (_, i) => ({
+    value: String(i),
+    label: t('macro.slotPlain', { slot: i + 1, count: draft?.[i]?.events.length ?? 0 }),
   }))
-
-  const slotOptions: SelectOption[] = Array.from({ length: exposed }, (_, i) => {
-    const name = names[`${spec.id}/${i}`]
-    const count = draft?.[i]?.events.length ?? 0
-    return {
-      value: String(i),
-      label: name
-        ? t('macro.slotNamed', { slot: i, name, count })
-        : t('macro.slotPlain', { slot: i, count }),
-    }
-  })
-
-  const pickedKey = selectedKey === null ? undefined : keys.find((k) => k.index === selectedKey)
-  const pickedUse = selectedKey === null ? undefined : useByKey.get(selectedKey)
 
   return (
     <>
-      {grid}
-      <SubTabs
-        tabs={tabs}
-        label={t('macro.layers')}
-        active={String(layer)}
-        onActive={(id) => setLayer(Number(id))}
-      />
+      {/*
+        The tab is as tall as the room it is given and no taller.
 
-      <Panel title={t('macro.store')}>
-        <Notice kind="warn">
-          <T k="macro.unverified" />
-        </Notice>
-        {snapshot && !snapshot.canonical && (
-          <Notice kind="err">
-            <T k="macro.storeUnsafe" params={{ slots: snapshot.malformed.length }} />
-          </Notice>
-        )}
-        {snapshot?.canonical && (
-          <Notice kind="ok">
-            <T k="macro.storeReady" />
-          </Notice>
-        )}
-        {overStock && (
-          <Notice kind="warn">
-            <T k="macro.overStock" params={{ total: MACRO_STOCK.events }} />
-          </Notice>
-        )}
-        <div className="small dim" style={{ marginTop: 8 }}>
-          {t('macro.capacity', { used, total: capacity })}
-        </div>
-        <div className="small dim" style={{ marginTop: 4 }}>
-          {t('macro.slotNumbering', { shown: exposed, total: spec.macros.slots })}
-        </div>
-        {debug && exposed > MACRO_STOCK.slots && (
-          <Notice kind="warn">
-            <T k="macro.slotsUnlocked" params={{ stock: MACRO_STOCK.slots, total: exposed }} />
-          </Notice>
-        )}
-      </Panel>
+        Everything in it that can be long has its own box to be long in — the
+        record list, and the panels on the right — so the page itself has
+        nothing to scroll and the two buttons at the head of the list stay
+        where they are. The height comes from the box rather than from
+        arithmetic: `.macro-tab` is the column that fills `.tab-scroll`, the
+        panel above is as tall as it is, and what is left over is the grid's.
+        See `.macro-tab` in styles.css, which is where the previous version of
+        this — a `--stick-h` worked out from every rem between the window's top
+        and the grid's — went wrong the moment a panel was put above it.
+      */}
+      <div className="macro-tab">
+        {/*
+          Which slot, and the write that makes it real — above the columns,
+          because it belongs to neither of them.
 
-      <Panel title={t('macro.title')}>
-        <Row label={t('macro.slot')}>
-          <Select
-            label={t('macro.slot')}
-            value={String(slot)}
-            options={slotOptions}
-            disabled={busy !== null || recording}
-            onChange={(v) => setSlot(Number(v))}
-          />
-        </Row>
-        <Row label={t('macro.name')}>
-          <input
-            type="text"
-            value={names[`${spec.id}/${slot}`] ?? ''}
-            placeholder={t('macro.namePlaceholder', { slot })}
-            disabled={busy !== null}
-            onChange={(e) => macroNames.set(spec.id, slot, e.target.value)}
-          />
-        </Row>
-        <div className="small dim">
-          <T k="macro.nameNote" />
-        </div>
-      </Panel>
+          Everything below is about the body that is open: the list of records on
+          the left, the two editors that put records in it on the right. These
+          two are about the *slot*, and about the store the slot is in — which
+          one is being edited, and the write that lays the whole 4 KB block down.
+          Nested in the left column they read as part of the list, and the column
+          is pinned to the height of the window, so they also took room the list
+          wanted. Across the top they are what the tab is set to, and the panels
+          under them are what is being done to it.
 
-      <Panel title={t('macro.events')}>
-        {snapshot?.macros[slot]?.aliasOf !== undefined && (
-          <Notice kind="warn">
-            <T
-              k="macro.aliasOf"
-              params={{ slot, owner: snapshot!.macros[slot]!.aliasOf! }}
-            />
-          </Notice>
-        )}
-        {!current || isMacroEmpty(current) ? (
-          <div className="small dim">
-            <T k="macro.noEvents" />
-          </div>
-        ) : (
-          <table className="small" style={{ marginTop: 6 }}>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>{t('macro.eventKey')}</th>
-                <th>{t('macro.eventDir')}</th>
-                <th>{t('macro.delayMs')}</th>
-                <th>{t('macro.hex')}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {current.events.map((event, i) => (
-                <tr key={i}>
-                  <td className="dim">{i + 1}</td>
-                  <td>
-                    {event.action.kind === 'unknown'
-                      ? t('macro.eventUnknown', {
-                          nibble: event.action.nibble,
-                          value: event.action.value,
-                        })
-                      : eventLabel(event)}
-                  </td>
-                  <td>{event.press ? t('macro.down') : t('macro.up')}</td>
-                  <td>
-                    <input
-                      type="number"
-                      min={0}
-                      max={MACRO_MAX_DELAY_MS}
-                      value={event.delayMs}
-                      disabled={busy !== null || recording || !canWrite}
-                      style={{ width: '5.5rem' }}
-                      onChange={(e) => {
-                        const next = [...current.events]
-                        next[i] = { ...event, delayMs: Number(e.target.value) || 0 }
-                        editSlot(next)
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <code>{macroEventHex(event)}</code>
-                  </td>
-                  <td>
-                    <button
-                      className="ghost"
-                      disabled={busy !== null || recording || !canWrite}
-                      onClick={() => editSlot(current.events.filter((_, j) => j !== i))}
+          Dimmed with the right column while a pass is being recorded: every
+          control in here is refused for the length of it, the picker included
+          (the recorder holds its own copy of the event list, see the effect
+          above), so it should not look like it might answer.
+        */}
+        <div className={recording ? 'blocked' : undefined}>
+          <Panel title={t('macro.slot')}>
+            {/*
+              One line: what is being edited on the left, what is done with it on
+              the right. `margin-left: auto` rather than a spacer element — the
+              gap is the rest of the row, and at a width where it runs out
+              `.row` wraps the pair under the picker instead of squeezing them.
+            */}
+            <div className="row">
+              <Select
+                label={t('macro.slot')}
+                value={String(slot)}
+                options={slotOptions}
+                disabled={busy !== null || recording}
+                onChange={(v) => setSlot(Number(v))}
+              />
+              {/*
+                What is left of the block, as a bar and the two numbers beside
+                it.
+
+                A bar because "how full" is the question, and a number of bytes
+                on its own does not answer it against a total nobody has
+                memorised; the numbers because a bar on its own cannot say how
+                much more will fit. Filled by what is used, the way a disk is
+                drawn, and red once the draft is past what can be written — the
+                notice under the row says what to do about that.
+
+                In the row rather than under it, because it is about the same
+                thing the row is: this slot is part of one store, and what is
+                left of that store is what decides whether the next event can
+                go anywhere at all. It takes the space between the picker and
+                the buttons, which is what used to be empty.
+
+                Only once there is a store to measure: before the read there is
+                no draft, and a full bar over "3,584 B free" would be an answer
+                made up out of nothing.
+              */}
+              {draft && (
+                <>
+                  {/*
+                    The break between what is being edited and what is left of
+                    the store: two different questions, one row. An `<hr>` on
+                    its side, the way the tab-actions band does it — see
+                    `.sep` in styles.css.
+
+                    Inside the same condition as the gauge, so a row with no
+                    store to measure is not left with a rule standing next to
+                    nothing.
+                  */}
+                  <hr className="sep" />
+                  <div className="macro-gauge">
+                    <div
+                      className="macro-gauge-track"
+                      role="progressbar"
+                      aria-label={t('macro.storeUse')}
+                      aria-valuemin={0}
+                      aria-valuemax={storeBytes}
+                      aria-valuenow={usedBytes}
                     >
-                      {t('macro.remove')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        <div className="row" style={{ marginTop: 10 }}>
-          <button
-            disabled={busy !== null || !canWrite || !current}
-            onClick={() => setRecording((on) => !on)}
-          >
-            {recording ? t('macro.recordStop') : t('macro.record')}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy !== null || recording || !canWrite || !current}
-            onClick={() => editSlot([])}
-          >
-            {t('macro.clear')}
-          </button>
-        </div>
-        {recording && (
-          <Notice kind="info">
-            <T k="macro.recordingNow" />
-          </Notice>
-        )}
-        <div className="small dim" style={{ marginTop: 6 }}>
-          <T k="macro.recordNote" />
-        </div>
-      </Panel>
-
-      <Panel title={t('macro.addTitle')}>
-        <Row label={t('macro.addKey')}>
-          <Select
-            label={t('macro.addKey')}
-            value={String(addUsage)}
-            options={USAGES}
-            disabled={busy !== null || recording || !canWrite}
-            onChange={(v) => setAddUsage(Number(v))}
-          />
-        </Row>
-        <Row label={t('macro.holdMs')}>
-          <input
-            type="number"
-            min={0}
-            max={MACRO_MAX_DELAY_MS}
-            value={holdMs}
-            disabled={busy !== null || recording || !canWrite}
-            style={{ width: '5.5rem' }}
-            onChange={(e) => setHoldMs(Number(e.target.value) || 0)}
-          />
-        </Row>
-        <Row label={t('macro.gapMs')}>
-          <input
-            type="number"
-            min={0}
-            max={MACRO_MAX_DELAY_MS}
-            value={gapMs}
-            disabled={busy !== null || recording || !canWrite}
-            style={{ width: '5.5rem' }}
-            onChange={(e) => setGapMs(Number(e.target.value) || 0)}
-          />
-        </Row>
-        <div className="row" style={{ marginTop: 8 }}>
-          <button
-            disabled={busy !== null || recording || !canWrite || !current}
-            onClick={() =>
-              current && editSlot([...current.events, ...tapEvents(addUsage, holdMs, gapMs)])
-            }
-          >
-            {t('macro.addTap')}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy !== null || recording || !canWrite || !current}
-            onClick={() =>
-              current &&
-              editSlot([...current.events, eventForUsage(addUsage, true, holdMs)])
-            }
-          >
-            {t('macro.addDown')}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy !== null || recording || !canWrite || !current}
-            onClick={() =>
-              current && editSlot([...current.events, eventForUsage(addUsage, false, gapMs)])
-            }
-          >
-            {t('macro.addUp')}
-          </button>
-        </div>
-        <div className="small dim" style={{ marginTop: 6 }}>
-          <T k="macro.modifierNote" params={{ mods: MODIFIERS.map((m) => m.label).join(', ') }} />
-        </div>
-      </Panel>
-
-      <Panel title={t('macro.tools')}>
-        <Row label={t('macro.repeatTimes')}>
-          <input
-            type="number"
-            min={1}
-            max={64}
-            value={repeatTimes}
-            disabled={busy !== null || recording || !canWrite}
-            style={{ width: '5.5rem' }}
-            onChange={(e) => setRepeatTimes(Number(e.target.value) || 1)}
-          />
-        </Row>
-        <Row label={t('macro.repeatGap')}>
-          <input
-            type="number"
-            min={0}
-            max={MACRO_MAX_DELAY_MS}
-            value={repeatGapMs}
-            disabled={busy !== null || recording || !canWrite}
-            style={{ width: '5.5rem' }}
-            onChange={(e) => setRepeatGapMs(Number(e.target.value) || 0)}
-          />
-        </Row>
-        <Row label={t('macro.fixedDelay')}>
-          <input
-            type="number"
-            min={0}
-            max={MACRO_MAX_DELAY_MS}
-            value={fixedDelayMs}
-            disabled={busy !== null || recording || !canWrite}
-            style={{ width: '5.5rem' }}
-            onChange={(e) => setFixedDelayMs(Number(e.target.value) || 0)}
-          />
-        </Row>
-        <div className="row" style={{ marginTop: 8 }}>
-          <button
-            className="ghost"
-            disabled={busy !== null || recording || !canWrite || !current || isMacroEmpty(current)}
-            onClick={() =>
-              current && editSlot(repeatEvents(current.events, repeatTimes, repeatGapMs))
-            }
-          >
-            {t('macro.repeatApply')}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy !== null || recording || !canWrite || !current || isMacroEmpty(current)}
-            onClick={() =>
-              current &&
-              editSlot(current.events.map((e) => ({ ...e, delayMs: fixedDelayMs })))
-            }
-          >
-            {t('macro.flattenApply')}
-          </button>
-        </div>
-        <div className="small dim" style={{ marginTop: 6 }}>
-          <T k="macro.repeatNote" />
-        </div>
-      </Panel>
-
-      <Panel title={t('macro.applyTitle')}>
-        <div className="row">
-          <button
-            disabled={busy !== null || recording || !canWrite || used > capacity}
-            onClick={() => void apply()}
-          >
-            {busy === 'write' ? t('macro.applying') : t('macro.apply')}
-          </button>
-          <button
-            className="ghost"
-            disabled={busy !== null || recording}
-            onClick={() => {
-              if (snapshot) setDraft(snapshot.macros.map((m) => ({ ...m, events: [...m.events] })))
-              setStatus(null)
-            }}
-          >
-            {t('macro.revert')}
-          </button>
-        </div>
-        {used > capacity && (
-          <Notice kind="err">
-            <T k="macro.capacityFull" params={{ used, total: capacity }} />
-          </Notice>
-        )}
-        {status && <Notice kind="ok">{status}</Notice>}
-        {mismatch && <Notice kind="err">{mismatch}</Notice>}
-        {error && <Notice kind="err">{error}</Notice>}
-      </Panel>
-
-      <Panel title={t('macro.bindTitle')}>
-        {!pickedKey ? (
-          <div className="small dim">
-            <T k="macro.pickKey" />
-          </div>
-        ) : (
-          <>
-            <Row label={t('macro.key')}>
-              <strong>{pickedKey.label}</strong>
-            </Row>
-            {pickedUse && (
-              <Row label={t('macro.boundTo')}>
-                <span className="small">
-                  {t('macro.slotPlain', {
-                    slot: pickedUse.macro,
-                    count: draft?.[pickedUse.macro]?.events.length ?? 0,
-                  })}
-                  {pickedUse.repeat !== 1 && ` · ${t('macro.repeatByte', { n: pickedUse.repeat })}`}
-                </span>
-              </Row>
-            )}
-            <div className="row" style={{ marginTop: 8 }}>
-              <button
-                disabled={busy !== null || recording || !canBind || !snapshot?.canonical}
-                onClick={() => void bind()}
-              >
-                {busy === 'bind' ? t('macro.binding') : t('macro.bind', { slot })}
-              </button>
-              {pickedUse && (
+                      <div
+                        className={`macro-gauge-fill${usedBytes > storeBytes ? ' over' : ''}`}
+                        style={{ width: `${usedPct}%` }}
+                      />
+                    </div>
+                    <div className="small dim macro-gauge-read">
+                      {t('macro.storeFree', {
+                        free: bytes(freeBytes),
+                        total: bytes(storeBytes),
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+              <div className="row" style={{ marginLeft: 'auto' }}>
+                <button
+                  disabled={busy !== null || recording || !canWrite || used > capacity}
+                  onClick={() => void apply()}
+                >
+                  {busy === 'write' ? t('macro.applying') : t('macro.apply')}
+                </button>
                 <button
                   className="ghost"
-                  disabled={busy !== null || recording || !canUnbind}
-                  onClick={() => void unbind()}
+                  disabled={busy !== null || recording}
+                  onClick={() => {
+                    if (snapshot)
+                      setDraft(
+                        snapshot.macros.map((m) => ({
+                          ...m,
+                          events: [...m.events],
+                        })),
+                      )
+                    setStatus(null)
+                  }}
                 >
-                  {t('macro.unbind')}
+                  {t('macro.revert')}
                 </button>
+              </div>
+            </div>
+            {/*
+              Not a description of the store — it is the one state in which
+              pressing a macro key sends the player walking through flash, and
+              the button above it is the fix. See the module header, and
+              `canonical` in protocol/types.ts.
+            */}
+            {snapshot && !snapshot.canonical && (
+              <Notice kind="err">
+                <T k="macro.storeUnsafe" params={{ slots: snapshot.malformed.length }} />
+              </Notice>
+            )}
+            {used > capacity && (
+              <Notice kind="err">
+                <T k="macro.capacityFull" params={{ used, total: capacity }} />
+              </Notice>
+            )}
+            {mismatch && <Notice kind="err">{mismatch}</Notice>}
+            {error && <Notice kind="err">{error}</Notice>}
+          </Panel>
+        </div>
+
+        {/*
+          Two columns on a wide window: the event list on the left, everything
+          that acts on it on the right.
+
+          The list is the tab, and it is the one part of the page whose height
+          is the board's rather than the layout's — a body can run to eighty-odd
+          records. Stacked, that pushed "직접 넣기" and "일괄 편집" — the two
+          panels whose whole job is to put records in the list — below the
+          bottom of it, so adding an event meant scrolling past the thing you
+          were adding to and then back. Beside it, they are read against it.
+
+          The right column is everything else by the same rule rather than by
+          sorting: the two editors and the debug list are all about the body, and
+          neither of them is the body.
+
+          The DOM is in the order the columns read, left then right, so the
+          narrow window below the breakpoint stacks them without a single
+          `order` rule and the tab order never disagrees with the page.
+        */}
+        <div className="macro-cols">
+          <div className="macro-col">
+            <Panel title={t('macro.events')}>
+              {/*
+                Above the list, not under it.
+
+                A body can run to eighty-odd records and the column it is in is
+                pinned to the height of the window, so a control at the foot of
+                the list is a control behind a scroll — and this is the one the
+                tab is for. At the head it is where the panel starts, which is
+                where the column starts, which is on screen.
+
+                "Stop recording" is the same button, so the thing that ends a
+                pass is where the thing that began it was. The notice under it is
+                the pair's own state and travels with it.
+              */}
+              <div className="row">
+                {/*
+                  Every control that puts a record in the store is refused once
+                  there is nowhere to put one — this, the three below "직접
+                  넣기" and the repeat. What stays is what makes room or leaves
+                  the count alone: clearing the list, setting delays, writing
+                  the store, reverting.
+                */}
+                <button
+                  disabled={busy !== null || !canWrite || !current || full}
+                  onClick={() => setRecording((on) => !on)}
+                >
+                  {recording ? t('macro.recordStop') : t('macro.record')}
+                </button>
+                <button
+                  className="ghost"
+                  disabled={busy !== null || recording || !canWrite || !current}
+                  onClick={() => editSlot([])}
+                >
+                  {t('macro.clear')}
+                </button>
+              </div>
+              {recording && (
+                <Notice kind="info">
+                  <T k="macro.recordingNow" />
+                </Notice>
+              )}
+              {snapshot?.macros[slot]?.aliasOf !== undefined && (
+                <Notice kind="warn">
+                  <T
+                    k="macro.aliasOf"
+                    params={{
+                      slot: slot + 1,
+                      owner: snapshot!.macros[slot]!.aliasOf! + 1,
+                    }}
+                  />
+                </Notice>
+              )}
+              {/*
+                The records, and the only part of this panel that scrolls.
+
+                The box is the scroller rather than the column around it, so what
+                is above it — the heading, the two buttons, whatever notice is up
+                — is still on screen at record 400 of 850. Recording is started
+                and stopped from the same place no matter how far down the list
+                the reader has gone, which is the point: a stop button that has
+                to be found first is a stop button that arrives late. See
+                `.macro-list` in styles.css.
+              */}
+              <div className="macro-list">
+                {!current || isMacroEmpty(current) ? (
+                  <div className="small dim" style={{ marginTop: 10 }}>
+                    <T k="macro.noEvents" />
+                  </div>
+                ) : (
+                  <table className="small" style={{ marginTop: 10 }}>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{t('macro.eventKey')}</th>
+                        <th>{t('macro.eventDir')}</th>
+                        <th>{t('macro.delayMs')}</th>
+                        <th>{t('macro.hex')}</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {current.events.map((event, i) => (
+                        <tr key={i}>
+                          <td className="dim">{i + 1}</td>
+                          <td>
+                            {event.action.kind === 'unknown'
+                              ? t('macro.eventUnknown', {
+                                  nibble: event.action.nibble,
+                                  value: event.action.value,
+                                })
+                              : eventLabel(event)}
+                          </td>
+                          <td>{event.press ? t('macro.down') : t('macro.up')}</td>
+                          <td>
+                            <input
+                              type="number"
+                              min={0}
+                              max={MACRO_MAX_DELAY_MS}
+                              value={event.delayMs}
+                              disabled={busy !== null || recording || !canWrite}
+                              style={{ width: '5.5rem' }}
+                              onChange={(e) => {
+                                const next = [...current.events]
+                                next[i] = {
+                                  ...event,
+                                  delayMs: Number(e.target.value) || 0,
+                                }
+                                editSlot(next)
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <code>{macroEventHex(event)}</code>
+                          </td>
+                          <td>
+                            <button
+                              className="ghost"
+                              disabled={busy !== null || recording || !canWrite}
+                              onClick={() => editSlot(current.events.filter((_, j) => j !== i))}
+                            >
+                              {t('macro.remove')}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          {/*
+            Everything that is not the list, and it goes away while one is being
+            recorded.
+
+            Every control in here is already refused during a pass, and a row of
+            disabled inputs is a true thing said quietly. The window is held
+            (state/windowHold.ts) and the chrome around the tab is dimmed by the
+            same rule, so this column is dimmed with it: what is live during a
+            recording is the list and the button that ends it, and nothing else
+            on screen should look like it might be.
+          */}
+          <div className={`macro-col${recording ? ' blocked' : ''}`}>
+            {/*
+              The panels scroll inside the column rather than the column inside
+              the page, for the same reason the record list does — and the dim
+              goes on the column, which does not move, so a scrolled column is
+              still covered edge to edge while a pass is recorded.
+            */}
+            <div className="macro-col-scroll">
+              <Panel title={t('macro.addTitle')}>
+                <Row label={t('macro.addKey')}>
+                  <Select
+                    label={t('macro.addKey')}
+                    value={String(addUsage)}
+                    options={USAGES}
+                    disabled={busy !== null || recording || !canWrite}
+                    onChange={(v) => {
+                      setAddUsage(Number(v))
+                      // Picking from the list answers the question the button
+                      // beside it is waiting for.
+                      setPicking(false)
+                    }}
+                  />
+                  {/*
+                    The same choice, made on the keyboard — see ui/KeyCapture,
+                    which is where this used to live in full. It is shared with
+                    the advanced-key tab's binding fields now, which ask the
+                    same question this one does.
+                  */}
+                  <KeyCapture
+                    armed={picking}
+                    onArmed={setPicking}
+                    onCapture={setAddUsage}
+                    disabled={busy !== null || recording || !canWrite}
+                  />
+                </Row>
+                <Row label={t('macro.holdMs')}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={MACRO_MAX_DELAY_MS}
+                    value={holdMs}
+                    disabled={busy !== null || recording || !canWrite}
+                    style={{ width: '5.5rem' }}
+                    onChange={(e) => setHoldMs(Number(e.target.value) || 0)}
+                  />
+                </Row>
+                <Row label={t('macro.gapMs')}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={MACRO_MAX_DELAY_MS}
+                    value={gapMs}
+                    disabled={busy !== null || recording || !canWrite}
+                    style={{ width: '5.5rem' }}
+                    onChange={(e) => setGapMs(Number(e.target.value) || 0)}
+                  />
+                </Row>
+                <div className="row">
+                  <button
+                    disabled={busy !== null || recording || !canWrite || !current || full}
+                    onClick={() =>
+                      current && editSlot([...current.events, ...tapEvents(addUsage, holdMs, gapMs)])
+                    }
+                  >
+                    {t('macro.addTap')}
+                  </button>
+                  <button
+                    className="ghost"
+                    disabled={busy !== null || recording || !canWrite || !current || full}
+                    onClick={() =>
+                      current &&
+                      editSlot([...current.events, eventForUsage(addUsage, true, holdMs)])
+                    }
+                  >
+                    {t('macro.addDown')}
+                  </button>
+                  <button
+                    className="ghost"
+                    disabled={busy !== null || recording || !canWrite || !current || full}
+                    onClick={() =>
+                      current && editSlot([...current.events, eventForUsage(addUsage, false, gapMs)])
+                    }
+                  >
+                    {t('macro.addUp')}
+                  </button>
+                </div>
+              </Panel>
+
+              <Panel title={t('macro.tools')}>
+                <Row label={t('macro.repeatTimes')}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={64}
+                    value={repeatTimes}
+                    disabled={busy !== null || recording || !canWrite}
+                    style={{ width: '5.5rem' }}
+                    onChange={(e) => setRepeatTimes(Number(e.target.value) || 1)}
+                  />
+                </Row>
+                <Row label={t('macro.repeatGap')}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={MACRO_MAX_DELAY_MS}
+                    value={repeatGapMs}
+                    disabled={busy !== null || recording || !canWrite}
+                    style={{ width: '5.5rem' }}
+                    onChange={(e) => setRepeatGapMs(Number(e.target.value) || 0)}
+                  />
+                </Row>
+                <Row label={t('macro.fixedDelay')}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={MACRO_MAX_DELAY_MS}
+                    value={fixedDelayMs}
+                    disabled={busy !== null || recording || !canWrite}
+                    style={{ width: '5.5rem' }}
+                    onChange={(e) => setFixedDelayMs(Number(e.target.value) || 0)}
+                  />
+                </Row>
+                <div className="row">
+                  <button
+                    className="ghost"
+                    disabled={
+                      busy !== null ||
+                      recording ||
+                      !canWrite ||
+                      !current ||
+                      isMacroEmpty(current) ||
+                      full
+                    }
+                    onClick={() =>
+                      current && editSlot(repeatEvents(current.events, repeatTimes, repeatGapMs))
+                    }
+                  >
+                    {t('macro.repeatApply')}
+                  </button>
+                  <button
+                    className="ghost"
+                    disabled={
+                      busy !== null || recording || !canWrite || !current || isMacroEmpty(current)
+                    }
+                    onClick={() =>
+                      current &&
+                      editSlot(
+                        current.events.map((e) => ({
+                          ...e,
+                          delayMs: fixedDelayMs,
+                        })),
+                      )
+                    }
+                  >
+                    {t('macro.flattenApply')}
+                  </button>
+                </div>
+              </Panel>
+
+              {/*
+                Which keys start which body, for the lab only.
+
+                It is a readout with nothing to act on now that binding has left this
+                tab: no button beside it, no cap to pick, just four columns restating
+                what the remap tab shows in place on the keys themselves. The repeat
+                column is the clearest case — a byte the firmware stores and never
+                reads is exactly the kind of fact a protocol lab wants on screen and
+                nobody else does. So it goes where the rest of those went.
+              */}
+              {debug && (
+                <Panel title={t('macro.inUse')}>
+                  {uses.length === 0 ? (
+                    <div className="small dim">
+                      <T k="macro.noneBound" />
+                    </div>
+                  ) : (
+                    <table className="small" style={{ marginTop: 6 }}>
+                      <thead>
+                        <tr>
+                          <th>{t('macro.layers')}</th>
+                          <th>{t('macro.key')}</th>
+                          <th>{t('macro.slot')}</th>
+                          <th>{t('macro.eventCount')}</th>
+                          <th>{t('macro.repeatColumn')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {uses.map((u) => (
+                          <tr key={`${u.layer}:${u.slot}`}>
+                            <td className="dim">{layerLabel(u.layer)}</td>
+                            <td>{u.label || `#${u.slot}`}</td>
+                            <td>{slotName(u.macro)}</td>
+                            <td>{draft?.[u.macro]?.events.length ?? 0}</td>
+                            <td className="dim">{u.repeat}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  <div className="small dim" style={{ marginTop: 6 }}>
+                    <T k="macro.repeatByteNote" />
+                  </div>
+                </Panel>
               )}
             </div>
-          </>
-        )}
-        <div className="small dim" style={{ marginTop: 6 }}>
-          <T k="macro.bindNote" />
-        </div>
-      </Panel>
-
-      <Panel title={t('macro.inUse')}>
-        {uses.length === 0 ? (
-          <div className="small dim">
-            <T k="macro.noneBound" />
           </div>
-        ) : (
-          <table className="small" style={{ marginTop: 6 }}>
-            <thead>
-              <tr>
-                <th>{t('macro.key')}</th>
-                <th>{t('macro.slot')}</th>
-                <th>{t('macro.eventCount')}</th>
-                <th>{t('macro.repeatColumn')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {uses.map((u) => (
-                <tr key={`${u.layer}:${u.slot}`}>
-                  <td>{u.label || `#${u.slot}`}</td>
-                  <td>
-                    {names[`${spec.id}/${u.macro}`]
-                      ? t('macro.slotNamed', {
-                          slot: u.macro,
-                          name: names[`${spec.id}/${u.macro}`]!,
-                          count: draft?.[u.macro]?.events.length ?? 0,
-                        })
-                      : `#${u.macro}`}
-                  </td>
-                  <td>{draft?.[u.macro]?.events.length ?? 0}</td>
-                  <td className="dim">{u.repeat}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="small dim" style={{ marginTop: 6 }}>
-          <T k="macro.repeatByteNote" />
         </div>
-      </Panel>
+      </div>
+
+      {/*
+        Outside `.macro-tab`: it is fixed to the window rather than laid out in
+        the tab, and it must not be inside anything a recording dims — a
+        confirmation you cannot read is not one. See `.toast` in styles.css.
+      */}
+      <AppliedToast message={status} onDone={clearStatus} />
     </>
   )
 }

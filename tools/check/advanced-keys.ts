@@ -40,11 +40,15 @@ import {
   decodeAdvancedRecord,
   decodeDksSpan,
   dksStepsToMm,
+  bindsNothing,
+  dksMaxSteps,
   emptyAdvancedRecord,
   encodeAdvancedRecord,
   encodeDksSpan,
   firstFreeRecord,
+  isFreeRecord,
   kindOfType,
+  recordBlocks,
   mtBindings,
   oksBindings,
   pairUsages,
@@ -429,12 +433,102 @@ function fakeLink(board: FakeBoard): HidLink {
 }
 
 {
-  // Bytes in a record no layer points at. Reported, not cleaned up.
+  // Bytes in a record no layer points at. The read reports it; clearing it is
+  // the tab's decision, not the codec's.
   const board = new FakeBoard()
   board.advanced.toggle.set([RECORD_TYPE.key, 0, 0x39], 11 * 3)
   const snap = await readAdvancedKeys(fakeLink(board))
   eq('an unreferenced record is reported', snap.orphans, [11])
   eq('and nothing is bound', snap.uses, [])
+
+  // Which table the clearer has to write. It has no kind to go on — the kind
+  // was in the keymap entry that is gone — so this is what it asks instead.
+  eq('the orphan is in the toggle table', recordBlocks(snap.blobs, 11), ['toggle'])
+  eq('and no other record is in any', recordBlocks(snap.blobs, 10), [])
+  ok('which is what free means', isFreeRecord(snap.blobs, 10))
+  ok('and an occupied record is not free', !isFreeRecord(snap.blobs, 11))
+}
+
+{
+  /*
+   * Records that bind nothing, which the tab refuses to write.
+   *
+   * The point of the refusal is the first two lines: an empty TGL and an empty
+   * MT encode to all zeros, which `isFreeRecord` reads as "nobody is using
+   * this". Writing one would occupy a number the allocator hands straight back
+   * out. The rest of the kinds cannot reach that state — `withPairUsages`
+   * writes a type byte whatever the usages are — and are refused for the
+   * plainer reason that they do nothing.
+   */
+  const blank: AdvancedKeyBlobs = {
+    dks: new Uint8Array(ADVANCED_KEY_BLOCKS.dks.blobSize),
+    pair: new Uint8Array(ADVANCED_KEY_BLOCKS.pair.blobSize),
+    toggle: new Uint8Array(ADVANCED_KEY_BLOCKS.toggle.blobSize),
+  }
+  for (const kind of ADVANCED_KINDS) {
+    ok(`an empty ${kind} binds nothing`, bindsNothing(emptyAdvancedRecord(kind)))
+  }
+  for (const kind of ['tgl', 'mt'] as const) {
+    const block = ADVANCED_BLOCK_OF[kind]
+    const next = { ...blank, [block]: new Uint8Array(blank[block]) }
+    next[block].set(encodeAdvancedRecord(emptyAdvancedRecord(kind)), 0)
+    ok(`and an empty ${kind} is indistinguishable from a free record`, isFreeRecord(next, 0))
+  }
+
+  const key = { kind: 'key', usage: 0x04, modifiers: 0 } as const
+  ok('a toggle with a key bound does not', !bindsNothing({ kind: 'tgl', binding: key }))
+
+  const mt = emptyAdvancedRecord('mt') as PairRecord
+  const none = { kind: 'none', raw: 0 } as const
+  ok('a mod tap with only a tap does not', !bindsNothing(withMtBindings(mt, key, none)))
+  ok(
+    'a mod tap with only a hold does not',
+    !bindsNothing(withMtBindings(mt, none, key)),
+  )
+
+  const dks = emptyAdvancedRecord('dks') as DksRecord
+  const spans = dks.spans.slice()
+  spans[0] = { ...spans[0]!, binding: key }
+  ok('a DKS with one binding does not', !bindsNothing({ ...dks, spans }))
+  ok(
+    'but a DKS with only depth points does',
+    bindsNothing({ ...dks, thresholds: [10, 20, 20, 10] }),
+  )
+
+  const rs = emptyAdvancedRecord('rs') as PairRecord
+  ok('a full RS pair does not', !bindsNothing(withPairUsages(rs, 0x04, 0x07)))
+  ok('half an RS pair does', bindsNothing(withPairUsages(rs, 0x04, 0)))
+  ok('and the other half too', bindsNothing(withPairUsages(rs, 0, 0x07)))
+
+  const oks = emptyAdvancedRecord('oks') as PairRecord
+  ok('an OKS that only fires on release does not', !bindsNothing(withOksBindings(oks, 0, 0x07, 0)))
+  ok('an OKS with neither does', bindsNothing(withOksBindings(oks, 0, 0, 5)))
+}
+
+{
+  /*
+   * How deep a DKS point is allowed to go, which is the switch's own stroke.
+   *
+   * Floored rather than rounded, because a step is 0.1 mm and the vendor
+   * tables quote travel to the hundredth: rounding 3.45 mm up puts the top of
+   * the slider 0.05 mm past where the switch stops, and the firmware never
+   * sees the key reach it.
+   */
+  eq('a 4.00 mm switch reaches 40 steps', dksMaxSteps(4.0), 40)
+  eq('a 2.50 mm switch reaches 25', dksMaxSteps(2.5), 25)
+  eq('3.45 mm floors to 34, not 35', dksMaxSteps(3.45), 34)
+  eq('3.49 mm floors to 34 as well', dksMaxSteps(3.49), 34)
+  eq('3.50 mm is a whole step and stays', dksMaxSteps(3.5), 35)
+  eq('and nothing goes negative', dksMaxSteps(0), 0)
+  // Every switch this board's own table lists lands on a step it can reach.
+  for (const st of raven61Spec.switchTypes) {
+    const steps = dksMaxSteps(st.travelMm)
+    ok(
+      `${st.name} stops at or before its travel`,
+      dksStepsToMm(steps) <= st.travelMm + 1e-9,
+      `${dksStepsToMm(steps)} > ${st.travelMm}`,
+    )
+  }
 }
 
 console.log(`${pass} checks passed, ${fails.length} failed`)

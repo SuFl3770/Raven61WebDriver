@@ -8,10 +8,12 @@ import type { FactoryResetResult, FactoryResetStage } from '../protocol/engine'
 import { debounceLevelName } from '../protocol/types'
 import { configStore } from '../state/config'
 import { globalStore } from '../state/global'
+import { macroSnapshotStore } from '../state/macroSnapshot'
 import { link, useCodec, useConnection } from '../state/link'
+import { Dialog, DialogActions } from './Dialog'
 import { NotDecoded, Notice, Panel } from './Panel'
 
-/** Seconds the button is dead for after the first press. */
+/** Seconds the dialog's confirm button is dead for after it opens. */
 const HOLD_SECONDS = 3
 
 /** Stage labels, spelled out so the keys stay checkable against the bundle. */
@@ -24,17 +26,21 @@ const STAGE_KEY: Record<FactoryResetStage, MessageKey> = {
 /**
  * ⚠⚠ Factory reset — the one control in this app that destroys settings.
  *
- * ## Two presses of one button, with three seconds between them
+ * ## A dialog, and three seconds inside it
  *
- * The first press arms and explains: the button stays where it is, changes to
- * say what pressing it again will do, and the warning above it says what is
- * lost. The second press resets.
+ * The button on the panel does not reset anything. It opens a modal that says
+ * what is lost, and the reset is sent from a second button in there — so the
+ * two presses are on two different controls, in two different places, and a
+ * double-click on the first one cannot reach the second.
  *
- * The three seconds the button spends disabled in between are what makes one
- * button safe to use this way. A slip is a double-click, and a double-click
- * lands entirely inside that dead window — so the accident a two-press
- * confirmation is meant to prevent cannot get through it, while someone who
- * means it only has to wait out a countdown they can watch.
+ * The three seconds that second button spends disabled are kept anyway. A
+ * dialog that can be answered the instant it appears is answered before it is
+ * read; the countdown buys the time it takes to read the two paragraphs above
+ * it, and it is a countdown rather than a mystery so the wait is watchable.
+ *
+ * Escape and a click on the veil both cancel, which is the safe direction.
+ * Confirming is the one outcome that needs a deliberate press on a button
+ * that says what it does.
  *
  * ## Clearing before sending, not after
  *
@@ -63,9 +69,9 @@ export function FactoryReset() {
     setHold(0)
   }, [])
 
-  // The countdown on the armed button. It stops at zero and stays armed there:
-  // nothing times out, so a panel left open keeps whatever the user chose to
-  // leave it at.
+  // The countdown on the dialog's confirm button. It stops at zero and the
+  // dialog stays open there: nothing times out, so a question left standing is
+  // still the same question whenever it is come back to.
   useEffect(() => {
     if (!armed || running || hold === 0) return
     const tick = setTimeout(() => setHold((h) => h - 1), 1000)
@@ -101,6 +107,9 @@ export function FactoryReset() {
     // Before the packet, not after — see the note above.
     configStore.clear()
     globalStore.clear()
+    // The reset takes the macro store with it, so what is cached about it is
+    // about to be wrong — and for the same reason, before the packet.
+    macroSnapshotStore.clear()
     setStage('sending')
     try {
       const outcome = await codec.factoryReset!(link, setStage)
@@ -120,45 +129,40 @@ export function FactoryReset() {
         <T k="reset.hint" />
       </div>
 
-      {/*
-        The warning goes above the button rather than around it, so that the
-        button itself does not move between the two presses. A confirmation
-        that relocates the thing being pressed is not the same button twice.
-      */}
-      {armed && !running && (
-        <div style={{ marginBottom: 12 }}>
-          <Notice kind="err">
-            <strong>{t('reset.confirm.title')}</strong>
-            <div className="small" style={{ marginTop: 6 }}>
-              <T k="reset.confirm.body" />
-            </div>
-            <div className="small dim" style={{ marginTop: 6 }}>
-              <T k="reset.confirm.kept" />
-            </div>
-          </Notice>
+      {!running && (
+        <div className="row">
+          <button className="danger" disabled={!connected} onClick={arm}>
+            {t('reset.start')}
+          </button>
+          <span className="small dim">{t('reset.startNote')}</span>
         </div>
       )}
 
-      {!running && (
-        <div className="row">
-          <button
-            className="danger"
-            disabled={!connected || (armed && hold > 0)}
-            onClick={armed ? () => void run() : arm}
-          >
-            {!armed
-              ? t('reset.start')
-              : hold > 0
-                ? t('reset.confirm.wait', { seconds: hold })
-                : t('reset.confirm.go')}
-          </button>
-          {armed ? (
-            <button onClick={disarm}>{t('reset.cancel')}</button>
-          ) : (
-            <span className="small dim">{t('reset.startNote')}</span>
-          )}
+      {/*
+        Open for exactly as long as the question stands. `running` closes it
+        rather than `run` doing so itself: what happens next belongs to the
+        panel — the stage notice and then the outcome — and a modal held over
+        the top of that would be covering the answer it asked for.
+      */}
+      <Dialog open={armed && !running} onClose={disarm} title={t('reset.confirm.title')} danger>
+        <div className="small">
+          <T k="reset.confirm.body" />
         </div>
-      )}
+        <div className="small dim" style={{ marginTop: 8 }}>
+          <T k="reset.confirm.kept" />
+        </div>
+        <DialogActions>
+          {/*
+            First in the source, so it is what the dialog puts the keyboard on
+            when it opens — and it is the harmless one. The order on screen is
+            the other way round; see `.modal-actions`.
+          */}
+          <button onClick={disarm}>{t('reset.cancel')}</button>
+          <button className="danger" disabled={!connected || hold > 0} onClick={() => void run()}>
+            {hold > 0 ? t('reset.confirm.wait', { seconds: hold }) : t('reset.confirm.go')}
+          </button>
+        </DialogActions>
+      </Dialog>
 
       {running && (
         <Notice kind="warn">

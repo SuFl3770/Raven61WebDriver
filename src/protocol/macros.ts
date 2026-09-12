@@ -355,17 +355,43 @@ export function macroEventCapacity(spec: MacroSpec = DEFAULT_MACROS): number {
 }
 
 /**
+ * Events a reader can actually put in the store, which is 32 fewer than the
+ * records it holds.
+ *
+ * Every slot is written a stop record whether or not anything is in it — see
+ * `encodeMacros`, and the header for why an empty slot gets its own rather
+ * than sharing its neighbour's. Those 32 records are the store's and never the
+ * reader's, so a panel that counts them is a panel whose number disagrees with
+ * the list it is shown beside: 850 events in one slot occupies 882 records,
+ * and "882 of 880" is a true sentence about bytes and a wrong one about
+ * anything a reader can act on.
+ *
+ * So the pair a screen counts in is this one and `macroEventsStored`, and the
+ * pair the encoder checks in is `macroEventCapacity` and `macroEventsUsed`.
+ * Both say the same thing — the difference is `spec.slots` on either side —
+ * and each says it in the units of whoever is reading.
+ */
+export function macroEventBudget(spec: MacroSpec = DEFAULT_MACROS): number {
+  return macroEventCapacity(spec) - spec.slots
+}
+
+/**
  * True once a store holds more than the stock driver's recorder would.
  *
  * Not a limit — the block holds 880 records at this app's write ceiling, and the
  * firmware would take 1008. It is the point past which the stock driver, which
  * budgets 650 for the whole store, is being handed more than it counts on.
+ *
+ * Counted in events and not in records, because that is what the number on the
+ * other side of the comparison counts: a stock store carries no stop records
+ * at all — the driver raises bit 7 on each body's last real record instead
+ * (see the header) — so its 650 is 650 of the reader's own.
  */
 export function overStockBudget(
   macros: readonly Macro[],
   spec: MacroSpec = DEFAULT_MACROS,
 ): boolean {
-  return macroEventsUsed(macros, spec) > MACRO_STOCK.events
+  return macroEventsStored(macros, spec) > MACRO_STOCK.events
 }
 
 /** Records `macros` would occupy, the stop record every slot gets included. */
@@ -373,11 +399,19 @@ export function macroEventsUsed(
   macros: readonly Macro[],
   spec: MacroSpec = DEFAULT_MACROS,
 ): number {
-  let used = 0
+  return macroEventsStored(macros, spec) + spec.slots
+}
+
+/** Events `macros` holds — the stop records the encoder adds are not among them. */
+export function macroEventsStored(
+  macros: readonly Macro[],
+  spec: MacroSpec = DEFAULT_MACROS,
+): number {
+  let stored = 0
   for (let slot = 0; slot < spec.slots; slot++) {
-    used += (macros[slot]?.events.length ?? 0) + 1
+    stored += macros[slot]?.events.length ?? 0
   }
-  return used
+  return stored
 }
 
 /** Records still free, given what `macros` holds. */

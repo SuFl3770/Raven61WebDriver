@@ -1303,34 +1303,51 @@ export function createCodec(spec: DeviceSpec): EngineCodec {
   }
 
   /**
-   * The store, plus every keymap entry across the readable layers that starts a
-   * macro.
+   * The store, plus — unless the caller says otherwise — every keymap entry
+   * across the readable layers that starts a macro.
    *
    * The keymap sweep is the same necessity it is for advanced keys: a body says
    * what it types and nothing about which key runs it. Here it carries a second
    * weight — a bound macro key on a board whose store is not canonical is a key
    * that types whatever lies past the end of the region, so a panel needs to
    * know both facts at once to say anything true about it.
+   *
+   * It is also most of the wait. The store is 4 KB in one block; the sweep is
+   * the 768-byte factory block the slot map is read from and then a 512-byte
+   * layer per layer, each in a transaction of its own — measured on the demo
+   * board, 40 of the 116 packets a macro tab open sends. So it is optional:
+   * `uses: false` reads the store and nothing else, and the two fields the
+   * sweep would have filled come back null. The two callers differ on this —
+   * the remap tab lists bound keys beside the slots and always wants it; the
+   * macro tab shows that list in debug mode only.
    */
-  async function readMacros(link: HidLink): Promise<MacroSnapshot> {
-    const { map } = await readSlotMap(link)
+  async function readMacros(
+    link: HidLink,
+    opts: { uses?: boolean } = {},
+  ): Promise<MacroSnapshot> {
+    const sweep = opts.uses ?? true
+    // The map is read for the sweep and for nothing else, so it goes with it.
+    const map = sweep ? (await readSlotMap(link)).map : null
     const blob = await readMacroBlob(link)
     const macros = decodeMacros(blob, spec.macros)
-    const uses: MacroUse[] = []
-    for (let layer = 0; layer < spec.keymap.layers; layer++) {
-      const layerBlob = await readKeymapLayerBlob(link, layer)
-      for (let slot = 0; slot < spec.keymap.slots; slot++) {
-        const binding = decodeRecord(layerBlob, slot * spec.keymap.entrySize)
-        if (binding.kind !== 'macro') continue
-        const key = map.keyBySlot.get(slot)
-        uses.push({
-          layer,
-          index: key?.index ?? -1,
-          label: key?.label ?? '',
-          slot,
-          macro: binding.slot,
-          repeat: binding.repeat,
-        })
+    let uses: MacroUse[] | null = null
+    if (map) {
+      uses = []
+      for (let layer = 0; layer < spec.keymap.layers; layer++) {
+        const layerBlob = await readKeymapLayerBlob(link, layer)
+        for (let slot = 0; slot < spec.keymap.slots; slot++) {
+          const binding = decodeRecord(layerBlob, slot * spec.keymap.entrySize)
+          if (binding.kind !== 'macro') continue
+          const key = map.keyBySlot.get(slot)
+          uses.push({
+            layer,
+            index: key?.index ?? -1,
+            label: key?.label ?? '',
+            slot,
+            macro: binding.slot,
+            repeat: binding.repeat,
+          })
+        }
       }
     }
     return {

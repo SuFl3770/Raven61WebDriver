@@ -42,7 +42,7 @@ import { SubTabs, type SubTab } from '../ui/SubTabs'
  * what each key sends on the open layer, and the layer strip is that tab's
  * section strip — the grid follows whichever layer is open.
  *
- * Two things are deliberately *not* shared with that tab:
+ * One thing is deliberately *not* shared with that tab:
  *
  *   - **One key at a time.** Its panels edit a number a whole cluster sensibly
  *     shares, so they paint a selection and "select all" means something. A
@@ -50,11 +50,17 @@ import { SubTabs, type SubTab } from '../ui/SubTabs'
  *     more often than an intention. So the grid picks one key — and because
  *     remapping is nearly always a run of keys, choosing a binding steps to the
  *     next one (see `advance`).
- *   - **Edits are not written as they are made.** On the input-point tab a
- *     slider is a number that can be nudged back; here a mis-click is a key
- *     that stops typing what its cap says, on a board whose keymap this app
- *     would then have to be used to repair. So the write stays an explicit
- *     press, and the button says how many keys are waiting.
+ *
+ * Edits *are* written as they are made, like every other tab's. This tab used
+ * to stage them behind an apply button, on the reasoning that a mis-click here
+ * costs a key that stops typing what its cap says. It does — but the staging
+ * never bought the caution it promised: the grid showed the pending binding in
+ * the same place the applied one goes, so the mistake was already on screen and
+ * already looked done, and what the button added was a second screen state to
+ * get wrong and one more press between every edit and knowing whether the board
+ * took it. Choosing a binding now writes that one key and reads it back (see
+ * `commit`), the cap holds the pending colour until the read-back agrees, and a
+ * mis-click is repaired the way it is made — by binding the key again.
  *
  * What the panel does not offer:
  *
@@ -222,7 +228,25 @@ export function Keymap() {
   /** The one key being bound. Local: nothing else on this tab acts on a set. */
   const [selected, setSelected] = useState<number | null>(null)
   const [reads, setReads] = useState<Record<number, LayerRead>>({})
-  /** Pending edits, per layer, by key index. Cleared by a read or a revert. */
+  /**
+   * The same reads, for a queued write to take its slots from.
+   *
+   * A write needs the slot numbers the layer read gave, and it runs from a
+   * queue (see `commit`) — so by the time it runs, the `reads` captured in the
+   * render that queued it may be a read older than the one the write before it
+   * just landed. The ref is the current one either way.
+   */
+  const readsRef = useRef(reads)
+  readsRef.current = reads
+  /**
+   * The edits in flight, per layer, by key index.
+   *
+   * Not a staging area any more — an edit is sent the moment it is made — but
+   * the send is a round trip, and between the click and the read-back the cap
+   * has to show *something*. It shows the new binding in the pending colour,
+   * which is what this holds: the key comes out again when its write reads back
+   * (see `commit`), or when a failed one puts the cap back to the board's.
+   */
   const [edits, setEdits] = useState<Record<number, Record<number, KeyBinding>>>({})
   const [defaults, setDefaults] = useState<Record<number, (KeymapEntry | null)[]>>({})
   /** The same edits, for the read effect to check without depending on them. */
@@ -262,7 +286,6 @@ export function Keymap() {
 
   const read = reads[layer]
   const layerEdits = edits[layer] ?? {}
-  const dirty = Object.keys(layerEdits).length
 
   /*
    * What the line under the grid says: the cap that is picked, and what it is
@@ -382,7 +405,94 @@ export function Keymap() {
   }
 
   /**
-   * Binds the selected key.
+   * The queue the writes go through, one at a time.
+   *
+   * Binding a run of keys is a run of clicks faster than a round trip to the
+   * board, and every one of these writes the *whole* 512-byte layer: the codec
+   * reads the block, patches the slot, sends it back and reads it again. Two of
+   * those in the air together and the second one is patching a block it read
+   * before the first one landed, which puts the earlier key back. So each waits
+   * for the one before it, and the queue is a promise chain rather than a
+   * `busy` check — a check would drop the clicks made while a write was out,
+   * which is exactly the run this tab is used for.
+   */
+  const queue = useRef<Promise<void>>(Promise.resolve())
+
+  /**
+   * Writes one key's binding, and takes the cap out of the pending colour.
+   *
+   * The single-key shape is the whole of what changed when the apply button
+   * went: `writeKeymap` already takes a sparse array — one entry per key, null
+   * for the ones this write leaves alone — and the button filled it from the
+   * staged set. Here exactly one is filled in.
+   *
+   * A failure leaves the edit out of `edits` all the same. The cap then shows
+   * what the board last read as holding, which is the truth as far as this app
+   * knows it; leaving it pending would colour the cap for a binding that is not
+   * on the board and is no longer on its way there either.
+   */
+  const commit = (which: number, index: number, binding: KeyBinding) => {
+    if (!codec.writeKeymap) return Promise.resolve()
+    const run = queue.current.then(async () => {
+      const write = codec.writeKeymap
+      if (!write) return
+      setBusy('write')
+      setError(null)
+      setMismatch(null)
+      try {
+        const entries: (KeymapEntry | null)[] = keys.map((k) =>
+          k.index === index
+            ? { binding, slot: readsRef.current[which]?.entries[k.index]?.slot }
+            : null,
+        )
+        const result = await write(link, which, entries)
+        // The write already read the layer back; decoding those bytes saves a
+        // third read of the same block just to show what the board now holds.
+        const applied = (readsRef.current[which]?.entries ?? []).map((entry) => {
+          const slot = entry.slot
+          if (slot === undefined) return entry
+          const record = decodeFrom(result.after, slot * entrySize, entrySize)
+          return record ? { slot, binding: record } : entry
+        })
+        setReads((prev) => ({ ...prev, [which]: { entries: applied } }))
+        // Applied, so the rest of the app's caps follow.
+        if (which === 0) legends.set(applied)
+        // The macro category lists which keys start each body, and that list is
+        // read out of the keymap — so a write to the keymap is what makes it
+        // stale. Dropping the snapshot re-reads it, and only while that category
+        // is the one open (see the effect above).
+        setMacros(null)
+        const key = keys.find((k) => k.index === index)
+        setStatus(
+          result.slots.length === 0
+            ? t('keymap.noChange')
+            : t('keymap.appliedOne', { key: key?.label ?? `#${index}` }),
+        )
+        if (result.mismatched.length > 0) {
+          setMismatch(
+            t('keymap.mismatch', {
+              count: result.mismatched.length,
+              detail: result.mismatched.map((m) => `#${m.slot} ${m.wanted} → ${m.got}`).join(', '),
+            }),
+          )
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setEdits((prev) => {
+          const forLayer = { ...(prev[which] ?? {}) }
+          delete forLayer[index]
+          return { ...prev, [which]: forLayer }
+        })
+        setBusy(null)
+      }
+    })
+    queue.current = run
+    return run
+  }
+
+  /**
+   * Binds the selected key, and sends it.
    *
    * `step` is false for the modifier row: a held modifier is half a binding,
    * and the key it belongs to has not been chosen yet.
@@ -390,65 +500,18 @@ export function Keymap() {
   const assign = (binding: KeyBinding, step = true) => {
     if (selected === null) return
     const index = selected
-    setEdits((prev) => {
-      const forLayer = { ...(prev[layer] ?? {}) }
-      const onBoard = read?.entries[index]?.binding
-      // An edit back to what the board holds is not an edit. Keeping it would
-      // put the key in the pending count and send a write that changes nothing.
-      if (onBoard && sameBinding(onBoard, binding)) delete forLayer[index]
-      else forLayer[index] = binding
-      return { ...prev, [layer]: forLayer }
-    })
-    if (step) advance()
-  }
-
-  const apply = async () => {
-    if (!codec.writeKeymap) return
-    setBusy('write')
-    setError(null)
-    setMismatch(null)
-    try {
-      const entries: (KeymapEntry | null)[] = keys.map((k) => {
-        const binding = layerEdits[k.index]
-        return binding ? { binding, slot: read?.entries[k.index]?.slot } : null
-      })
-      const result = await codec.writeKeymap(link, layer, entries)
-      // The write already read the layer back; decoding those bytes saves a
-      // third read of the same block just to show what the board now holds.
-      const applied = (reads[layer]?.entries ?? []).map((entry) => {
-        const slot = entry.slot
-        if (slot === undefined) return entry
-        const binding = decodeFrom(result.after, slot * entrySize, entrySize)
-        return binding ? { slot, binding } : entry
-      })
-      setReads((prev) => ({ ...prev, [layer]: { entries: applied } }))
-      // Applied, so the rest of the app's caps follow. Pending edits never get
-      // this far: until the write lands they are this tab's business alone.
-      if (layer === 0) legends.set(applied)
-      setEdits((prev) => ({ ...prev, [layer]: {} }))
-      // The macro category lists which keys start each body, and that list is
-      // read out of the keymap — so a write to the keymap is what makes it
-      // stale. Dropping the snapshot re-reads it, and only while that category
-      // is the one open (see the effect above).
-      setMacros(null)
-      setStatus(
-        result.slots.length === 0
-          ? t('keymap.noChange')
-          : t('keymap.applied', { count: result.keys.length }),
-      )
-      if (result.mismatched.length > 0) {
-        setMismatch(
-          t('keymap.mismatch', {
-            count: result.mismatched.length,
-            detail: result.mismatched.map((m) => `#${m.slot} ${m.wanted} → ${m.got}`).join(', '),
-          }),
-        )
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(null)
+    const which = layer
+    const onBoard = readsRef.current[which]?.entries[index]?.binding
+    // A binding back to what the board already holds is not an edit. Sending it
+    // would be a write that changes nothing, and marking the cap pending for
+    // the length of it would say the board disagrees with itself.
+    if (onBoard && sameBinding(onBoard, binding)) {
+      if (step) advance()
+      return
     }
+    setEdits((prev) => ({ ...prev, [which]: { ...(prev[which] ?? {}), [index]: binding } }))
+    void commit(which, index, binding)
+    if (step) advance()
   }
 
   /**
@@ -505,6 +568,17 @@ export function Keymap() {
   const current = selected === null ? undefined : shownBinding(read, layerEdits, selected)
   const modifiers = current?.kind === 'key' ? current.modifiers : 0
   const none = selectedKey === undefined
+  /*
+   * What greys the whole catalog out: no key picked, or no board to take the
+   * binding. The second half was the apply button's job until it went —
+   * choosing a binding *is* the write now, so a catalog that still took clicks
+   * off a disconnected board would be a row of buttons that do nothing.
+   *
+   * It is kept apart from `none` because the line above the catalog says which
+   * of the two it is: "pick a key" is wrong advice on a board that is not
+   * there, and `none` is what that line reads.
+   */
+  const locked = none || !connected || !canWrite
 
   const unmapped = read
     ? keys.filter((k) => read.entries[k.index]?.slot === undefined)
@@ -520,15 +594,18 @@ export function Keymap() {
    * has no upper bound on its cursor — bound to a slot whose offset names no
    * body, a key walks flash pressing whatever it reads. `canonical` is the
    * store saying every slot ends in a stop record, and nothing binds until it
-   * does. That is the same rule the macro tab's own bind button uses, and the
-   * reason this category could be added at all.
+   * does. Reading the store to answer that is the reason this category could
+   * be added at all, and now the reason it is the only place that binds one:
+   * the macro tab records and stores, and points here.
    *
    * The repeat byte goes out as 1, which is what the stock driver writes. The
    * firmware stores it at `gp-0x781` and never reads it back, so it is not
-   * offered as a setting — see `macro.repeatNote`.
+   * offered as a setting — see the header of features/Macro.tsx.
    */
   const macroSlots = macroSlotsExposed(debug, spec.macros)
-  const macroUses = macros ? macros.uses.filter((u) => u.layer === layer) : []
+  // `?? []` and not a `!`: the field is null when the read skipped the keymap
+  // sweep, and this tab never asks it to — it is the one that needs the list.
+  const macroUses = macros ? (macros.uses ?? []).filter((u) => u.layer === layer) : []
   const macroPicker = !canMacros ? (
     <Notice kind="warn">
       <T k="keymap.macro.unsupported" />
@@ -561,7 +638,7 @@ export function Keymap() {
               className={`picker-choice${
                 current && sameBinding(current, binding) ? ' primary' : ''
               }`}
-              disabled={none || !macros.canonical}
+              disabled={locked || !macros.canonical}
               title={
                 !body || isMacroEmpty(body)
                   ? t('keymap.macro.slotEmpty', { slot })
@@ -626,7 +703,7 @@ export function Keymap() {
         <b>{usageByte === undefined ? '—' : keycodeLabel(usageByte)}</b>
         <button
           className="picker-choice"
-          disabled={none || usageByte === undefined}
+          disabled={locked || usageByte === undefined}
           onClick={() =>
             usageByte !== undefined && assign({ kind: 'key', usage: usageByte, modifiers })
           }
@@ -648,7 +725,7 @@ export function Keymap() {
         <b>{recordBinding === undefined ? '—' : bindingLabel(recordBinding, keycodeLabel)}</b>
         <button
           className="picker-choice"
-          disabled={none || recordBinding === undefined || recordUnsafe}
+          disabled={locked || recordBinding === undefined || recordUnsafe}
           onClick={() => recordBinding !== undefined && assign(recordBinding)}
         >
           {t('keymap.debug.recordApply')}
@@ -708,13 +785,13 @@ export function Keymap() {
           {current && <span className="mono small dim">{hex(current)}</span>}
           <span style={{ flex: 1 }} />
           <button
-            disabled={none}
+            disabled={locked}
             onClick={() => assign({ kind: 'none', raw: RECORD_TYPE.key })}
           >
             {t('keymap.picker.unassign')}
           </button>
           <button
-            disabled={none || !connected || !canReset || busy !== null}
+            disabled={locked || !canReset || busy !== null}
             onClick={() => void resetSelected()}
           >
             {t('keymap.reset')}
@@ -740,7 +817,7 @@ export function Keymap() {
           {MODIFIERS.map((m) => (
             <button
               key={m.bit}
-              disabled={none}
+              disabled={locked}
               className={(modifiers & m.bit) !== 0 ? 'primary' : ''}
               style={{ padding: '0.2rem 0.5rem', fontSize: '0.8125rem' }}
               onClick={() => {
@@ -781,7 +858,7 @@ export function Keymap() {
                       ) : (
                         <button
                           key={slot.code}
-                          disabled={none}
+                          disabled={locked}
                           title={keycodeLabel(slot.code)}
                           className={
                             current?.kind === 'key' && current.usage === slot.code ? 'primary' : ''
@@ -812,7 +889,7 @@ export function Keymap() {
                       {s.choices.map((choice) => (
                         <button
                           key={choice.label}
-                          disabled={none}
+                          disabled={locked}
                           className={`picker-choice${
                             current && sameBinding(current, choice.binding) ? ' primary' : ''
                           }`}
@@ -830,7 +907,7 @@ export function Keymap() {
                       {s.nameKey === UNBOUND && (
                         <button
                           className="picker-choice"
-                          disabled={none || !canTrns}
+                          disabled={locked || !canTrns}
                           onClick={() => baseBinding && assign(baseBinding)}
                         >
                           KC_TRNS
@@ -861,10 +938,6 @@ export function Keymap() {
           </div>
         </Panel>
       )}
-
-      <div className="small dim" style={{ padding: '0 2px' }}>
-        <T k="keymap.layerNote" />
-      </div>
     </>
   )
 
@@ -930,20 +1003,6 @@ export function Keymap() {
                 </button>
               ))}
             </div>
-            <hr className="sep" />
-            <button
-              className="primary"
-              disabled={!connected || !canWrite || busy !== null || dirty === 0}
-              onClick={() => void apply()}
-            >
-              {dirty === 0 ? t('keymap.apply') : t('keymap.applyCount', { count: dirty })}
-            </button>
-            <button
-              disabled={dirty === 0 || busy !== null}
-              onClick={() => setEdits((prev) => ({ ...prev, [layer]: {} }))}
-            >
-              {t('keymap.revert')}
-            </button>
           </>
         }
         foot={

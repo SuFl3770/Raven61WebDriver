@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { calibrationMode } from './calibration'
+import { windowHeld } from './windowHold'
 import { settings } from './settings'
 
 /**
@@ -103,10 +103,11 @@ export function useDebugGesture(): DebugToggle | null {
     let run = GESTURE_START
 
     const onKeyDown = (event: KeyboardEvent) => {
-      // Calibration holds the whole window still on purpose — see
-      // state/calibration.ts. Changing which tabs exist under it is not
-      // something a keypress should do while the board cannot type.
-      if (calibrationMode.current()) return
+      // Calibration and macro recording each hold the whole window still on
+      // purpose — see state/windowHold.ts. Changing which tabs exist under one
+      // of them is not something a keypress should do, and during a recording
+      // the keys are the thing being recorded.
+      if (windowHeld()) return
 
       const { next, fire } = advanceGesture(run, {
         key: event.key,
