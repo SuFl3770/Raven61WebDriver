@@ -85,6 +85,7 @@
     "upToDate": "Matches the board",
     "write": "Apply to board",
     "revertEdits": "Discard edits",
+    "cancel": "Cancel",
     "noChange": "The board already held this value, so nothing was sent.",
     "noWrite": "The active codec ({codec}) does not support writing."
   },
@@ -198,6 +199,8 @@
       "hz": "{hz} Hz",
       "unknown": "unknown value {value}",
       "warn": "Changing the polling rate can make the board re-enumerate on USB. If it does, the browser loses this connection and you will have to connect again.",
+      "confirmTitle": "Change the polling rate",
+      "confirmChange": "From <b>{from}</b> to <b>{to}</b>.",
       "writeLost": "the polling-rate change may have re-opened the device. Connect again and check the value.",
       "note": "What the four values mean comes from the stock driver's own list; it has not been confirmed against hardware."
     },
@@ -272,7 +275,12 @@
       "switch": "Switch",
       "deadzone": "Dead zone"
     },
-    "sections": "Input point sections"
+    "sections": "Input point sections",
+    "switchWarning": {
+      "title": "The switch type has to match what is actually fitted",
+      "body": "What is picked here is <b>the scale every depth in this app is measured against</b>. Choosing a type the board does not have will not break it, but it makes the millimetres shown for actuation and rapid trigger wrong.",
+      "dismiss": "Understood"
+    }
   },
 
   "switch": {
@@ -694,36 +702,23 @@
     "title": "Per-key colour",
     "sections": "Lighting sections",
     "section": {
-      "effect": "Effect",
-      "perKey": "Per-key colour"
+      "effect": "Effect"
     },
     "brightness": "Brightness",
     "speed": "Speed",
     "direction": "Direction",
     "palette": "Palette",
     "colorful": "Cycle colours",
-    "colorfulHint": "The effect walks the hue wheel instead of using one colour. With this on, the palette below is ignored.",
     "colorOverridden": "not used while colours are cycling",
     "dir": {
       "a": "Forward",
-      "b": "Reverse",
-      "note": "The stock page renames this pair per effect (within/outside, clockwise/anticlockwise, and two more). Which bit selects which pair is not established, so these are neutral — the byte is the same either way."
+      "b": "Reverse"
     },
     "fxPanel": {
       "title": "Lighting effect",
       "params": "Effect settings",
       "unread": "The settings block has not been read from the board yet.",
-      "unknownMode": "The board reports mode {mode}, which this table has no row for. Left as it is — overwriting it with a value we do know would throw away whatever it was set to.",
-      "perKey": "<b>Custom Light</b> is the effect that paints the <b>per-key colours</b> stored on the board. Paint them in the section next to this one.",
-      "held": "· applied when you let go",
-      "raw": "<c>payload[16..24]</c> = {bytes} · colorindex {index} (undecoded; the board's own byte is written back)"
-    },
-    "showsIn": {
-      "title": "When these colours show",
-      "active": "The effect is <b>Custom Light</b> right now, so what you paint here is what the LEDs show.",
-      "body": "Exactly one effect reads this block: <b>Custom Light</b> (mode 0). Every other effect generates its own colours and never looks at this layer — so with another effect running, painting here and applying changes nothing on the keyboard. That is not a failed write; it is the wrong effect to see it with.",
-      "switch": "Switch to Custom Light",
-      "current": "Effect now: {mode}"
+      "unknownMode": "The board reports mode {mode}, which this table has no row for. Left as it is — overwriting it with a value we do know would throw away whatever it was set to."
     },
     "fx": {
       "custom": "Custom Light",
@@ -758,7 +753,7 @@
     "hexInvalid": "Write it as <c>#rrggbb</c>.",
     "preset": "Presets",
     "clear": "Clear the custom colour",
-    "clearHint": "Puts the three bytes back to zero — which to the board means <b>no custom colour</b>, not <b>black</b>. Nothing in this app can tell those two apart.",
+    "notCustom": "The effect is not <b>Custom Light</b>, so what you paint here will not reach the LEDs.",
     "apply": "Apply to board",
     "applyCount": "Apply {count} keys",
     "revert": "Discard edits",
@@ -768,23 +763,13 @@
     "unmapped": "{count} keys have no slot, so they could be neither read nor written: {keys}",
     "picked": "{key} — {color}",
     "pickedUnlit": "{key} — no custom colour",
+    "pendingPick": "{key} — {color} (not applied yet)",
+    "pendingUnlit": "{key} — custom colour cleared (not applied yet)",
     "hoverNone": "Point at a cap to read its colour",
     "hoveredOff": "{key} — off",
     "pickNone": "Drag across the caps to pick keys, then choose a colour",
     "lit": "{count} of {total} keys lit",
-    "view": {
-      "label": "Showing",
-      "stored": "Stored colours",
-      "live": "On the board now",
-      "watch": "Live",
-      "refresh": "Read again"
-    },
     "live": {
-      "title": "The frame the board is displaying",
-      "body": "<c>0xde</c> does not read the stored layer in flash — it reads <b>the RAM buffer the firmware has just filled</b>, so it carries whatever effect is running plus the firmware's calibration overlay (an under-calibrated key painted red or amber, spec §3.3). Disagreeing with the stored colours is therefore <b>normal</b>, and this is also the only way to check whether a stored colour is actually reaching the LEDs.",
-      "poll": "With <b>Live</b> on, the frame is re-read every {ms} ms — the stock driver reads the same command every time its job queue empties (spec §3.0). It has no interval of its own, only idle time, so this one is <b>this app's ceiling</b> rather than something copied. Turn it off to hold a single frame still.",
-      "starting": "Reading the first frame.",
-      "unread": "Not read yet. Press <b>Read again</b>.",
       "waiting": "Waiting for a frame"
     },
     "effect": {

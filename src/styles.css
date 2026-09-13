@@ -1386,6 +1386,20 @@ div.rail { position: sticky; top: 0; }
 .panel > h2 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-dim); margin: 0 0 12px; }
 
 /*
+ * A rule between two groups of controls inside one panel.
+ *
+ * For the lighting settings, which hold the stored colours over the effect's
+ * own parameters: one panel, because they are one effect's settings, but two
+ * things to reach for. Faint on purpose — a panel heading separates subjects
+ * and this separates halves of one, so it is a hairline and not a border.
+ */
+.panel-sep {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+
+/*
  * The macro tab, in two columns — see features/Macro.tsx.
  *
  * One column below the breakpoint, and the columns are plain blocks there:
@@ -1405,9 +1419,12 @@ div.rail { position: sticky; top: 0; }
    *
    * `.tab-scroll` has a definite height — see `.tab-in`, which is what makes
    * the key grid stay put on every other tab — so a column of `height: 100%`
-   * inside it is exactly the room there is. The slot panel takes what it
-   * takes, the grid below takes the rest, and the record list inside it is
-   * held to that. Nothing here is a measurement of the chrome above: the last
+   * inside it is exactly the room there is. The grid of columns takes all of
+   * it, and the record list inside is held to that. It is written as a column
+   * that fills rather than as one child stretched, because the tab has had a
+   * panel above the grid before and will again, and the day it does the height
+   * still comes out of what is left over. Nothing here is a measurement of the
+   * chrome above: the last
    * version of this was a `--stick-h` of every rem between the top of the
    * window and the top of the grid, and it was wrong from the moment a panel
    * was put above the grid — the column it sized ran a panel's height past the
@@ -1422,9 +1439,10 @@ div.rail { position: sticky; top: 0; }
   }
   .macro-cols {
     /*
-     * What the panel above it did not take. `min-height: 0` so this can be
-     * shorter than its own content — without it a long list would push the
-     * grid past the foot of the page, which is the thing being prevented.
+     * Whatever is left of the column — all of it today, since the grid is the
+     * only thing in the tab. `min-height: 0` so this can be shorter than its
+     * own content: without it a long list would push the grid past the foot of
+     * the page, which is the thing being prevented.
      */
     flex: 1 1 auto;
     min-height: 0;
@@ -1490,20 +1508,14 @@ div.rail { position: sticky; top: 0; }
      * can run to eighty-odd records, so this is the ordinary case and not the
      * edge one.
      *
-     * `100%` is the grid area, which is the row above, which is what the slot
-     * panel left of the tab — so a body of one record and a body of eight
-     * hundred both end where the page does.
+     * `100%` is the grid area, which is the row above, which is the whole of
+     * what the tab has — so a body of one record and a body of eight hundred
+     * both end where the page does.
      */
     max-height: 100%;
     /*
      * A column of flex rather than a block that scrolls, so the scroll can be
-     * given to one part of the panel instead of all of it.
-     *
-     * The panel is the only item and is left at `flex: 0 1 auto`: as tall as
-     * its content while that fits, shrunk to the column when it does not —
-     * and the shrinking lands on `.macro-list`, which is the only thing in it
-     * that can give. Stretching it instead would leave a short list sitting
-     * in a box the height of the window.
+     * given to one part of one panel instead of to all of the column.
      *
      * `overflow: hidden` is the backstop for that arrangement and not the
      * scroller: nothing here should ever reach it, since the list takes the
@@ -1513,7 +1525,27 @@ div.rail { position: sticky; top: 0; }
     flex-direction: column;
     overflow: hidden;
   }
-  .macro-col:first-child > .panel { display: flex; flex-direction: column; min-height: 0; }
+  /*
+   * The slot panel is as tall as the one row in it and gives up nothing.
+   *
+   * `min-height: 0` below is what lets the event panel be shorter than its own
+   * content, which is the whole trick — and it would do the same to this one,
+   * clipping a picker rather than a list nobody minds scrolling. So the shrink
+   * is refused here and spent next door.
+   */
+  .macro-col:first-child > .panel { flex: 0 0 auto; }
+  /*
+   * The event panel takes what is left: as tall as its records while they fit,
+   * shrunk to the column when they do not — and the shrinking lands on
+   * `.macro-list`, which is the only thing inside it that can give. Stretched
+   * instead, a short list would sit in a box the height of the window.
+   */
+  .macro-col:first-child > .panel:last-child {
+    flex: 0 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   /*
    * The records scroll; the heading, the record and clear buttons and whatever
    * notice is up do not.
@@ -1593,8 +1625,21 @@ div.rail { position: sticky; top: 0; }
  * The tab rather than `.row` everywhere, because that is the panel that has
  * stacks of them; the rest of the app is one or two to a panel with a heading
  * or a notice doing the separating.
+ *
+ * Notices are in the same stack and take the same seam. A notice here is not a
+ * lid on the control above it, it is the next thing down: the banner that
+ * appears while a recording is running sat flush against the button that
+ * started it, which read as the button having grown rather than as the answer
+ * to pressing it — and the store warnings did the same to the slot row. A
+ * notice that opens a panel is left alone, since there is nothing above it for
+ * the gap to be between.
  */
-.macro-tab .row + .row { margin-top: 0.625rem; }
+.macro-tab .row + .row,
+.macro-tab .row + .notice,
+.macro-tab .notice + .notice,
+.macro-tab .notice + .row {
+  margin-top: 0.625rem;
+}
 /*
  * The same seam, through the advanced-key panel — see features/Advanced.tsx.
  *
@@ -1822,6 +1867,22 @@ div.rail { position: sticky; top: 0; }
   border-radius: 999px;
   background: var(--accent);
   pointer-events: none;
+}
+/*
+ * Which slot, and how full the store is — the pair over the record list, see
+ * features/Macro.tsx.
+ *
+ * Centred, which is the one thing this rule is for. The pair is a picker and a
+ * short bar in a column sized to hold eighty-odd records of key, action and
+ * delay, so left-aligned they sit at one end of a line that is mostly nothing,
+ * looking like the start of a row that never arrived. In the middle they read
+ * as a heading for the list under them, which is what they are.
+ *
+ * The row still wraps: at a width where the picker and the bar will not share
+ * a line, `.row` puts the bar under the picker and both stay centred.
+ */
+.macro-store {
+  justify-content: left;
 }
 /*
  * How full the macro store is — see features/Macro.tsx.
@@ -2573,6 +2634,41 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 .fxcard.on .fxmode { color: var(--fg); opacity: 0.7; }
 
 /*
+ * The two lighting panels side by side — see features/LightEffect.tsx.
+ *
+ * The same 1280px stop the rail and the macro tab use, and it is a plain block
+ * below it: the panels stack in the order they are written, which is already
+ * picker-then-parameters, so there is nothing to undo.
+ *
+ * Not halves. The left column is a wrapping grid of 9.5rem cards and gets a
+ * whole extra column of them out of the wider share; the right is
+ * label-and-control rows that stop being helped somewhere around a slider's
+ * comfortable length.
+ */
+@media (min-width: 1280px) {
+  .fx-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    /* The gutter between two columns of panels, which already carry 1.1rem of
+       their own padding each side — not `--grid-breathe`, which is the room
+       around the key grid and means something else. */
+    column-gap: 1.25rem;
+    /* Each column as tall as its own panels: stretched, the shorter one would
+       end in a rule of empty page. */
+    align-items: start;
+  }
+  /* Each panel is the last one in its column, so neither keeps the margin that
+     separates it from a panel below it. */
+  .fx-cols > .panel { margin-bottom: 0; }
+  /*
+   * An effect with no parameters — the off row — renders no second panel, and
+   * the picker takes the width back rather than sitting beside a column of
+   * nothing.
+   */
+  .fx-cols > .panel:only-child { grid-column: 1 / -1; }
+}
+
+/*
  * Switch types as cards rather than a dropdown.
  *
  * There are seven of them and they never change while the app is running, so a
@@ -2738,6 +2834,7 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 /* The edge carries what the dialog is for, so a destructive question does not
    look like a neutral one at a glance. */
 .modal.danger { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); }
+.modal.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 .modal > h2 { font-size: 1.05rem; margin: 0 0 10px; }
 /*
  * The same veil as the drawer's, and the same keyframes.

@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../i18n'
+import { T } from '../i18n/T'
 import { calibrationMode, useCalibrationMode } from '../state/windowHold'
 import { useConnection } from '../state/link'
 import { boardSync } from '../state/sync'
+import { Dialog, DialogActions } from '../ui/Dialog'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
 import { Actuation } from './Actuation'
 import { DeadZone } from './DeadZone'
@@ -80,6 +82,17 @@ const SECTION_METRIC: Record<string, Metric> = {
   switch: 'switch',
 }
 
+/**
+ * Whether the switch-section caution has been read in this run of the app.
+ *
+ * Module scope rather than component state, because this component is
+ * unmounted every time another tab is opened and a flag inside it would be
+ * back to false on the way in — which would make "once" mean "once per visit".
+ * Nothing is persisted: reloading the app is a fresh start, and the caution
+ * comes back with it.
+ */
+let switchWarned = false
+
 export function InputPoint() {
   const { connected } = useConnection()
   const t = useT()
@@ -88,6 +101,8 @@ export function InputPoint() {
   // see state/windowHold.ts for why the rest of the window has to go away.
   const calibrating = useCalibrationMode()
   const run = useCalibrationRun()
+  /** Whether the switch-section caution is on screen — see the effect below. */
+  const [warning, setWarning] = useState(false)
 
   // The flag outlives this component, so a disconnect — which swaps the whole
   // app for the connect screen — must not leave the next session blocked.
@@ -108,6 +123,28 @@ export function InputPoint() {
     if (!connected || calibrating) return
     void boardSync.read()
   }, [active, connected, calibrating])
+
+  /*
+   * The caution in front of the switch section, once per run of the app.
+   *
+   * Of the five sections this is the only one where a wrong answer is silent:
+   * every other value here is a number the board either takes or does not,
+   * while the switch type is the scale the rest are read against — pick one the
+   * board does not have and nothing breaks, every millimetre on the tab is
+   * simply wrong. That is worth stopping for once, and worth not stopping for
+   * again while the same person keeps working — see `switchWarned` above.
+   */
+  useEffect(() => {
+    if (active !== 'switch' || switchWarned) return
+    setWarning(true)
+  }, [active])
+
+  // Marked read on the way out rather than on the way in: the dialog is not
+  // read until it is answered.
+  const dismissWarning = useCallback(() => {
+    setWarning(false)
+    switchWarned = true
+  }, [])
 
   /**
    * One press, one mode. Entering starts the run rather than waiting for a
@@ -161,6 +198,24 @@ export function InputPoint() {
           onActive={setActive}
         />
       )}
+
+      <Dialog
+        open={warning}
+        onClose={dismissWarning}
+        title={t('inputPoint.switchWarning.title')}
+        tone="warn"
+      >
+        <div className="small">
+          <T k="inputPoint.switchWarning.body" />
+        </div>
+        <DialogActions>
+          {/* The only button: there is nothing to decline here, the section is
+              already open and this is the thing to know before editing in it. */}
+          <button className="primary" onClick={dismissWarning}>
+            {t('inputPoint.switchWarning.dismiss')}
+          </button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }

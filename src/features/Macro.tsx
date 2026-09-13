@@ -13,7 +13,6 @@ import {
   macroSlotsExposed,
   macroEventHex,
   macroEventsStored,
-  macroWriteBytes,
   modifierMaskLabel,
   repeatEvents,
   tapEvents,
@@ -28,6 +27,7 @@ import { useSettings } from '../state/settings'
 import { macroRecording } from '../state/windowHold'
 import { KeyCapture } from '../ui/KeyCapture'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
+import { TabActions } from '../ui/TabActions'
 import { Select, type SelectOption } from '../ui/Select'
 import { useExitValue } from '../ui/useExit'
 
@@ -297,27 +297,32 @@ export function Macro() {
   const capacity = macroEventBudget(spec.macros)
   const used = draft ? macroEventsStored(draft, spec.macros) : 0
   /*
-   * The same store measured in bytes, which is the other thing a reader wants
-   * to know and the one the block is actually in.
+   * The same budget in bytes, which is the unit the block is in and the other
+   * thing a reader wants to know.
    *
-   * `macroWriteBytes` is not an estimate: it is what the write puts on the
-   * board — the 64-byte offset table, every record of every body, and the stop
-   * record each of the 32 slots is given. So an empty store is not 0 of 3584,
-   * it is 192, and that is the truth rather than a rounding.
+   * Measured against what the events can take and not against the whole 3,584:
+   * the 64-byte offset table and the stop record every one of the 32 slots is
+   * written are 192 bytes the store carries empty or not, and no amount of
+   * deleting gives them back. Counting them had an empty store reading
+   * “3,392 B free of 3,584 B” — 192 bytes the reader can neither find nor free,
+   * and a bar sitting off zero with nothing recorded. What is left over is
+   * `capacity` records of four, so an empty store is all of it, a store at the
+   * cap is none of it, and “0 B free” and “no more events fit” are one fact
+   * said twice.
    *
-   * The total is `hostBytes` and not the block's 4096: this app stops where
-   * the stock driver's own write stops, so that a store written here stays one
-   * the stock driver can read back — see MACRO_BLOCK in protocol/macros.ts.
+   * That budget comes from `hostBytes` and not the block's 4096: this app
+   * stops where the stock driver's own write stops, so that a store written
+   * here stays one the stock driver can read back — see MACRO_BLOCK in
+   * protocol/macros.ts.
    */
-  const storeBytes = spec.macros.hostBytes
-  const usedBytes = draft ? macroWriteBytes(draft, spec.macros) : 0
+  const storeBytes = capacity * spec.macros.eventBytes
+  const usedBytes = used * spec.macros.eventBytes
   const freeBytes = Math.max(0, storeBytes - usedBytes)
   const usedPct = Math.min(100, (usedBytes / storeBytes) * 100)
   /*
-   * Nothing more fits. The same fact as `used >= capacity` — the bytes are
-   * 192 of table and terminators plus four a record — said in the unit the bar
-   * beside it is in, because "0 B free" is what the reader is looking at when
-   * the buttons stop answering.
+   * Nothing more fits. The same fact as `used >= capacity` — four bytes a
+   * record — said in the unit the bar beside it is in, because "0 B free" is
+   * what the reader is looking at when the buttons stop answering.
    */
   const full = freeBytes === 0
   // Ten by default and all 32 in debug mode. Not a board limit — see
@@ -580,6 +585,48 @@ export function Macro() {
   return (
     <>
       {/*
+        The write and the undo, in the row the tab's title is on — the same
+        place the input-point tab puts the button that starts a calibration,
+        and for the same reason: they act on the whole of what is on screen
+        rather than on any one panel of it.
+
+        They had a panel across the top of the tab to themselves, which spent a
+        band of the window drawing a box round two buttons and a picker. What
+        the tab is set to is now said where it is used, over the list the
+        picker chooses; what is done to the store is said up here, where every
+        tab says that kind of thing.
+
+        Refused rather than veiled while a pass is being recorded: the title
+        row is not one of the regions a hold dims (see state/windowHold.ts), so
+        `disabled` is the whole of what stops them — which is the same
+        `disabled` that stopped them when they sat in the panel.
+      */}
+      <TabActions>
+        <button
+          disabled={busy !== null || recording || !canWrite || used > capacity}
+          onClick={() => void apply()}
+        >
+          {busy === 'write' ? t('macro.applying') : t('macro.apply')}
+        </button>
+        <button
+          className="ghost"
+          disabled={busy !== null || recording}
+          onClick={() => {
+            if (snapshot)
+              setDraft(
+                snapshot.macros.map((m) => ({
+                  ...m,
+                  events: [...m.events],
+                })),
+              )
+            setStatus(null)
+          }}
+        >
+          {t('macro.revert')}
+        </button>
+      </TabActions>
+
+      {/*
         The tab is as tall as the room it is given and no taller.
 
         Everything in it that can be long has its own box to be long in — the
@@ -593,143 +640,6 @@ export function Macro() {
         and the grid's — went wrong the moment a panel was put above it.
       */}
       <div className="macro-tab">
-        {/*
-          Which slot, and the write that makes it real — above the columns,
-          because it belongs to neither of them.
-
-          Everything below is about the body that is open: the list of records on
-          the left, the two editors that put records in it on the right. These
-          two are about the *slot*, and about the store the slot is in — which
-          one is being edited, and the write that lays the whole 4 KB block down.
-          Nested in the left column they read as part of the list, and the column
-          is pinned to the height of the window, so they also took room the list
-          wanted. Across the top they are what the tab is set to, and the panels
-          under them are what is being done to it.
-
-          Dimmed with the right column while a pass is being recorded: every
-          control in here is refused for the length of it, the picker included
-          (the recorder holds its own copy of the event list, see the effect
-          above), so it should not look like it might answer.
-        */}
-        <div className={recording ? 'blocked' : undefined}>
-          <Panel title={t('macro.slot')}>
-            {/*
-              One line: what is being edited on the left, what is done with it on
-              the right. `margin-left: auto` rather than a spacer element — the
-              gap is the rest of the row, and at a width where it runs out
-              `.row` wraps the pair under the picker instead of squeezing them.
-            */}
-            <div className="row">
-              <Select
-                label={t('macro.slot')}
-                value={String(slot)}
-                options={slotOptions}
-                disabled={busy !== null || recording}
-                onChange={(v) => setSlot(Number(v))}
-              />
-              {/*
-                What is left of the block, as a bar and the two numbers beside
-                it.
-
-                A bar because "how full" is the question, and a number of bytes
-                on its own does not answer it against a total nobody has
-                memorised; the numbers because a bar on its own cannot say how
-                much more will fit. Filled by what is used, the way a disk is
-                drawn, and red once the draft is past what can be written — the
-                notice under the row says what to do about that.
-
-                In the row rather than under it, because it is about the same
-                thing the row is: this slot is part of one store, and what is
-                left of that store is what decides whether the next event can
-                go anywhere at all. It takes the space between the picker and
-                the buttons, which is what used to be empty.
-
-                Only once there is a store to measure: before the read there is
-                no draft, and a full bar over "3,584 B free" would be an answer
-                made up out of nothing.
-              */}
-              {draft && (
-                <>
-                  {/*
-                    The break between what is being edited and what is left of
-                    the store: two different questions, one row. An `<hr>` on
-                    its side, the way the tab-actions band does it — see
-                    `.sep` in styles.css.
-
-                    Inside the same condition as the gauge, so a row with no
-                    store to measure is not left with a rule standing next to
-                    nothing.
-                  */}
-                  <hr className="sep" />
-                  <div className="macro-gauge">
-                    <div
-                      className="macro-gauge-track"
-                      role="progressbar"
-                      aria-label={t('macro.storeUse')}
-                      aria-valuemin={0}
-                      aria-valuemax={storeBytes}
-                      aria-valuenow={usedBytes}
-                    >
-                      <div
-                        className={`macro-gauge-fill${usedBytes > storeBytes ? ' over' : ''}`}
-                        style={{ width: `${usedPct}%` }}
-                      />
-                    </div>
-                    <div className="small dim macro-gauge-read">
-                      {t('macro.storeFree', {
-                        free: bytes(freeBytes),
-                        total: bytes(storeBytes),
-                      })}
-                    </div>
-                  </div>
-                </>
-              )}
-              <div className="row" style={{ marginLeft: 'auto' }}>
-                <button
-                  disabled={busy !== null || recording || !canWrite || used > capacity}
-                  onClick={() => void apply()}
-                >
-                  {busy === 'write' ? t('macro.applying') : t('macro.apply')}
-                </button>
-                <button
-                  className="ghost"
-                  disabled={busy !== null || recording}
-                  onClick={() => {
-                    if (snapshot)
-                      setDraft(
-                        snapshot.macros.map((m) => ({
-                          ...m,
-                          events: [...m.events],
-                        })),
-                      )
-                    setStatus(null)
-                  }}
-                >
-                  {t('macro.revert')}
-                </button>
-              </div>
-            </div>
-            {/*
-              Not a description of the store — it is the one state in which
-              pressing a macro key sends the player walking through flash, and
-              the button above it is the fix. See the module header, and
-              `canonical` in protocol/types.ts.
-            */}
-            {snapshot && !snapshot.canonical && (
-              <Notice kind="err">
-                <T k="macro.storeUnsafe" params={{ slots: snapshot.malformed.length }} />
-              </Notice>
-            )}
-            {used > capacity && (
-              <Notice kind="err">
-                <T k="macro.capacityFull" params={{ used, total: capacity }} />
-              </Notice>
-            )}
-            {mismatch && <Notice kind="err">{mismatch}</Notice>}
-            {error && <Notice kind="err">{error}</Notice>}
-          </Panel>
-        </div>
-
         {/*
           Two columns on a wide window: the event list on the left, everything
           that acts on it on the right.
@@ -751,6 +661,93 @@ export function Macro() {
         */}
         <div className="macro-cols">
           <div className="macro-col">
+            <Panel title={t('macro.slot')}>
+              {/*
+                Which slot, and how much of the store is left to put in it.
+
+                In this column and above the list rather than across the top of
+                the tab: the picker chooses what the list below it shows, and
+                the bar is whether the next event has anywhere to go, so both
+                are about this column and about nothing else on the page. What
+                is done to the store — the write, the undo — is the part that
+                was not about one column, and that is in the title row.
+
+                Centred because the pair is narrower than the column it sits
+                in, and against the left edge it reads as the start of a row
+                that never arrived.
+
+                The picker is refused for the length of a recording — the
+                recorder holds its own copy of the event list (see the effect
+                above), so a slot swapped under it would put the pass in the
+                wrong body.
+              */}
+              <div className="row macro-store">
+                <Select
+                  label={t('macro.slot')}
+                  value={String(slot)}
+                  options={slotOptions}
+                  disabled={busy !== null || recording}
+                  onChange={(v) => setSlot(Number(v))}
+                />
+                {/*
+                  What is left of the block, as a bar and the two numbers beside
+                  it.
+
+                  A bar because "how full" is the question, and a number of bytes
+                  on its own does not answer it against a total nobody has
+                  memorised; the numbers because a bar on its own cannot say how
+                  much more will fit. Filled by what is used, the way a disk is
+                  drawn, and red once the draft is past what can be written — the
+                  notice below the buttons says what to do about that.
+
+                  Beside the picker rather than under it: one says which body is
+                  open, the other whether there is room left for a record in any
+                  of them, and a reader about to add an event is asking both at
+                  once. Two short things on one line, which is what the row is
+                  wide enough for.
+
+                  Only once there is a store to measure: before the read there is
+                  no draft, and a full bar over "3,392 B free" would be an answer
+                  made up out of nothing.
+                */}
+                {draft && (
+                  <>
+                    {/*
+                      The break between what is being edited and what is left of
+                      the store: two different questions, one row. An `<hr>` on
+                      its side, the way the tab-actions band does it — see
+                      `.sep` in styles.css.
+
+                      Inside the same condition as the gauge, so a row with no
+                      store to measure is not left with a rule standing next to
+                      nothing.
+                    */}
+                    <hr className="sep" />
+                    <div className="macro-gauge">
+                      <div
+                        className="macro-gauge-track"
+                        role="progressbar"
+                        aria-label={t('macro.storeUse')}
+                        aria-valuemin={0}
+                        aria-valuemax={storeBytes}
+                        aria-valuenow={usedBytes}
+                      >
+                        <div
+                          className={`macro-gauge-fill${usedBytes > storeBytes ? ' over' : ''}`}
+                          style={{ width: `${usedPct}%` }}
+                        />
+                      </div>
+                      <div className="small dim macro-gauge-read">
+                        {t('macro.storeFree', {
+                          free: bytes(freeBytes),
+                          total: bytes(storeBytes),
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </Panel>
             <Panel title={t('macro.events')}>
               {/*
                 Above the list, not under it.
@@ -803,6 +800,36 @@ export function Macro() {
                   />
                 </Notice>
               )}
+              {/*
+                What the store has to say, in this column because this is where
+                the store is now on screen — the bar at the top of it, the list
+                under it. The band is ordered by how close each line is to the
+                controls above: the recording is the state of the button two
+                rows up, the alias is this slot's, and the four below are the
+                store's and the write's.
+
+                Under the pair rather than beside the buttons that would answer
+                them: those are in the title row, and a notice is a paragraph,
+                not a control.
+              */}
+              {/*
+                Not a description of the store — it is the one state in which
+                pressing a macro key sends the player walking through flash, and
+                the write in the title row is the fix. See the module header, and
+                `canonical` in protocol/types.ts.
+              */}
+              {snapshot && !snapshot.canonical && (
+                <Notice kind="err">
+                  <T k="macro.storeUnsafe" params={{ slots: snapshot.malformed.length }} />
+                </Notice>
+              )}
+              {used > capacity && (
+                <Notice kind="err">
+                  <T k="macro.capacityFull" params={{ used, total: capacity }} />
+                </Notice>
+              )}
+              {mismatch && <Notice kind="err">{mismatch}</Notice>}
+              {error && <Notice kind="err">{error}</Notice>}
               {/*
                 The records, and the only part of this panel that scrolls.
 

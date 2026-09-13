@@ -144,7 +144,7 @@ export function FactoryReset() {
         panel — the stage notice and then the outcome — and a modal held over
         the top of that would be covering the answer it asked for.
       */}
-      <Dialog open={armed && !running} onClose={disarm} title={t('reset.confirm.title')} danger>
+      <Dialog open={armed && !running} onClose={disarm} title={t('reset.confirm.title')} tone="danger">
         <div className="small">
           <T k="reset.confirm.body" />
         </div>
@@ -154,8 +154,7 @@ export function FactoryReset() {
         <DialogActions>
           {/*
             First in the source, so it is what the dialog puts the keyboard on
-            when it opens — and it is the harmless one. The order on screen is
-            the other way round; see `.modal-actions`.
+            when it opens — and it is the harmless one.
           */}
           <button onClick={disarm}>{t('reset.cancel')}</button>
           <button className="danger" disabled={!connected || hold > 0} onClick={() => void run()}>

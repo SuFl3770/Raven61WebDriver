@@ -8,6 +8,7 @@ import type { GlobalPatch } from '../protocol/global'
 import { DEBOUNCE_LEVELS, debounceLevelName } from '../protocol/types'
 import { globalStore, useGlobalSettings } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
+import { Dialog, DialogActions } from './Dialog'
 import { NotDecoded, Notice, Panel } from './Panel'
 import { Select } from './Select'
 
@@ -27,6 +28,11 @@ import { Select } from './Select'
  *
  * Opening the tab reads the block, so there is no read button — see the note
  * on the buttons below. A retry appears only if that read failed.
+ *
+ * The rate is the one setting here that can end the session that changes it:
+ * the board may re-enumerate on USB, and the browser loses the device it was
+ * holding. So a rate change is confirmed in a dialog before anything is sent,
+ * while a debounce change — which costs nothing if it is a slip — is not.
  */
 export function BoardSettings() {
   const spec = useDeviceSpec()
@@ -39,7 +45,11 @@ export function BoardSettings() {
   const [busy, setBusy] = useState<'read' | 'write' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  /** Whether the polling-rate confirmation is standing — see the note below. */
+  const [confirming, setConfirming] = useState(false)
   const tried = useRef(false)
+
+  const stopConfirming = useCallback(() => setConfirming(false), [])
 
   const canRead = supports(codec, 'readGlobalSettings')
   const canWrite = supports(codec, 'writeGlobalSettings')
@@ -65,6 +75,12 @@ export function BoardSettings() {
     tried.current = true
     void read()
   }, [connected, canRead, read])
+
+  // A question asked about one board must not still be standing over whatever
+  // is plugged in next — and a rate change is one of the ways a board leaves.
+  useEffect(() => {
+    if (!connected) setConfirming(false)
+  }, [connected])
 
   if (!canRead) {
     return (
@@ -216,10 +232,16 @@ export function BoardSettings() {
         <div className="row" style={{ marginTop: 12 }}>
           {dirty && (
             <>
+              {/*
+                The rate is the one of the two that can take the connection
+                with it, so it asks first; debounce goes straight through. The
+                same button either way — what changes is whether pressing it
+                writes or opens the question.
+              */}
               <button
                 className="primary"
                 disabled={!connected || !canWrite || busy !== null}
-                onClick={() => void apply()}
+                onClick={rateDirty ? () => setConfirming(true) : () => void apply()}
               >
                 {busy === 'write' ? t('apply.writing') : t('apply.write')}
               </button>
@@ -246,13 +268,44 @@ export function BoardSettings() {
         </div>
       )}
 
-      {rateDirty && (
-        <div style={{ marginTop: 10 }}>
-          <Notice kind="warn">
-            <T k="board.rate.warn" />
-          </Notice>
+      {/*
+        The warning about the rate, asked rather than announced.
+
+        It used to be a notice that appeared under the selects the moment the
+        rate was moved, which put it on screen before it was anyone's question
+        and left it there to be scrolled past. In front of the write it is the
+        thing being answered: what the value is going from and to, what that
+        costs, and the two buttons.
+      */}
+      <Dialog open={confirming} onClose={stopConfirming} title={t('board.rate.confirmTitle')}>
+        <div className="small">
+          <T
+            k="board.rate.confirmChange"
+            params={{
+              from: reportRateName(rateOnBoard ?? undefined),
+              to: reportRateName(rate ?? undefined),
+            }}
+          />
         </div>
-      )}
+        <div className="small dim" style={{ marginTop: 8 }}>
+          <T k="board.rate.warn" />
+        </div>
+        <DialogActions>
+          {/* First in the source, so the dialog opens with the keyboard on the
+              button that changes nothing. */}
+          <button onClick={stopConfirming}>{t('apply.cancel')}</button>
+          <button
+            className="primary"
+            disabled={!connected || busy !== null}
+            onClick={() => {
+              setConfirming(false)
+              void apply()
+            }}
+          >
+            {t('apply.write')}
+          </button>
+        </DialogActions>
+      </Dialog>
 
       {global && (
         <div className="small dim mono" style={{ marginTop: 10 }}>
