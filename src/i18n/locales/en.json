@@ -154,9 +154,8 @@
     "startNote": "One press opens a confirmation, and nothing is sent until it is answered.",
     "cancel": "Cancel",
     "confirm": {
-      "title": "This resets the board, and it cannot be undone",
-      "body": "<b>Every setting on the board</b> goes: per-key actuation, rapid trigger and dead zones, the keymap, lighting, and the polling rate and debounce level with them. Neither this app nor the stock driver keeps a backup.",
-      "kept": "<b>Key calibration survives.</b> The firmware's reset routine was read, and it never writes the calibration table at flash <c>0x20300</c> — what the board learned about each switch stays.",
+      "title": "Factory reset",
+      "body": "Every setting on the keyboard will be erased.",
       "go": "Reset the board",
       "wait": "Wait {seconds}s to confirm"
     },
@@ -189,7 +188,6 @@
     "what": "reading global settings (0x05)",
     "applied": "Read the global block back after applying, and it matches.",
     "mismatch": "Read back differently from what was written: {detail}",
-    "raw": "payload[12] = {rate} (tick_rate {tick}) · payload[15] = {flags}",
     "rate": {
       "label": "Polling rate",
       "hz": "{hz} Hz",
@@ -443,7 +441,6 @@
     "gridLegend": "Calibration progress — the border is the board’s LED, the number is the key’s <b>calibration scale</b>, the fill is how deep it went.",
     "guide": "",
     "restart": "Start again",
-    "blocked": "Tab switching and disconnecting are locked while calibration runs — leaving the mode is what lets the board type again.",
     "health": {
       "uncalibrated": "Never calibrated (scale still at the 0.62 floor)",
       "weak": "Barely calibrated — press it all the way down",
@@ -1078,7 +1075,6 @@
     "enable": "Always trigger when the key bottoms out",
     "applied": "Applied, and the global block was read back to confirm.",
     "noChange": "The board already held this value, so nothing was sent.",
-    "mismatch": "The byte read back differently from what was written: {detail}",
-    "raw": "payload[15] = {byte} · Tachyon {tachyon} · actuation_check {actuationCheck} · magnet test {magnetTest} · debounce {debounce}"
+    "mismatch": "The byte read back differently from what was written: {detail}"
   }
 }

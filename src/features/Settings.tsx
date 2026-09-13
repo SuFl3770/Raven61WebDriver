@@ -1,10 +1,7 @@
-import { useT } from '../i18n'
 import { AccentPicker } from '../ui/AccentPicker'
-import { T } from '../i18n/T'
 import { BoardSettings } from '../ui/BoardSettings'
 import { FactoryReset } from '../ui/FactoryReset'
 import { FirmwareInfo } from '../ui/FirmwareInfo'
-import { Notice, Panel } from '../ui/Panel'
 import { ThemePicker } from '../ui/ThemePicker'
 
 /**
@@ -30,8 +27,6 @@ import { ThemePicker } from '../ui/ThemePicker'
  * configuring a keyboard has a reason to find.
  */
 export function Settings() {
-  const t = useT()
-
   return (
     <>
       <FirmwareInfo />

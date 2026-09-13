@@ -1,5 +1,4 @@
 import { useT } from '../i18n'
-import { T } from '../i18n/T'
 import { supports } from '../protocol/codec'
 import { useGlobalSettings } from '../state/global'
 import { useCodec, useConnection } from '../state/link'
@@ -57,18 +56,6 @@ export function BottomOutTrigger() {
           {onBoard === null ? '—' : onBoard ? t('perf.on') : t('perf.off')}
         </span>
       </label>
-
-      {global && (
-        <div className="small dim mono" style={{ marginTop: 10 }}>
-          {t('bottomOut.raw', {
-            byte: `0x${(global.raw[15] ?? 0).toString(16).padStart(2, '0')}`,
-            tachyon: global.tachyon ? t('perf.on') : t('perf.off'),
-            actuationCheck: global.actuationCheck ? t('perf.on') : t('perf.off'),
-            magnetTest: global.magnetTest ? t('perf.on') : t('perf.off'),
-            debounce: global.debounceLevel,
-          })}
-        </div>
-      )}
     </Panel>
   )
 }

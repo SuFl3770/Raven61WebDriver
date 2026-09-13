@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
-import { useDeviceSpec } from '../device/active'
 import { reportRateInfo, reportRateName, reportRates } from '../device/tables'
 import { codecLabel, supports } from '../protocol/codec'
 import type { GlobalPatch } from '../protocol/global'
@@ -35,7 +34,6 @@ import { Select } from './Select'
  * while a debounce change — which costs nothing if it is a slip — is not.
  */
 export function BoardSettings() {
-  const spec = useDeviceSpec()
   const codec = useCodec()
   const { connected } = useConnection()
   const t = useT()
@@ -294,16 +292,6 @@ export function BoardSettings() {
           </button>
         </DialogActions>
       </Dialog>
-
-      {global && (
-        <div className="small dim mono" style={{ marginTop: 10 }}>
-          {t('board.raw', {
-            rate: `0x${(global.raw[spec.global.offsets.rate] ?? 0).toString(16).padStart(2, '0')}`,
-            tick: global.tickRate,
-            flags: `0x${(global.raw[spec.global.offsets.flags] ?? 0).toString(16).padStart(2, '0')}`,
-          })}
-        </div>
-      )}
 
       {note && (
         <div style={{ marginTop: 10 }}>
