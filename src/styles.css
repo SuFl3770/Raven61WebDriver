@@ -593,6 +593,126 @@ input[type="range"]:active:not(:disabled)::-webkit-slider-thumb { transform: sca
 input[type="range"]:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /*
+ * The same control stood on end, for depths into a switch.
+ *
+ * `writing-mode` is what turns a range input now that `appearance:
+ * slider-vertical` is gone; vertical-lr runs the inline axis downwards, so min
+ * is at the top and max at the bottom with no `direction: rtl` to flip it back.
+ * That is the whole reason to stand it up: the key travels down, so on this one
+ * the picture and the number agree.
+ *
+ * Thicker than the flat one. A track that reads as a slot the thumb rides in
+ * needs more than the 0.35rem hairline that works lying down, and the extra
+ * width is free here — the control is a column, not a row competing for the
+ * width of the panel.
+ */
+input[type="range"].slider-v {
+  width: 1.6rem;
+  height: 200px;
+  writing-mode: vertical-lr;
+}
+input[type="range"].slider-v::-webkit-slider-runnable-track {
+  width: 0.7rem;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    var(--accent) 0 var(--fill, 0%),
+    var(--sunk) var(--fill, 0%) 100%
+  );
+}
+input[type="range"].slider-v::-webkit-slider-thumb {
+  width: 1.3rem;
+  height: 1.3rem;
+  /* The cross axis is horizontal now, so the centring offset moves with it —
+     `margin-top` from the flat rule would push the thumb along the track. */
+  margin-top: 0;
+  margin-left: calc((0.7rem - 1.3rem) / 2 - 1px);
+}
+
+/*
+ * Actuation's column: the scale, the standing slider, and everything that is
+ * not the track.
+ *
+ * `align-items: center` is the one that matters — it puts the spinner and the
+ * presets at the slider's mid height, level with the middle of the range they
+ * set rather than at the shallow end of it.
+ */
+.depth-stack {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.depth-side { gap: 10px; min-width: 0; }
+
+/*
+ * The centre line these two sections sit on.
+ *
+ * Actuation is one standing control and dead zones are two short tracks, and
+ * both were left-aligned in a panel as wide as the keyboard above them — a
+ * column of controls hard against one edge of a lot of nothing. Centred they
+ * sit under the grid they belong to. Rapid trigger keeps its left edge: it
+ * shares its row with the global switch, and a centred left column would
+ * drift away from the panel beside it.
+ */
+.row.row-center { justify-content: center; }
+.fields-center { display: flex; flex-direction: column; align-items: center; }
+/*
+ * The rows keep their own width — as a centred flex item the grid would
+ * otherwise shrink its `1fr` track to nothing and take the sliders with it.
+ *
+ * Narrower than the shared cap. Dead zones run to 0.62 mm, a thirty-first of
+ * what the actuation track covers, so the same width buys nothing but travel
+ * the thumb cannot use.
+ */
+.fields-center > .slider-rows { width: 100%; max-width: 32rem; }
+
+/*
+ * Label, track, spinner, note — one millimetre value per line.
+ *
+ * A grid rather than a flex row so the stacked pairs line up: the labels share
+ * a column and so do the spinners, which is what lets the tracks be read
+ * against each other at a glance.
+ */
+.slider-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) 5.6rem;
+  align-items: center;
+  gap: 10px;
+  /* Capped: a 0.62 mm dead zone on a track the full width of the page moves
+     the thumb a pixel per count, and the group stops reading as a group once
+     the label and its own number are that far apart. */
+  max-width: 40rem;
+}
+/* The row owns no columns: its three children are the parent's grid items, so
+   every row in the group shares one label column and one track length. */
+.slider-row { display: contents; }
+.slider-row-label { text-align: right; }
+.slider-row input[type="number"] { width: 100%; }
+/* Under the track, not squeezed into the row: the note is about the field, and
+   a fourth column would take width from the only part that needs it. */
+.slider-row-hint { grid-column: 2 / -1; }
+
+/*
+ * Rapid trigger beside its one global switch.
+ *
+ * `align-items: start` so the short panel does not stretch to the tall one, and
+ * the side column is capped rather than an even half — it holds a checkbox and
+ * a word, and half the page of empty panel beside the sliders would be worse
+ * than the band it replaced.
+ */
+.rt-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  align-items: start;
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  .rt-split { grid-template-columns: minmax(0, 1fr); }
+}
+
+/*
  * The colour input keeps its own contents — the whole point of it is the
  * colour inside — and takes the app's frame around them.
  */

@@ -4,10 +4,11 @@ import { travelMmFor } from '../device/tables'
 import { FACTORY_DEFAULTS, MM_PER_COUNT, countsToMm, mmToCounts, quantizeMm } from '../protocol/encoding'
 import { KEY_PERF_LIMITS } from '../protocol/keyPerf'
 import type { KeyConfig, RapidTrigger as RT } from '../protocol/types'
-import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/config'
+import { configStore, useKeyConfigs, useLastRead } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { BottomOutTrigger } from '../ui/BottomOutTrigger'
 import { Notice, Panel } from '../ui/Panel'
+import { SliderRow, SliderRows } from '../ui/Slider'
 import { useHeldWrites } from '../ui/useHeldWrites'
 
 /**
@@ -60,7 +61,6 @@ function common<T>(
 export function RapidTrigger() {
   const { keys } = useLayout()
   const configs = useKeyConfigs()
-  const base = useBaseline()
   const lastRead = useLastRead()
   const sel = useSelection()
   const t = useT()
@@ -80,10 +80,6 @@ export function RapidTrigger() {
     : Math.min(...targets.map((i) => travelOf(configs[i])))
 
   const enabledCommon = common(configs, targets, (c) => c.rapidTrigger.enabled)
-  const boardEnabled = common(base, targets, (c) => c.rapidTrigger.enabled)
-  const boardPress = common(base, targets, (c) => c.rapidTrigger.pressMm)
-  const boardRelease = common(base, targets, (c) => c.rapidTrigger.releaseMm)
-  const boardMode = common(base, targets, (c) => c.rapidTrigger.continuous)
 
   // Read the selection at event time — see the note in Actuation.
   const patch = (p: Partial<RT>) =>
@@ -142,7 +138,15 @@ export function RapidTrigger() {
   })
 
   return (
-    <>
+    /*
+      The global switch sits beside this panel rather than under it. It is the
+      one rapid-trigger setting that is not per key and does not wait for the
+      apply bar — one checkbox in a panel of its own, which as a full-width
+      band below read as another step in the same sequence. Off to the side it
+      is plainly a separate thing about the same subject, and the column it
+      leaves frees the space the sliders now take.
+    */
+    <div className="rt-split">
       <Panel title={t('rt.title')}>
 
         {lastRead === null && (
@@ -168,42 +172,42 @@ export function RapidTrigger() {
           {enabledCommon === null && <span className="small dim">({t('actuation.mixed')})</span>}
         </label>
 
-        <div className="row" style={{ marginTop: 12, opacity: enabledCommon === false ? 0.5 : 1 }}>
-          <label className="small dim">
-            {t('rt.pressSensitivity')}
-            <input
-              type="number"
-              {...held}
+        {/*
+          One line each, stacked, so the two tracks share a left edge and a
+          length: with press above release, which of the pair is the wider is
+          visible without reading either number. The spinners are still there
+          for the exact count.
+        */}
+        <div style={{ marginTop: 12, opacity: enabledCommon === false ? 0.5 : 1 }}>
+          <SliderRows>
+            <SliderRow
+              held={held}
+              label={t('rt.pressSensitivity')}
               min={RT_MIN_MM}
               max={limit}
               step={MM_PER_COUNT}
               value={first.pressMm}
               disabled={none || enabledCommon === false}
-              onChange={(e) => setSensitivity(Number(e.target.value))}
-              style={{ width: 90, display: 'block', marginTop: 4 }}
+              onValue={setSensitivity}
             />
-          </label>
-          <label className="small dim">
-            {t('rt.releaseSensitivity')}
-            <input
-              type="number"
-              {...held}
+            <SliderRow
+              held={held}
+              label={t('rt.releaseSensitivity')}
               min={RT_MIN_MM}
               max={limit}
               step={MM_PER_COUNT}
               value={first.releaseMm}
               disabled={none || enabledCommon === false}
-              onChange={(e) => patch({ releaseMm: quantizeMm(Number(e.target.value)) })}
-              style={{ width: 90, display: 'block', marginTop: 4 }}
+              onValue={(mm) => patch({ releaseMm: quantizeMm(mm) })}
             />
-          </label>
-          <span className="small dim" style={{ alignSelf: 'end' }}>
+          </SliderRows>
+          <div className="small dim" style={{ marginTop: 6 }}>
             {t('rt.counts', {
               press: mmToCounts(first.pressMm),
               release: mmToCounts(first.releaseMm),
               max: KEY_PERF_LIMITS.rtMax,
             })}
-          </span>
+          </div>
         </div>
 
         <div className="row" style={{ marginTop: 10, opacity: enabledCommon === false ? 0.5 : 1 }}>
@@ -216,27 +220,6 @@ export function RapidTrigger() {
               onChange={(e) => patch({ continuous: e.target.checked })}
             />
           </label>
-        </div>
-
-        {/* Board next to pending, the same way the actuation panel does it. */}
-        <div className="row" style={{ marginTop: 12, alignItems: 'baseline' }}>
-          <span className="small dim">{t('actuation.target', { count: targets.length })}</span>
-          <span className="small">
-            <span className="dim">{t('actuation.board')} </span>
-            <b className="mono">{describe(boardEnabled, boardPress, boardRelease, boardMode, t)}</b>
-          </span>
-          <span className="small">
-            <span className="dim">→ {t('actuation.pending')} </span>
-            <b className="mono" style={{ color: 'var(--warn)' }}>
-              {describe(
-                enabledCommon,
-                common(configs, targets, (c) => c.rapidTrigger.pressMm),
-                common(configs, targets, (c) => c.rapidTrigger.releaseMm),
-                common(configs, targets, (c) => c.rapidTrigger.continuous),
-                t,
-              )}
-            </b>
-          </span>
         </div>
 
         {belowFactory.length > 0 && (
@@ -273,21 +256,6 @@ export function RapidTrigger() {
       </Panel>
 
       <BottomOutTrigger />
-    </>
+    </div>
   )
-}
-
-/** "off", "0.10", "0.10 / 0.20 FULL", or "여러 값" when the targets disagree. */
-function describe(
-  enabled: boolean | null,
-  press: number | null,
-  release: number | null,
-  continuous: boolean | null,
-  t: (k: 'perf.off' | 'actuation.mixed' | 'rt.full', p?: Record<string, string | number>) => string,
-): string {
-  if (enabled === null) return t('actuation.mixed')
-  if (!enabled) return t('perf.off')
-  if (press === null || release === null) return t('actuation.mixed')
-  const value = press === release ? press.toFixed(2) : `${press.toFixed(2)} / ${release.toFixed(2)}`
-  return continuous ? `${value} ${t('rt.full')}` : value
 }

@@ -395,10 +395,7 @@
       "deep": "깊음 {mm}mm"
     },
     "board": "보드",
-    "pending": "변경 예정",
-    "target": "대상 {count}개 키",
     "mixed": "여러 값",
-    "travelNote": "최대값은 선택한 키에 꽂힌 스위치의 총 스트로크({travel}mm)입니다.",
     "unread": "아직 보드를 읽지 않았습니다. 위 “보드 현재 설정”에서 읽은 뒤 조절하세요.",
     "deeperThanTravel": "{count}개 키의 액추에이션이 스위치 총 스트로크를 넘습니다."
   },
@@ -409,7 +406,6 @@
     "pressSensitivity": "누름 민감도 (mm)",
     "releaseSensitivity": "뗌 민감도 (mm)",
     "continuous": "연속 모드 (액추에이션 위에서도 동작)",
-    "full": "FULL",
     "counts": "누름 {press} / 뗌 {release} counts (필드 최대 {max})",
     "belowFactory": "{count}개 키의 민감도가 공장 기본값 {mm}mm 보다 낮습니다. 정지 상태 노이즈가 입력으로 새어 나올 수 있습니다.",
     "noRoom": "{count}개 키는 래피드 트리거가 동작할 구간이 없습니다 — 민감도가 액추에이션 아래 남은 스트로크보다 큽니다. 연속 모드를 켜거나 민감도를 줄이세요."
@@ -420,7 +416,12 @@
     "enable": "선택한 키에 데드존 사용",
     "top": "위쪽 (mm)",
     "bottom": "아래쪽 (mm)",
-    "limit": "필드가 5비트라 최대 {mm}mm({counts} counts)입니다. 넘기면 값이 접혀 들어갑니다."
+    "limit": "필드가 5비트라 최대 {mm}mm({counts} counts)입니다. 넘기면 값이 접혀 들어갑니다.",
+    "offConfirm": {
+      "title": "데드존 해제",
+      "body": "데드존을 끄면 의도치 않는 입력이 발생하거나 입력이 끊기는 문제가 발생할 수 있습니다.",
+      "continue": "계속"
+    }
   },
 
   "advanced": {

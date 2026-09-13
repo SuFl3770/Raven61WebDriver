@@ -1,10 +1,9 @@
 import { useT, type MessageKey } from '../i18n'
-import { T } from '../i18n/T'
 import { useLayout } from '../device/active'
 import { travelMmFor } from '../device/tables'
 import { MM_PER_COUNT, mmToCounts, quantizeMm } from '../protocol/encoding'
 import type { KeyConfig } from '../protocol/types'
-import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/config'
+import { configStore, useKeyConfigs, useLastRead } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { Notice, Panel } from '../ui/Panel'
 import { useHeldWrites } from '../ui/useHeldWrites'
@@ -49,7 +48,6 @@ function commonActuation(
 export function Actuation() {
   const { keys } = useLayout()
   const configs = useKeyConfigs()
-  const base = useBaseline()
   const lastRead = useLastRead()
   const sel = useSelection()
   const t = useT()
@@ -59,7 +57,6 @@ export function Actuation() {
   const targets = targetKeys(sel)
   const limit = travelLimit(configs, targets)
   const pending = commonActuation(configs, targets)
-  const onBoard = commonActuation(base, targets)
   const first = configs[targets[0] ?? 0]
 
   // Targets are read at event time, not render time: a click and the slider
@@ -101,73 +98,61 @@ export function Actuation() {
       )}
 
 
-      <div className="row" style={{ marginTop: 16 }}>
+      {/*
+        Stood up, shallow at the top and the bottom of the stroke at the
+        bottom. The value is a depth into a switch, and the switch goes down:
+        laid out across the page the control was the only thing on this tab
+        that had to be read against its own labels to know which end was which.
+
+        The spinner sits beside the track rather than under it, and the row
+        centres, so it lands at the slider's mid height — level with the middle
+        of the range it edits instead of hanging off one end of it.
+      */}
+      <div className="depth-stack" style={{ marginTop: 16 }}>
         <Slider
           {...held}
+          vertical
           disabled={none}
           min={MM_PER_COUNT}
           max={limit}
           step={MM_PER_COUNT}
           value={shown}
           onChange={(e) => setActuation(Number(e.target.value))}
-          style={{ flex: '1 1 260px' }}
         />
-        <input
-          type="number"
-          {...held}
-          disabled={none}
-          min={MM_PER_COUNT}
-          max={limit}
-          step={MM_PER_COUNT}
-          value={shown}
-          onChange={(e) => setActuation(Number(e.target.value))}
-          style={{ width: 90 }}
-        />
-        <span className="dim small">
-          {t('actuation.counts', {
-            counts: mmToCounts(shown),
-            step: MM_PER_COUNT,
-            travel: limit.toFixed(2),
-          })}
-        </span>
-      </div>
+        <div className="col depth-side">
+          <div className="row">
+            <input
+              type="number"
+              {...held}
+              disabled={none}
+              min={MM_PER_COUNT}
+              max={limit}
+              step={MM_PER_COUNT}
+              value={shown}
+              onChange={(e) => setActuation(Number(e.target.value))}
+              style={{ width: 90 }}
+            />
+            <span className="dim small">
+              {t('actuation.counts', {
+                counts: mmToCounts(shown),
+                step: MM_PER_COUNT,
+                travel: limit.toFixed(2),
+              })}
+            </span>
+          </div>
 
-      <div className="row" style={{ marginTop: 10 }}>
-        {PRESETS.map((p) => (
-          <button
-            key={p.value}
-            disabled={none || p.value > limit}
-            onClick={() => setActuation(p.value)}
-          >
-            {t(p.labelKey, { mm: p.value.toFixed(1) })}
-          </button>
-        ))}
-      </div>
-
-      {/*
-        Board value next to the pending one. Without it the slider shows a
-        number with no way to tell whether it is what the hardware holds or an
-        edit waiting to be applied — and the whole point of reading the board on
-        entry was to stop showing values that only exist in this app.
-      */}
-      <div className="row" style={{ marginTop: 12, alignItems: 'baseline' }}>
-        <span className="small dim">{t('actuation.target', { count: targets.length })}</span>
-        <span className="small">
-          <span className="dim">{t('actuation.board')} </span>
-          <b className="mono">{onBoard === null ? t('actuation.mixed') : onBoard.toFixed(2)}</b>
-        </span>
-        {pending !== onBoard && (
-          <span className="small">
-            <span className="dim">→ {t('actuation.pending')} </span>
-            <b className="mono" style={{ color: 'var(--warn)' }}>
-              {pending === null ? t('actuation.mixed') : pending.toFixed(2)}
-            </b>
-          </span>
-        )}
-      </div>
-
-      <div className="small dim" style={{ marginTop: 6 }}>
-        <T k="actuation.travelNote" params={{ travel: limit.toFixed(2) }} />
+          <div className="row">
+            {PRESETS.map((p) => (
+              <button
+                key={p.value}
+                disabled={none || p.value > limit}
+                onClick={() => setActuation(p.value)}
+              >
+                {t(p.labelKey, { mm: p.value.toFixed(1) })}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {tooDeep.length > 0 && (

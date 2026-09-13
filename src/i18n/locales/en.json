@@ -403,14 +403,9 @@
       "deep": "Deep {mm} mm"
     },
     "board": "Board",
-    "pending": "Pending",
-    "target": "{count} keys targeted",
     "mixed": "mixed",
-    "travelNote": "The maximum is the total travel of the switch fitted to the selected keys ({travel} mm).",
     "unread": "The board has not been read yet. Read it in \"Current board settings\" above, then adjust.",
     "deeperThanTravel": "{count} keys have an actuation point deeper than their switch travel.",
-    "target_one": "1 key targeted",
-    "target_other": "{count} keys targeted",
     "deeperThanTravel_one": "1 key has an actuation point deeper than its switch travel.",
     "deeperThanTravel_other": "{count} keys have an actuation point deeper than their switch travel."
   },
@@ -421,7 +416,6 @@
     "pressSensitivity": "Press sensitivity (mm)",
     "releaseSensitivity": "Release sensitivity (mm)",
     "continuous": "Continuous mode (works above the actuation point too)",
-    "full": "FULL",
     "counts": "press {press} / release {release} counts (field max {max})",
     "belowFactory": "{count} keys have a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
     "noRoom": "{count} keys have no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity.",
@@ -436,7 +430,13 @@
     "enable": "Enable dead zone on the selected keys",
     "top": "Top (mm)",
     "bottom": "Bottom (mm)",
-    "limit": "The field is 5 bits, so {mm} mm ({counts} counts) is the maximum. Past that the value wraps."
+    "limit": "The field is 5 bits, so {mm} mm ({counts} counts) is the maximum. Past that the value wraps.",
+    "offConfirm": {
+      "title": "Turn the dead zone off",
+      "body_one": "The top and bottom of the stroke go back to being read as input on {count} selected key. Noise at either end can leak through.",
+      "body_other": "The top and bottom of the stroke go back to being read as input on {count} selected keys. Noise at either end can leak through.",
+      "continue": "Continue"
+    }
   },
 
   "advanced": {
