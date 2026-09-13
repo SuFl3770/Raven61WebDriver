@@ -143,37 +143,32 @@ export function Events() {
   return (
     <>
       <Panel title={t('events.title')}>
-        <Notice>
-          <span className="small">
-            <T k="events.intro" />
-          </span>
-        </Notice>
         <div className="row" style={{ marginTop: 12 }}>
           <button className="primary" onClick={() => setListening((v) => !v)} disabled={!connected}>
             {listening ? t('events.stop') : t('events.start')}
           </button>
           <button onClick={() => setEvents([])}>{t('events.clear')}</button>
           <label className="small dim">
+            {t('events.onlyEvents')}{' '}
             <input
               type="checkbox"
               checked={onlyEvents}
               onChange={(e) => setOnlyEvents(e.target.checked)}
-            />{' '}
-            {t('events.onlyEvents')}
+            />
           </label>
           <label className="small dim">
-            <input
-              type="checkbox"
-              checked={arm}
-              disabled={!connected}
-              onChange={(e) => void setArmed(e.target.checked)}
-            />{' '}
             <T
               k="events.armStream"
               params={{
                 arm: commandHex(analogModeCommands().arm),
                 disarm: commandHex(analogModeCommands().disarm),
               }}
+            />{' '}
+            <input
+              type="checkbox"
+              checked={arm}
+              disabled={!connected}
+              onChange={(e) => void setArmed(e.target.checked)}
             />
           </label>
           <span className="small dim">{t('events.received', { count: events.length })}</span>

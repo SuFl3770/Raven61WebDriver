@@ -113,6 +113,25 @@ export const ADVANCED_KINDS = ['dks', 'tgl', 'mt', 'rs', 'socd', 'oks'] as const
 
 export type AdvancedKind = (typeof ADVANCED_KINDS)[number]
 
+/**
+ * Kinds the firmware decodes but does not run reliably.
+ *
+ * OKS is read and written here like the other five, and the bytes go in and
+ * read back as sent — but the handler behind them misbehaves on the board, so
+ * a key bound to one does not do what the record says. That is not something a
+ * host can encode its way out of, so the advanced-keys tab leaves the section
+ * off its strip and nobody is offered a setting that will not hold.
+ *
+ * A claim about the firmware rather than about the table, which is why it sits
+ * beside the kinds and not in `AdvancedKeySpec`: every board this codec drives
+ * runs the same handler. A board that fixed it would be the reason to move this
+ * into the spec and let each one say for itself.
+ *
+ * Debug mode ignores the list — an unstable kind is exactly what the protocol
+ * work needs to be able to reach. See features/Advanced.
+ */
+export const UNSTABLE_KINDS: readonly AdvancedKind[] = ['oks']
+
 export const ADVANCED_TYPE: Record<AdvancedKind, number> = {
   dks: RECORD_TYPE.dks,
   tgl: RECORD_TYPE.tgl,

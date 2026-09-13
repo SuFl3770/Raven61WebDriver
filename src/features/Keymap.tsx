@@ -4,6 +4,7 @@ import { T } from '../i18n/T'
 import { KEYBOARD_ROWS, keycodeLabel } from '../keyboard/keycodes'
 import { useDeviceSpec, useLayout } from '../device/active'
 import type { KeyDef } from '../device/spec'
+import { kindOfType } from '../protocol/advancedKeys'
 import { supports } from '../protocol/codec'
 import {
   BINDING_GROUPS,
@@ -24,6 +25,7 @@ import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
 import { useSettings } from '../state/settings'
 import { KeyGrid } from '../ui/KeyGrid'
+import { KindChip } from '../ui/KindChip'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { GridFrame } from '../ui/GridFrame'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
@@ -199,6 +201,19 @@ function capBinding(
   if (!binding) return undefined
   const label = bindingLabel(binding, keycodeLabel)
   if (edited) return <span className="pending">{label}</span>
+  /*
+   * Nothing on the second line for a key that runs an advanced key: the grid
+   * draws that as a band along the cap's bottom edge, and `Adv key 3` here
+   * would be the same fact again as a record number pointing at a table this
+   * tab does not read.
+   *
+   * Never a pending edit, which is why this is below that branch and not above
+   * it: the picker has no advanced group (see `bindingGroups`), so an advanced
+   * binding on this tab is always one the board reported. Editing a cap that
+   * has one replaces it with whatever was picked, and the pending line above
+   * reads that out like any other.
+   */
+  if (binding.kind === 'advanced') return undefined
   // An explicit `KC_NO` shows on every layer: it is a setting, and one whose
   // whole visible effect is that the key stopped working. Only the factory's
   // never-set marker is hidden, and only off the base layer — see bindingLabel.
@@ -304,6 +319,12 @@ export function Keymap() {
   const pickedKey = selected === null ? undefined : keys.find((k) => k.index === selected)
   const pickedBinding = selected === null ? undefined : shownBinding(read, layerEdits, selected)
   const pickedEdited = selected !== null && layerEdits[selected] !== undefined
+  /* The picked key's advanced record, when it has one and is not mid-edit —
+     the readout draws it as a chip and a record number rather than as the
+     `Adv key 3` that is all `bindingLabel` can make of three bytes. */
+  const pickedAdvanced =
+    pickedBinding?.kind === 'advanced' && !pickedEdited ? pickedBinding : undefined
+  const pickedAdvancedKind = pickedAdvanced && kindOfType(pickedAdvanced.type)
 
   const readLayer = useCallback(
     async (which: number) => {
@@ -656,9 +677,6 @@ export function Keymap() {
           {t('keymap.macro.inUse')} — {macroUses.map((u) => `#${u.macro} ${u.label}`).join(', ')}
         </div>
       )}
-      <div className="small dim" style={{ marginTop: 10 }}>
-        <T k="keymap.macro.note" />
-      </div>
       {debug && (
         <div className="small dim" style={{ marginTop: 6 }}>
           <T k="keymap.macro.slotsUnlocked" params={{ total: spec.macros.slots }} />
@@ -742,9 +760,6 @@ export function Keymap() {
           <T k="keymap.debug.unsafe" />
         </div>
       )}
-      <div className="small dim" style={{ marginTop: 10 }}>
-        <T k="keymap.debug.note" />
-      </div>
     </>
   )
 
@@ -991,12 +1006,19 @@ export function Keymap() {
               edits. In the bar rather than on a strip of its own because it is
               the grid's own state — the same place the input-point tab keeps
               what acts on its grid.
+
+              Drawn as a section strip all the same (`.layer-tabs`): picking a
+              layer is picking one of a handful of views of the same keyboard,
+              which is what the strip below the grid means, and a row of
+              buttons with one of them lit said "three things you can press"
+              instead.
             */}
-            <div className="row" style={{ gap: 4 }} role="group" aria-label={t('keymap.layers')}>
+            <div className="layer-tabs" role="tablist" aria-label={t('keymap.layers')}>
               {Array.from({ length: spec.keymap.layers }, (_, i) => (
                 <button
                   key={i}
-                  className={i === layer ? 'primary' : ''}
+                  role="tab"
+                  aria-selected={i === layer}
                   onClick={() => setLayer(i)}
                 >
                   {layerName(i)}
@@ -1014,9 +1036,24 @@ export function Keymap() {
                   {pickedBinding && (
                     <>
                       {' → '}
-                      <span className={pickedEdited ? 'pending' : undefined}>
-                        {bindingLabel(pickedBinding, keycodeLabel)}
-                      </span>
+                      {/*
+                        The same chip the cap carries, so the line under the
+                        grid and the key it is about say the same thing — and
+                        the record number after it, which is the one fact the
+                        chip drops and the only one this tab can act on. Kept
+                        out of the `pending` span because an advanced binding is
+                        never an edit here: the picker has no advanced group.
+                      */}
+                      {pickedAdvanced && pickedAdvancedKind ? (
+                        <span>
+                          <KindChip kind={pickedAdvancedKind} />{' '}
+                          {t('keymap.pickedRecord', { record: pickedAdvanced.record })}
+                        </span>
+                      ) : (
+                        <span className={pickedEdited ? 'pending' : undefined}>
+                          {bindingLabel(pickedBinding, keycodeLabel)}
+                        </span>
+                      )}
                     </>
                   )}
                 </>
@@ -1045,6 +1082,17 @@ export function Keymap() {
              the second line of every cap, and this is what fades the new one
              in — the same treatment the input-point tab's sections get. */
           subKey={String(layer)}
+          /* This tab's own layer, rather than the base one the grid would
+             otherwise answer with — and only once it has been read. See the
+             `advanced` prop. */
+          advanced={
+            read
+              ? (k) => {
+                  const b = shownBinding(read, layerEdits, k.index)
+                  return b?.kind === 'advanced' ? kindOfType(b.type) : undefined
+                }
+              : true
+          }
           sub={(k) =>
             capBinding(
               k,

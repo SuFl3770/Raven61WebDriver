@@ -250,33 +250,33 @@ export function Prober() {
 
       {mode === 'frame' && (
         <label className="small dim" style={{ display: 'block', marginTop: 10 }}>
-          <input type="checkbox" checked={knownOnly} onChange={(e) => setKnownOnly(e.target.checked)} />{' '}
-          {t('prober.knownOnly', { count: KNOWN_COMMANDS.length })}
+          {t('prober.knownOnly', { count: KNOWN_COMMANDS.length })}{' '}
+          <input type="checkbox" checked={knownOnly} onChange={(e) => setKnownOnly(e.target.checked)} />
         </label>
       )}
       {mode === 'frame' && (
         <label className="small dim" style={{ display: 'block', marginTop: 6 }}>
-          <input type="checkbox" checked={skipRisky} onChange={(e) => setSkipRisky(e.target.checked)} />{' '}
           {t('prober.safeOnly', {
             commands: [...SAFE].map((c) => `0x${c.toString(16).padStart(2, '0')}`).join(', '),
-          })}
+          })}{' '}
+          <input type="checkbox" checked={skipRisky} onChange={(e) => setSkipRisky(e.target.checked)} />
         </label>
       )}
       {mode !== 'feature' && (
         <label className="small dim" style={{ display: 'block', marginTop: 6 }}>
-          <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />{' '}
-          {t('prober.wrap')}
+          {t('prober.wrap')}{' '}
+          <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />
         </label>
       )}
 
       <div className="row" style={{ marginTop: 12 }}>
         <label className="small">
+          {t('prober.acknowledge')}{' '}
           <input
             type="checkbox"
             checked={acknowledged}
             onChange={(e) => setAcknowledged(e.target.checked)}
-          />{' '}
-          {t('prober.acknowledge')}
+          />
         </label>
         <button className="primary" onClick={start} disabled={!connected || running || !acknowledged}>
           {t('prober.start')}

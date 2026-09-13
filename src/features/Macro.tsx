@@ -559,9 +559,6 @@ export function Macro() {
       <>
         <Panel title={t('macro.title')}>
           <NotDecoded what="macro.what" />
-          <div className="small dim" style={{ marginTop: 8 }}>
-            <T k="macro.note" />
-          </div>
         </Panel>
       </>
     )

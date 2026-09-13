@@ -154,6 +154,7 @@ export function RapidTrigger() {
 
 
         <label className="row" style={{ marginTop: 16 }}>
+          <span>{t('rt.enable')}</span>
           <input
             type="checkbox"
             disabled={none}
@@ -165,7 +166,6 @@ export function RapidTrigger() {
             }}
             onChange={(e) => setEnabled(e.target.checked)}
           />
-          <span>{t('rt.enable')}</span>
           {enabledCommon === null && <span className="small dim">({t('actuation.mixed')})</span>}
         </label>
 
@@ -209,13 +209,13 @@ export function RapidTrigger() {
 
         <div className="row" style={{ marginTop: 10, opacity: enabledCommon === false ? 0.5 : 1 }}>
           <label className="small">
+            {t('rt.continuous')}{' '}
             <input
               type="checkbox"
               checked={first.continuous}
               disabled={none || enabledCommon === false}
               onChange={(e) => patch({ continuous: e.target.checked })}
-            />{' '}
-            {t('rt.continuous')}
+            />
           </label>
         </div>
 
@@ -238,14 +238,6 @@ export function RapidTrigger() {
               )}
             </b>
           </span>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <Notice>
-            <span className="small">
-              <T k="rt.noise" params={{ step: MM_PER_COUNT }} />
-            </span>
-          </Notice>
         </div>
 
         {belowFactory.length > 0 && (

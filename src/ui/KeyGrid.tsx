@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useActiveDevice, useLayout } from '../device/active'
 import type { KeyDef } from '../device/spec'
 import { useT } from '../i18n'
+import { kindKey, kindOfType, type AdvancedKind } from '../protocol/advancedKeys'
 import { useBand } from './GridFrame'
 import { legendFor, useLegends } from '../state/legends'
 
@@ -123,6 +124,28 @@ export interface KeyGridProps {
    */
   label?: (key: KeyDef) => string | undefined
   /**
+   * Draw the advanced-key band along the bottom edge of the caps that run one.
+   *
+   * `true` is "answer it yourself", from the base layer the legend store holds.
+   * That is the form the tabs about *bindings* take — the overview and the two
+   * below — and it is what keeps the band still while they are switched
+   * between: the store is read once per connection and is already there, so
+   * there is no moment where a tab has arrived and its own answer has not.
+   *
+   * A callback is a grid that shows one layer at a time saying which. The store
+   * only holds the base layer, and its band would be wrong the moment the Fn
+   * layer is opened. Both callers fall back to `true` until their own read has
+   * landed, rather than to nothing — a band that vanished for the length of a
+   * read is the flicker this is arranged to avoid.
+   *
+   * Omitted on the grids that are about something else: what the switch under
+   * the key is, what the key is lit, what the sensor under it reads. A band
+   * there is a fact from another tab painted over the one being edited — and on
+   * two of them it would be painted over the setting itself, which is the cap's
+   * own colour and the stripe along the same edge.
+   */
+  advanced?: true | ((key: KeyDef) => AdvancedKind | undefined)
+  /**
    * Draw the board's own printing, ignoring the keymap.
    *
    * For the grids that are about the key as a piece of hardware rather than as
@@ -162,6 +185,10 @@ interface CapSaid {
   text?: ReactNode
   /** Whether that line has anything to say at the moment. */
   saying: boolean
+  /** The advanced key's band, kept after the cap stops running one. */
+  adv?: AdvancedKind
+  /** Whether that band is on the cap, rather than on its way off it. */
+  advOn: boolean
   /** What it is about, so a change of subject reads differently to a new value. */
   about?: string
   /** Which element is showing it — see the note above. */
@@ -194,6 +221,7 @@ export function KeyGrid({
   onHover,
   label,
   status,
+  advanced,
   physical,
 }: KeyGridProps) {
   // The board's own key table and size in units. A different keyboard is a
@@ -326,6 +354,19 @@ export function KeyGrid({
     }
   }
 
+  /**
+   * Which advanced key a cap runs, or nothing on a grid that does not say.
+   *
+   * The caller's answer when it gave a callback, the base layer's when it asked
+   * for one — see the `advanced` prop.
+   */
+  const advancedOf = (key: KeyDef): AdvancedKind | undefined => {
+    if (!advanced) return undefined
+    if (advanced !== true) return advanced(key)
+    const binding = entries[key.index]?.binding
+    return binding?.kind === 'advanced' ? kindOfType(binding.type) : undefined
+  }
+
   /*
    * A keyboard no spec claims gets no grid.
    *
@@ -357,11 +398,15 @@ export function KeyGrid({
       ref={grid}
       /*
        * `flagged` means the caps are carrying a per-key state on their edge,
-       * which today is only a calibration pass. The class is derived from
-       * `status` rather than passed in, so the grid cannot be told it is
-       * showing states while no cap has one.
+       * which today is only a calibration pass. `painted` means their colour
+       * is the board's rather than this app's — the lighting tab, and only it.
+       * Both are derived from the callback that does the drawing rather than
+       * passed in, so the grid cannot be told it is showing something while no
+       * cap has it.
        */
-      className={`keygrid${onToggle ? ' selectable' : ''}${status ? ' flagged' : ''}`}
+      className={`keygrid${onToggle ? ' selectable' : ''}${status ? ' flagged' : ''}${
+        tint ? ' painted' : ''
+      }`}
       /*
        * The board's own proportions. Every cap inside is placed as a percentage
        * of `units`, so the one thing left that has to know the shape is the box
@@ -401,6 +446,7 @@ export function KeyGrid({
           const colour = stripe?.(k)
           const text = sub?.(k)
           const saying = Boolean(text)
+          const adv = advancedOf(k)
           // A line already saying something about a different subject is
           // replaced rather than rewritten.
           const turned = cap?.saying === true && saying && cap.about !== subKey
@@ -413,6 +459,10 @@ export function KeyGrid({
             saying,
             about: saying ? subKey : cap?.about,
             id: (cap?.id ?? 0) + (turned ? 1 : 0),
+            // The kind outlives the running of it, for the same reason the
+            // stripe's colour does: a band cannot leave with nothing on it.
+            adv: adv ?? cap?.adv,
+            advOn: adv !== undefined,
           }
           saidOn.set(k.index, cap)
         }
@@ -475,30 +525,55 @@ export function KeyGrid({
               className={`stripe${cap?.banded ? '' : ' gone'}`}
               style={cap?.band ? { background: cap.band } : undefined}
             />
+            {/*
+              The advanced key's band, drawn and hidden the same way the stripe
+              above it is: always on the cap, pushed out through the bottom edge
+              when the key is not running one. The word goes inside the fill
+              rather than beside it — six kinds is more than a colour can carry
+              on its own — and the legend does not move over for it, so a row of
+              caps reads level whether or not they are bound.
+            */}
+            <span
+              className={`advband${cap?.advOn ? '' : ' gone'}${
+                cap?.adv ? ` advband-${cap.adv}` : ''
+              }`}
+            >
+              {cap?.adv ? t(kindKey(cap.adv)) : null}
+            </span>
             <span className="cap-label">{given ?? legend?.text ?? k.label}</span>
             {/*
-              Always here once a grid has a second line to give, even on the
-              caps and in the sections where there is nothing to put on it —
-              an empty slot is a closed slot, and it is the slot opening and
-              closing that moves the legend gently rather than in one step.
-              See `.sub-slot` in styles.css for how a row of no height is
-              animated to the height of its contents.
-            */}
-            {sub && (
-              <span
-                className={`sub-slot${subLive ? ' at-once' : ''}${
-                  cap?.saying ? '' : ' shut'
-                }`}
-              >
-                <span
-                  key={cap?.id ?? 0}
-                  className={`sub cap-label${subClass ? ` ${subClass}` : ''}`}
-                >
-                  {cap?.text}
-                </span>
-              </span>
+              Always here, the way the two bands above it are, even on the caps
+              and in the sections where there is nothing to put on it — an empty
+              slot is a closed slot, and it is the slot opening and closing that
+              moves the legend gently rather than in one step. See `.sub-slot`
+              in styles.css for how a row of no height is animated to the height
+              of its contents.
 
-            )}
+              Unconditional rather than `sub &&`, which is what it was. A tab
+              that gives no second line at all — the advanced-key one — dropped
+              the element outright, so the cap it was replacing had nothing left
+              to close: 87 legends fell 7px in a single frame on the way in from
+              the input-point tab. The carry in `CapSaid` cannot help with that,
+              because what it keeps is what the slot *says* and the slot was
+              gone. So it stays, shut and empty, and the tab it is leaving gets
+              its exit.
+            */}
+            <span
+              className={`sub-slot${subLive ? ' at-once' : ''}${cap?.saying ? '' : ' shut'}`}
+              /*
+                A shut slot is clipped to nothing, but the text it is holding
+                on its way out is still in the tree — and the cap is a button,
+                so that text is part of its name. Without this a cap on the
+                advanced-key tab announces as "Esc 1.50": the actuation value
+                the input-point tab left behind, read out on a tab that is not
+                about actuation. Hidden while shut, on the way out and after.
+              */
+              aria-hidden={!cap?.saying}
+            >
+              <span key={cap?.id ?? 0} className={`sub cap-label${subClass ? ` ${subClass}` : ''}`}>
+                {cap?.text}
+              </span>
+            </span>
           </button>
         )
       })}

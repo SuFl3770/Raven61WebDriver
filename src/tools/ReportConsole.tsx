@@ -223,8 +223,8 @@ export function ReportConsole() {
 
             <div className="row" style={{ marginTop: 10 }}>
               <label className="small dim">
-                <input type="checkbox" checked={block} onChange={(e) => setBlock(e.target.checked)} />{' '}
-                {t('console.blockMode')}
+                {t('console.blockMode')}{' '}
+                <input type="checkbox" checked={block} onChange={(e) => setBlock(e.target.checked)} />
               </label>
               {block && (
                 <>
@@ -251,8 +251,8 @@ export function ReportConsole() {
             </div>
             <div className="row" style={{ marginTop: 10 }}>
               <label className="small dim">
-                <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />{' '}
-                {t('console.wrap')}
+                {t('console.wrap')}{' '}
+                <input type="checkbox" checked={wrap} onChange={(e) => setWrap(e.target.checked)} />
               </label>
               <label className="small dim">
                 {t('console.repeat')}

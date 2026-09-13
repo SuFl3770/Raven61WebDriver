@@ -146,10 +146,6 @@ export function BoardSettings() {
 
   return (
     <Panel title={t('board.title')}>
-      <div className="small dim" style={{ marginBottom: 12 }}>
-        <T k="board.hint" />
-      </div>
-
       <div className="row">
         <span className="small dim" style={{ minWidth: 96 }}>
           {t('board.rate.label')}
@@ -184,10 +180,6 @@ export function BoardSettings() {
         </span>
       </div>
 
-      <div className="small dim" style={{ marginTop: 6 }}>
-        <T k="board.rate.note" />
-      </div>
-
       <div className="row" style={{ marginTop: 12 }}>
         <span className="small dim" style={{ minWidth: 96 }}>
           {t('board.debounce.label')}
@@ -217,10 +209,6 @@ export function BoardSettings() {
           {t('actuation.board')}{' '}
           <b className="mono">{debounceLevelName(debounceOnBoard ?? undefined)}</b>
         </span>
-      </div>
-
-      <div className="small dim" style={{ marginTop: 10 }}>
-        <T k="board.debounce.hint" />
       </div>
 
       {/*

@@ -125,10 +125,6 @@ export function FactoryReset() {
 
   return (
     <Panel title={t('reset.title')}>
-      <div className="small dim" style={{ marginBottom: 12 }}>
-        <T k="reset.hint" />
-      </div>
-
       {!running && (
         <div className="row">
           <button className="danger" disabled={!connected} onClick={arm}>

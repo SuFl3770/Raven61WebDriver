@@ -284,23 +284,6 @@ export function PerfOverview() {
           ) : (
             <span>—</span>
           )}
-          <div style={{ marginTop: 4 }}>
-            <T k="perf.bottomOutNote" />
-            {global && (
-              <>
-                {' '}
-                <T
-                  k="perf.sameByte"
-                  params={{
-                    tachyon: global.tachyon ? t('perf.on') : t('perf.off'),
-                    actuationCheck: global.actuationCheck ? t('perf.on') : t('perf.off'),
-                    magnetTest: global.magnetTest ? t('perf.on') : t('perf.off'),
-                    debounce: global.debounceLevel,
-                  }}
-                />
-              </>
-            )}
-          </div>
         </div>
       </div>
 
@@ -309,8 +292,8 @@ export function PerfOverview() {
           {uniform ? t('perf.uniform') : t('perf.groups', { count: groups.length })}
         </span>
         <label className="small">
-          <input type="checkbox" checked={perKey} onChange={(e) => setPerKey(e.target.checked)} />{' '}
-          {t('perf.expandAll', { rows: keys.length })}
+          {t('perf.expandAll', { rows: keys.length })}{' '}
+          <input type="checkbox" checked={perKey} onChange={(e) => setPerKey(e.target.checked)} />
         </label>
       </div>
 
@@ -358,12 +341,6 @@ export function PerfOverview() {
             </strong>
             <div className="small" style={{ marginTop: 4 }}>
               {emptyKeys.map((k) => `${k.label}(${k.index})`).join(', ')}
-              <div style={{ marginTop: 4 }}>
-                <T
-                  k="perf.emptySlots.note"
-                  params={{ mm: MM_PER_COUNT.toFixed(2), switchName: switchTypeName(0) }}
-                />
-              </div>
             </div>
           </Notice>
         </div>
@@ -396,10 +373,6 @@ export function PerfOverview() {
           )}
         </div>
       )}
-
-      <div className="small dim" style={{ marginTop: 10 }}>
-        <T k="perf.footnote" params={{ step: MM_PER_COUNT.toFixed(2) }} />
-      </div>
     </Panel>
   )
 }

@@ -42,11 +42,8 @@ export function BottomOutTrigger() {
 
   return (
     <Panel title={t('bottomOut.title')}>
-      <div className="small dim" style={{ marginBottom: 10 }}>
-        <T k="bottomOut.hint" />
-      </div>
-
       <label className="row">
+        <span>{t('bottomOut.enable')}</span>
         <input
           type="checkbox"
           checked={onBoard ?? false}
@@ -56,7 +53,6 @@ export function BottomOutTrigger() {
           disabled={!connected || onBoard === null || !supports(codec, 'writeGlobalSettings')}
           onChange={(e) => void boardSync.applyGlobal({ bottomOutTrigger: e.target.checked })}
         />
-        <span>{t('bottomOut.enable')}</span>
         <span className="small dim">
           {onBoard === null ? '—' : onBoard ? t('perf.on') : t('perf.off')}
         </span>

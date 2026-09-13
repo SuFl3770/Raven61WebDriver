@@ -55,8 +55,8 @@ export function TrafficLogView() {
           style={{ flex: '1 1 240px' }}
         />
         <label className="small dim">
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />{' '}
-          {t('log.follow')}
+          {t('log.follow')}{' '}
+          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
         </label>
         <button onClick={() => download('raven61-traffic.txt', link.log.toText())}>
           {t('log.exportTxt')}
@@ -74,10 +74,6 @@ export function TrafficLogView() {
         >
           {t('log.clear')}
         </button>
-      </div>
-
-      <div className="small dim" style={{ margin: '8px 0 6px' }}>
-        {t('log.hint', { count: entries.length })}
       </div>
 
       <div className="log" ref={boxRef}>
