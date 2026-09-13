@@ -1,5 +1,4 @@
 import { useT } from '../i18n'
-import { T } from '../i18n/T'
 import { useLayout } from '../device/active'
 import { travelMmFor } from '../device/tables'
 import { FACTORY_DEFAULTS, MM_PER_COUNT, countsToMm, mmToCounts, quantizeMm } from '../protocol/encoding'

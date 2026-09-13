@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
-import { T } from '../i18n/T'
 import { supports } from '../protocol/codec'
 import { firmwareStore, useFirmware } from '../state/firmware'
 import { link, useCodec, useConnection } from '../state/link'
@@ -88,12 +87,6 @@ export function FirmwareInfo() {
               : '—'}
         </dd>
       </dl>
-
-      {firmware && (
-        <div className="small dim mono" style={{ marginTop: 12 }}>
-          {firmware.raw}
-        </div>
-      )}
 
       {error && (
         <div className="row" style={{ marginTop: 10 }}>

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import { useT, type MessageKey } from '../i18n'
-import { T } from '../i18n/T'
 
 export function Panel({
   title,

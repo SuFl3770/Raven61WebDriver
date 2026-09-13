@@ -144,9 +144,6 @@ export function FactoryReset() {
         <div className="small">
           <T k="reset.confirm.body" />
         </div>
-        <div className="small dim" style={{ marginTop: 8 }}>
-          <T k="reset.confirm.kept" />
-        </div>
         <DialogActions>
           {/*
             First in the source, so it is what the dialog puts the keyboard on

@@ -5,7 +5,7 @@ import { activeLayout, activeSpec, useDeviceSpec, useLayout } from '../device/ac
 import type { KeyDef } from '../device/spec'
 import { switchTypeName, travelMmFor } from '../device/tables'
 import { supports } from '../protocol/codec'
-import { MM_PER_COUNT, mmToCounts } from '../protocol/encoding'
+import { mmToCounts } from '../protocol/encoding'
 import {
   type GlobalSettings,
   type KeyConfig,

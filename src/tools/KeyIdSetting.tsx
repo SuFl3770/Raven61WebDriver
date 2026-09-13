@@ -1,5 +1,4 @@
 import { useT } from '../i18n'
-import { T } from '../i18n/T'
 import { sensorMap, useSensorMap } from '../state/sensorMap'
 import { Panel } from '../ui/Panel'
 
