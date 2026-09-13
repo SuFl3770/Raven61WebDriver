@@ -1,10 +1,11 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useDeviceSpec } from '../device/active'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
 import { keycodeLabel } from '../keyboard/keycodes'
 import {
   MT_HOLD_MS_PER_UNIT,
+  UNSTABLE_KINDS,
   decodeAdvancedRecord,
   decodePairRecord,
   dksStepsToMm,
@@ -15,21 +16,24 @@ import {
   recordHex,
   type AdvancedKind,
 } from '../protocol/advancedKeys'
+import { supports } from '../protocol/codec'
 import { bindingLabel, type KeyBinding } from '../protocol/keymap'
 import type { AdvancedKeySnapshot, AdvancedKeyUse } from '../protocol/types'
-import { Notice, Panel } from '../ui/Panel'
+import { link, useCodec, useConnection } from '../state/link'
+import { NotDecoded, Notice, Panel } from '../ui/Panel'
 
 /**
- * What the open layer already runs, as a table.
+ * What the board already runs, as a table.
  *
- * A section of the advanced-keys tab rather than a panel stacked under the
- * editor, because it answers a different question: the strip above chooses one
- * record to write, this one says what has been written. Under the editor it was
- * a readout of the whole layer that had to be scrolled past to reach the fields.
+ * It answers a different question from the tab it came out of: the advanced-key
+ * tab chooses one record to write, this says what has been written. That is why
+ * it is a section of the overview rather than a seventh section on the strip
+ * over there — the other six open an editor, and this one never did.
  *
- * Handed the snapshot rather than reading one. The tab it sits in has already
- * read the three tables — a second read here would ask the board for bytes it
- * is holding one component up, and could disagree with the grid above it.
+ * Handed the snapshot rather than reading one, so that whoever owns the read
+ * owns it alone: two reads of the same three tables could disagree, and the
+ * advanced-key tab's read also sweeps orphans, which is a write. See
+ * `useAdvancedSnapshot` for the plain read the overview does.
  */
 export function AdvancedInUse({
   snapshot,
@@ -38,7 +42,13 @@ export function AdvancedInUse({
   hidden,
 }: {
   snapshot: AdvancedKeySnapshot | null
-  /** The open layer's uses, already filtered by the tab that owns the strip. */
+  /**
+   * The open layer's uses, already filtered by the owner.
+   *
+   * Both owners have a layer strip in the grid's bar — which key runs an
+   * advanced key is a keymap entry, so it is per layer, and a table that mixed
+   * them would contradict the strip above it.
+   */
   uses: readonly AdvancedKeyUse[]
   /*
    * Whether the two protocol columns are drawn — which record holds the setting
@@ -50,9 +60,9 @@ export function AdvancedInUse({
    */
   debug: boolean
   /**
-   * Kinds the strip above is not offering a section for — see `UNSTABLE_KINDS`.
-   * Empty in debug mode. A layer can still hold one of these, written before
-   * the block or by the stock driver, and a row nothing on the strip can open
+   * Kinds the advanced-key tab is not offering an editor for — see
+   * `UNSTABLE_KINDS`. Empty in debug mode. A board can still hold one of them,
+   * written before this app or by the stock driver, and a row nobody can open
    * is the one thing this table would otherwise leave unexplained.
    */
   hidden: readonly AdvancedKind[]
@@ -120,6 +130,107 @@ export function AdvancedInUse({
         </Notice>
       )}
     </Panel>
+  )
+}
+
+/** A read of the board's three advanced-key tables, and how it went. */
+export interface AdvancedRead {
+  snapshot: AdvancedKeySnapshot | null
+  /** False when this codec does not decode the tables at all. */
+  canRead: boolean
+  error: string | null
+}
+
+/**
+ * The board's advanced-key tables, read once for whoever is showing them.
+ *
+ * A read of its own rather than the advanced-key tab's, because that one is not
+ * a plain read: it sweeps orphan records on the way through, which is a write,
+ * and the overview writes nothing. What is left here is the one command.
+ *
+ * A hook rather than a read inside the table, because the table is not the only
+ * thing that needs it. The overview's caps carry the advanced-key bands, and
+ * which key runs one is per layer — so the grid and the section below it have
+ * to be answering out of the same snapshot, or the strip in the grid's bar
+ * would move the bands and the table separately.
+ *
+ * Reads once per mount, and does not re-run itself on failure: a board that
+ * answers nothing would otherwise be asked once per render. Leaving the tab and
+ * coming back is the retry, and the refresh.
+ */
+export function useAdvancedSnapshot(): AdvancedRead {
+  const codec = useCodec()
+  const { connected } = useConnection()
+  const [snapshot, setSnapshot] = useState<AdvancedKeySnapshot | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // A ref, not state: it guards the effect below from starting a second read
+  // while the first is in the air, and nothing on screen changes when it moves.
+  const inFlight = useRef(false)
+  const canRead = supports(codec, 'readAdvancedKeys')
+
+  useEffect(() => {
+    if (!connected || !canRead || inFlight.current || snapshot) return
+    inFlight.current = true
+    void (async () => {
+      try {
+        setSnapshot(await codec.readAdvancedKeys!(link))
+        setError(null)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        inFlight.current = false
+      }
+    })()
+  }, [codec, connected, canRead, snapshot])
+
+  return { snapshot, canRead, error }
+}
+
+/**
+ * The table as the overview's section: one layer of a read taken further up.
+ *
+ * The read is not done here — see `useAdvancedSnapshot` for why the tab owns
+ * it. What is here is the two ways a read can have nothing to show, which are
+ * the section's to say rather than the grid's.
+ */
+export function AdvancedInUseSection({
+  read,
+  layer,
+  debug,
+}: {
+  read: AdvancedRead
+  /** The layer the strip in the grid's bar has open. */
+  layer: number
+  debug: boolean
+}) {
+  const t = useT()
+  const { snapshot, canRead, error } = read
+
+  if (!canRead) {
+    return (
+      <Panel title={t('advanced.inUse')}>
+        <NotDecoded what="advanced.what" />
+      </Panel>
+    )
+  }
+
+  if (error) {
+    return (
+      <Panel title={t('advanced.inUse')}>
+        <Notice kind="err">{error}</Notice>
+      </Panel>
+    )
+  }
+
+  return (
+    <AdvancedInUse
+      snapshot={snapshot}
+      uses={snapshot?.uses.filter((u) => u.layer === layer) ?? []}
+      debug={debug}
+      // Debug mode offers every kind an editor, so nothing is unexplained and
+      // the caution below the table has nothing to warn about.
+      hidden={debug ? [] : UNSTABLE_KINDS}
+    />
   )
 }
 

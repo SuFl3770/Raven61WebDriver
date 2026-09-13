@@ -398,6 +398,66 @@ body {
 }
 
 /*
+ * The wallpaper, as two fixed layers under the whole app — see
+ * state/background.ts, which is what puts `data-bg` and the three properties on
+ * the root element.
+ *
+ * Two layers rather than one because the picture is blurred and the veil over
+ * it must not be: `filter` applies to an element's own background, so a single
+ * layer carrying both would smear the veil into the picture and leave the edges
+ * of the window lighter than the middle.
+ *
+ * Drawn on `body` rather than on a div in the markup because there is nothing
+ * for a component to do here. The wallpaper is not part of any tab, it is never
+ * interactive, and an element in the tree would have to be kept out of the way
+ * of every layout that already exists.
+ */
+:root[data-bg] body::before,
+:root[data-bg] body::after {
+  content: "";
+  position: fixed;
+  /*
+   * Past the edges of the window, by twice the blur radius.
+   *
+   * A blur samples the pixels around each one it draws, and outside the layer
+   * there are none — so at its own size the picture fades to transparent along
+   * all four edges, by more the further it is blurred, and the page colour
+   * shows through as a halo. Growing the layer puts those edges off screen.
+   */
+  inset: calc(var(--bg-blur, 0px) * -2);
+  /*
+   * Behind everything in the app and in front of the page colour, which is
+   * painted on the canvas by `body` above rather than by this element. Neither
+   * layer takes a click: the wallpaper is a picture, not a surface.
+   */
+  z-index: -1;
+  pointer-events: none;
+}
+
+:root[data-bg] body::before {
+  background-image: var(--bg-image);
+  /* Cover and centre, at any window shape: the alternatives either tile a
+     photograph or leave a strip of page beside it. */
+  background-size: cover;
+  background-position: center;
+  filter: blur(var(--bg-blur, 0px));
+}
+
+/*
+ * The veil: the page's own colour over the picture, at the chosen strength.
+ *
+ * `--bg` rather than black, so one wallpaper works under both themes — it is
+ * knocked towards near-black under the dark one and towards near-white under
+ * the light one, and in both cases towards the colour the app's text was chosen
+ * to be read against. Painted after `::before` in the same stacking layer,
+ * which is what puts it over the picture.
+ */
+:root[data-bg] body::after {
+  background: var(--bg);
+  opacity: var(--bg-dim, 0);
+}
+
+/*
  * The exceptions: anything typed into, and anything printed to be read off and
  * copied — the hex dumps, the report console, the inline byte listings. Their
  * content is the only content in the app a person has a reason to take out of
@@ -1314,7 +1374,7 @@ div.rail { position: sticky; top: 0; }
   z-index: 2;
   /* The page's own ground: the panels below carry no fill of their own, so
      without this they would show through the strip they are sliding under. */
-  background: var(--bg);
+
   display: flex;
   justify-content: center;
   gap: 4px;
@@ -1455,6 +1515,16 @@ div.rail { position: sticky; top: 0; }
   border: 0;
   border-top: 1px solid var(--line);
   margin: 14px 0;
+}
+
+/* The heading of one group inside a panel — see ui/Panel.tsx. Not uppercase,
+   because the uppercase belongs to the panel heading above it and a second one
+   in the same block would compete with it for the eye. */
+.panel-group > h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--fg-dim);
+  margin: 0 0 10px;
 }
 
 /*
@@ -2090,6 +2160,103 @@ div[class="small dim"] { margin-bottom: 8px; }
 .facts dt { color: var(--fg-dim); font-size: 0.8125rem; align-self: baseline; }
 .facts dd { margin: 0; }
 
+/*
+ * The key-info section: one cap, then everything known about it.
+ *
+ * Two columns rather than a list with a picture on top, because the two halves
+ * answer different halves of the same question — *which* key, and *what* it is
+ * set to — and the reader arrived already knowing one of them. The cap is the
+ * receipt for the pick: it is the same legend the grid's cap carries, so a
+ * press that resolved to the wrong key is visible without reading a word.
+ *
+ * The rule between them is the facts column's own left border rather than an
+ * element, so there is nothing to keep the height of: `align-self: stretch`
+ * makes it exactly as tall as the taller column, whichever that turns out to
+ * be once a key with an advanced record is picked.
+ *
+ * Both columns are sized to their contents and the pair is centred in the
+ * panel. The facts used to take `1fr`, which on a wide window left a column
+ * most of a metre across with nine short values stacked along its left edge and
+ * the rule stranded somewhere off to the left of the panel's middle — a lot of
+ * emptiness for a panel that is about one key. `minmax(0, max-content)` so the
+ * values still decide the width but the column can be squeezed rather than
+ * pushed out of the panel on a narrow one.
+ */
+.keyinfo {
+  display: grid;
+  grid-template-columns: max-content minmax(0, max-content);
+  align-items: center;
+  justify-content: center;
+}
+/* Even margins either side, and the cap centred between them: the column is
+   sized to its contents, so the two are what put the cap in the middle of its
+   own half rather than against the rule or against the panel's edge. */
+.keyinfo-cap { display: grid; place-items: center; margin: 0 3rem; padding: 0.5rem 0; }
+.keyinfo-facts { align-self: stretch; border-left: 1px solid var(--line); padding: 0.25rem 0 0.25rem 2rem; }
+
+/*
+ * Arriving and leaving.
+ *
+ * A key is picked and put down over and over while a reader works through a
+ * board, so this is the shortest movement in the app that is still a movement:
+ * the panel's whole body is replaced either way, and swapping one block of
+ * text for another between two frames reads as a glitch rather than an answer.
+ *
+ * The same six pixels in both directions, and the same for the prompt that
+ * takes its place — what leaves and what arrives are the two halves of one
+ * exchange, and a pair that moved differently would look like two events.
+ *
+ * The 160ms is written again in features/KeyInfo.tsx, which is what holds the
+ * outgoing body in the tree for long enough to be seen leaving — see
+ * ui/useExit.ts for why that number lives in two places.
+ */
+@keyframes keyinfo-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes keyinfo-out { to { opacity: 0; transform: translateY(6px); } }
+.keyinfo, .keyinfo-empty, .keyinfo-title { animation: keyinfo-in 160ms ease-out; }
+
+/*
+ * The front page, for as long as no key is picked.
+ *
+ * Centred and capped for reading, in the same middle of the panel the picked
+ * key's two columns sit in — the two are the same slot showing one thing or the
+ * other, and a greeting that sat against the left edge while its replacement
+ * was centred would read as the page jumping rather than answering.
+ *
+ * The width cap is on the paragraphs rather than the box, so the heading can be
+ * as wide as it likes and the prose still breaks somewhere a line can be read
+ * back from.
+ */
+.keyinfo-empty { display: grid; justify-items: center; text-align: center; gap: 0.5rem; padding: 1.25rem 0; }
+.keyinfo-empty h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.keyinfo-empty p { margin: 0; max-width: 34rem; font-size: 0.875rem; color: var(--fg-dim); }
+.keyinfo.closing, .keyinfo-title.closing { animation: keyinfo-out 160ms ease-in forwards; }
+
+/*
+ * The cap itself. Not `.keycap`, which is absolutely positioned into the grid's
+ * own coordinate space and would collapse out of a flow layout — this is the
+ * same face at the size of a thing being looked at rather than one of
+ * eighty-seven being scanned.
+ */
+.bigcap {
+  width: 4rem; height: 4rem;
+  display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--keycap); color: var(--fg);
+  font-size: 1rem; text-align: center; line-height: 1.2;
+  padding: 0.25rem; overflow: hidden;
+}
+.bigcap.remapped { color: var(--accent); }
+
+/* Narrow enough and the rule would be cutting the panel in half lengthways for
+   no gain — the two halves stack, and the rule becomes the one above the facts. */
+@media (max-width: 33rem) {
+  .keyinfo { grid-template-columns: minmax(0, 1fr); }
+  /* The side margins were what held the cap off the rule, and stacked there is
+     no rule — on a narrow panel they would only be width given away. */
+  .keyinfo-cap { margin: 0 0 0.75rem; padding: 0; }
+  .keyinfo-facts { border-left: 0; border-top: 1px solid var(--line); padding: 0.75rem 0 0; }
+}
+
 .badge {
   display: inline-flex; align-items: center; gap: 6px;
   border-radius: 999px; border: 1px solid var(--line); background: var(--surface-hi);
@@ -2350,6 +2517,7 @@ div[class="small dim"] { margin-bottom: 8px; }
   button, .keycap { transition: none; }
   /* The movement is the whole point of these, so there is nothing to keep. */
   .tab-title, .tab-scroll, .section-in.fwd, .section-in.back { animation: none; }
+  .keyinfo, .keyinfo.closing, .keyinfo-empty, .keyinfo-title, .keyinfo-title.closing { animation: none; }
   .adv-body { animation: none; }
   /* The slot and what is in it change together, so they are answered together:
      dropping one would leave a cap fading into a box that had already filled. */

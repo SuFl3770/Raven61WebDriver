@@ -95,6 +95,21 @@ type DeepPartial<T> = {
 export const FAMILY_BASELINE: DeviceSpec = {
   ...raven61Spec,
   ...DEFAULT_PROTOCOL,
+  /*
+   * Not inherited, unlike the rest of the board data above.
+   *
+   * `stockProfile` says "the vendor's driver writes a profile file for this
+   * board, and here is what is in it" — which is a claim about *another piece
+   * of software*, not about the hardware. A sibling inheriting it would offer
+   * to write a file stamped `pro_name="Raven61 HE"` with this board's ten
+   * macro slots and four layers, and the stock driver would read it back onto
+   * a keyboard it does not describe.
+   *
+   * Absent is the honest default and the same rule `productIds` follows: a
+   * board claims it by stating it, once someone has an export from it. See
+   * `StockProfileSpec`.
+   */
+  stockProfile: undefined,
 }
 
 export function defineDevice(input: DeviceSpecInput): DeviceSpec {

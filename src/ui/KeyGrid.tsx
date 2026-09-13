@@ -5,6 +5,7 @@ import { useT } from '../i18n'
 import { kindKey, kindOfType, type AdvancedKind } from '../protocol/advancedKeys'
 import { useBand } from './GridFrame'
 import { legendFor, useLegends } from '../state/legends'
+import type { KeymapEntry } from '../protocol/types'
 
 import { useConnection } from '../state/link'
 
@@ -127,16 +128,16 @@ export interface KeyGridProps {
    * Draw the advanced-key band along the bottom edge of the caps that run one.
    *
    * `true` is "answer it yourself", from the base layer the legend store holds.
-   * That is the form the tabs about *bindings* take — the overview and the two
-   * below — and it is what keeps the band still while they are switched
-   * between: the store is read once per connection and is already there, so
-   * there is no moment where a tab has arrived and its own answer has not.
+   * It is what keeps the band still while tabs are switched between: the store
+   * is read once per connection and is already there, so there is no moment
+   * where a tab has arrived and its own answer has not.
    *
    * A callback is a grid that shows one layer at a time saying which. The store
    * only holds the base layer, and its band would be wrong the moment the Fn
-   * layer is opened. Both callers fall back to `true` until their own read has
-   * landed, rather than to nothing — a band that vanished for the length of a
-   * read is the flicker this is arranged to avoid.
+   * layer is opened — so the three tabs with a layer strip all pass one. Every
+   * one of them falls back to `true` until its own read has landed, rather than
+   * to nothing: a band that vanished for the length of a read is the flicker
+   * this is arranged to avoid.
    *
    * Omitted on the grids that are about something else: what the switch under
    * the key is, what the key is lit, what the sensor under it reads. A band
@@ -155,6 +156,22 @@ export interface KeyGridProps {
    * `state/legends.ts` for what the rest of the app shows instead.
    */
   physical?: boolean
+  /**
+   * The keymap the caps read against, instead of the shared store's.
+   *
+   * The store holds the base layer and only the base layer — see
+   * state/legends.ts — which is the right answer on every grid that is not
+   * choosing a layer. The overview's grid is: its strip picks one, and on the
+   * Fn layer every cap that is remapped there would otherwise go on reading
+   * what it sends on layer 0.
+   *
+   * The legend is still worked out here rather than handed over as text, so a
+   * layer's remapped caps get the same accent the base layer's do — see
+   * `legendFor`, which is the one place that decides when the board's printing
+   * survives. Undefined falls back to the store, which is what every other
+   * grid wants and what this one wants until its read has landed.
+   */
+  legends?: readonly (KeymapEntry | undefined)[]
 }
 
 /**
@@ -223,6 +240,7 @@ export function KeyGrid({
   status,
   advanced,
   physical,
+  legends,
 }: KeyGridProps) {
   // The board's own key table and size in units. A different keyboard is a
   // different grid, and nothing here knows which one it is drawing.
@@ -230,8 +248,10 @@ export function KeyGrid({
   const { matched, forced } = useActiveDevice()
   const { device, connected } = useConnection()
   /* The base layer, so a remapped key reads as what it now sends. Empty until
-     something has read it, and on every board that cannot be asked. */
-  const entries = useLegends()
+     something has read it, and on every board that cannot be asked — and
+     overridden by a caller that is drawing a layer of its own. */
+  const store = useLegends()
+  const entries = legends ?? store
   const t = useT()
   /** What the in-progress drag is painting, or null when none is running. */
   const painting = useRef<boolean | null>(null)
@@ -475,7 +495,13 @@ export function KeyGrid({
           the key sends.
         */
         const given = label?.(k)
-        const legend = given === undefined && !physical ? legendFor(k, entries) : undefined
+        const legend =
+          given === undefined && !physical
+            // Entries of the caller's own are a layer above the base one — that is
+            // the only reason to pass them — and an Fn layer's never-set keys are
+            // not unbound keys. See `legendFor`.
+            ? legendFor(k, entries, legends === undefined)
+            : undefined
         return (
           <button
             key={k.index}

@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react'
 import { useT } from '../i18n'
 import { ACCENTS, resolveAccent } from '../state/accent'
 import { settings, useSettings } from '../state/settings'
-import { Panel } from './Panel'
 
 /**
  * The point-colour picker: one dot per colour, in the colour itself.
@@ -11,6 +10,10 @@ import { Panel } from './Panel'
  * "lemon" tell you less than the two dots side by side do — so the swatch is
  * the control, and the name only exists for a screen reader, which gets the
  * value it would otherwise have no way to read at all.
+ *
+ * The row carries its own top margin, the way the second row of the board
+ * settings does: it is the second of two rows in the driver group and nothing
+ * above it knows there is a row under it.
  */
 export function AccentPicker() {
   const { accent } = useSettings()
@@ -18,7 +21,10 @@ export function AccentPicker() {
   const current = resolveAccent(accent)
 
   return (
-    <Panel title={t('settings.accent.title')}>
+    <div className="row" style={{ marginTop: 12 }}>
+      <span className="small dim" style={{ minWidth: 96 }}>
+        {t('settings.accent.title')}
+      </span>
       <div className="swatches">
         {ACCENTS.map((color) => (
           <button
@@ -35,6 +41,6 @@ export function AccentPicker() {
           />
         ))}
       </div>
-    </Panel>
+    </div>
   )
 }

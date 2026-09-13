@@ -170,7 +170,112 @@
       "different": "The board came back with values that differ from this firmware's defaults table.",
       "unread": "The command was delivered, but the result could not be read.",
       "unreadNote": "The board may still be writing flash, or re-enumerating on USB. <b>This does not mean it failed.</b> Give it a moment and read again from <b>Board settings</b>.",
-      "reread": "The per-key settings were cleared. Read from the board again on the <b>Input point</b> tab to pick up the new values."
+      "reread": "The per-key settings were cleared. Opening the <b>Input point</b> tab reads the new values off the board."
+    }
+  },
+
+  "profile": {
+    "title": "Profile",
+    "cancel": "Cancel",
+    "block": {
+      "keyPerf": "Performance",
+      "keymap": "Keymap",
+      "macros": "Macros",
+      "advancedKeys": "Advanced keys",
+      "keyRgb": "Per-key colour",
+      "global": "Board settings"
+    },
+    "stage": {
+      "firmware": "Firmware"
+    },
+    "summary": {
+      "keys": "{count} keys",
+      "layers": "{count} layers",
+      "macros": "{count} slots",
+      "tables": "3 tables",
+      "fields": "{count} fields"
+    },
+    "save": {
+      "start": "Save to file",
+      "reading": "Reading board",
+      "title": "Save profile",
+      "json": "Save as JSON",
+      "jsonNote": "This app's format, nothing dropped",
+      "stock": "Save as stock XML",
+      "noStock": "No stock file format is defined for this board.",
+      "noLoss": "Nothing dropped",
+      "lossTitle": "Saving as stock XML drops",
+      "partial": "Blocks that could not be read: {blocks}"
+    },
+    "load": {
+      "noStockFormat": "{board} has no stock file format, so this XML cannot be read.",
+      "start": "Load from file",
+      "title": "Load profile",
+      "empty": "This file has no block that can be applied.",
+      "apply": "Apply to board ({count})"
+    },
+    "apply": {
+      "writing": "Writing to board",
+      "disconnected": "The board disconnected part way through."
+    },
+    "outcome": {
+      "written": "applied",
+      "skipped": "skipped",
+      "failed": "failed",
+      "mismatch": "read back differently"
+    },
+    "loss": {
+      "global": "Polling rate, debounce, bottom-out trigger, actuation check, magnet test",
+      "advanced": "Every advanced-key table, and the keymap entries that name one",
+      "bindings": "{count} keymap entries the format cannot hold (saved as unassigned)",
+      "modifiers": "{count} keys using more than one modifier (only the first is kept)",
+      "macroSlots": "{count} macro slots past the tenth",
+      "macroEvents": "{count} macro events the format cannot hold",
+      "roundTrip": "Values kept only to write back exactly what was read, on {count} keys"
+    },
+    "note": {
+      "macroSlotsCleared": "A stock file describes ten macro slots, so applying it empties the other {count}.",
+      "advanced": "The file has advanced keys, which this app does not yet apply from stock XML.",
+      "perfShort": "The performance section did not cover every key on this board, so it was left out.",
+      "layers": "{count} layers this board has no storage for were skipped.",
+      "keymap": "{count} keymap entries could not be decoded",
+      "macroEvents": "{count} macro events could not be converted",
+      "perf": "{count} performance entries for keys this board does not have"
+    },
+    "check": {
+      "badVersion": "The profile has no valid version.",
+      "newer": "Profile version {version} is newer than this build reads (up to {supported}).",
+      "otherSpec": "Saved from a different board ({from}).",
+      "otherProduct": "Different product id ({from} → {to}).",
+      "otherKeyCount": "Different key count ({from} → {to}).",
+      "length": "{got} entries, this board has {want}.",
+      "keyBad": "Key {index} holds an invalid value.",
+      "saturate": "{count} values are out of range and will be clamped.",
+      "noSwitch": "{count} keys carry no switch type and will be written as 0.",
+      "unknownSwitch": "Switch types this board does not list: {types}",
+      "noLayers": "No layers.",
+      "layerRange": "Layer {layer} is out of range (max {max}).",
+      "layerDup": "Layer {layer} appears twice.",
+      "layerLength": "Layer {layer} has {got} entries, this board has {want}.",
+      "bindingBad": "Layer {layer} entry {index} cannot be encoded.",
+      "macroSlotRange": "Macro slot {slot} is out of range (max {max}).",
+      "advRecordRange": "Advanced-key record {record} is out of range (max {max}).",
+      "unknownBinding": "Layer {layer} entry {index} is a record nobody has decoded.",
+      "unresolved": "{count} keys have no slot and will be skipped.",
+      "partialLayers": "Only {got} layers are in the file (this board has {want}).",
+      "macroDup": "Macro slot {slot} appears twice.",
+      "macroBad": "Macro slot {slot} holds an invalid body.",
+      "macroDelay": "A delay in macro slot {slot} is outside 0-{max} ms.",
+      "macroBudget": "{stored} macro records, past the {budget} the store holds.",
+      "blobBad": "The {table} table could not be read.",
+      "blobSize": "The {table} table is {got} bytes, this board takes {want}.",
+      "colorBad": "Key {index} holds an invalid colour.",
+      "rateUnknown": "Polling rate value {value} is not one this board lists.",
+      "rateReplug": "Changing the polling rate can drop the connection.",
+      "debounceRange": "Debounce value {value} is out of range.",
+      "noEffectTable": "This board has no lighting-effect table, so the mode was not checked.",
+      "modeUnknown": "Lighting mode {mode} is not one this board lists.",
+      "brightnessRange": "Brightness {value} is outside 0-100."
     }
   },
 
@@ -261,7 +366,6 @@
 
   "inputPoint": {
     "section": {
-      "overview": "Overview",
       "trigger": "Trigger point",
       "rt": "Rapid trigger",
       "switch": "Switch",
@@ -361,13 +465,12 @@
     "noFreeRecord": "All {limit} records are in use. Free one by unbinding the key that uses it.",
     "capLabel": "{kind} · record {record}",
     "inUse": "Advanced keys on this layer",
-    "inUseTab": "In use",
     "noneBound": "No key on this layer is bound to an advanced key.",
     "orphans": "Records with bytes in them that no layer points at: {records}. Not cleared — either this board offers no record write, or the write was not taken.",
     "orphansCleared": "Cleared {records}: bytes no key pointed at.",
     "orphansFailed": "{records} could not be cleared — the write did not read back. Left alone for the rest of this session.",
     "unmappedSlot": "slot {slot}",
-    "unstableInUse": "This layer still runs <b>{kinds}</b>, which this app no longer offers — the firmware decodes the record but does not run it reliably, so the section is off the list above. To clear one, pick the key on the grid and press <b>Unbind</b> in the panel that opens.",
+    "unstableInUse": "Keys here still run <b>{kinds}</b>, which this app no longer offers — the firmware decodes the record but does not run it reliably. To clear one, pick the key on the <b>Advanced keys</b> tab and press <b>Unbind</b>.",
     "holdMs": "{ms} ms",
     "partnerSlot": "partner slot {slot}",
     "partnerKey": "paired with {key}",
@@ -412,8 +515,7 @@
       "hold": "Hold",
       "time": "Hold time"
     },
-    "rs": {
-    },
+    "rs": {},
     "socd": {
       "modeNote": "The resolution mode is not in this table — the firmware reads it from the high nibble of this key's performance record, which the input-point tab owns. Set it there."
     },
@@ -525,6 +627,9 @@
       "title_one": "{count} slot is empty (all {bytes} bytes zero)",
       "title_other": "{count} slots are empty (all {bytes} bytes zero)"
     },
+    "raw": {
+      "title": "Key perf block"
+    },
     "hideRaw": "Hide raw block",
     "showRaw": "Show raw block ({slots} slots)",
     "copyDump": "Copy dump",
@@ -536,8 +641,9 @@
       "unsupported": "This board's spec has no macro-store command. Without reading the store there is no way to tell whether binding a macro key is safe.",
       "reading": "Reading the store…",
       "unread": "The macro store has not been read yet. Leaving this category and coming back tries again.",
-      "ready": "All {total} slots point at a body and end in a stop record. Binding a macro key is safe.",
-      "unsafe": "⚠ <b>{slots} slots</b> do not point at a body, or have no stop record. The player has no upper bound on its cursor, so a macro key pressed in this state walks flash and presses whatever it reads. <b>Write the store from the Macro tab first</b> — binding is always the second write.",
+      "unsafeTitle": "The macro store is not safe to bind from",
+      "unsafe": "<b>{slots} slots</b> do not point at a body, or have no stop record. The player has no upper bound on its cursor, so a macro key pressed in this state walks flash and presses whatever it reads. <b>Write the store from the Macro tab first</b> — binding is always the second write.",
+      "unsafeDismiss": "Understood",
       "slotTitle": "#{slot} · {count} events",
       "slotEmpty": "#{slot} · empty",
       "slotsUnlocked": "Debug mode, so all {total} slots are open. The stock driver only manages the first ten, so writing the store from it would take the bodies in the rest with it.",
@@ -628,8 +734,35 @@
     "waiting": "Press any key…"
   },
 
+  "keyInfo": {
+    "title": "Key info",
+    "welcome": {
+      "body": "Placeholder — write this text yourself (keyInfo.welcome.body in locales/*.json)."
+    },
+    "pick": "Press a key on your keyboard, or pick one on the grid above.",
+    "key": "Key",
+    "sends": "Sends",
+    "rtPress": "RT trigger",
+    "rtRelease": "RT release",
+    "viaAdvanced": "replaced by an advanced key",
+    "advanced": "Advanced key",
+    "addresses": "Addresses",
+    "addressList": "index {index} · firmware {keyIndex} · LED {lightIndex} · factory usage {usage}"
+  },
+
   "overview": {
-    "todo": "This tab is a placeholder — the feature has not been built yet."
+    "section": {
+      "keys": "Key info",
+      "input": "Input point",
+      "advanced": "Advanced keys"
+    },
+    "sections": "Overview sections",
+    "foot": {
+      "keys": "{count} keys",
+      "read": "read {time}",
+      "unread": "not read yet",
+      "pending": "{count} keys not sent"
+    }
   },
 
   "macro": {
@@ -768,6 +901,9 @@
   },
 
   "settings": {
+    "driver": {
+      "title": "Driver settings"
+    },
     "theme": {
       "title": "Theme",
       "system": "Match system",
@@ -777,6 +913,16 @@
     "accent": {
       "title": "Accent colour",
       "swatch": "Accent colour {color}"
+    },
+    "background": {
+      "title": "Background image",
+      "choose": "Choose image",
+      "clear": "Remove",
+      "blur": "Blur",
+      "dim": "Dim",
+      "notImage": "Not an image file.",
+      "tooLarge": "Images must be {max}MB or smaller.",
+      "failed": "Could not store the image. This browser's storage is unavailable."
     }
   },
 
@@ -802,6 +948,9 @@
       },
       "log": {
         "label": "Log"
+      },
+      "perf": {
+        "label": "Key perf block"
       }
     }
   },

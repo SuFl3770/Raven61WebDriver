@@ -62,5 +62,19 @@
     { "value": 4, "hz": 1000 }
   ],
 
-  "profileSupport": { "kind": "none", "count": 1, "scope": [], "hostSwitchable": false }
+  "profileSupport": { "kind": "none", "count": 1, "scope": [], "hostSwitchable": false },
+
+  "//stockProfile": "OPTIONAL, and left out here on purpose. Set it only if your board's own vendor driver writes a profile file AND you have opened one and checked what is in it. It is not inherited from the Raven61 for the same reason productIds are not: a file stamped with another board's pro_name, macro-slot count and layer list is a file the vendor driver would read back onto a keyboard it does not describe. Without it the app saves and loads this board in its own JSON format, which works everywhere.",
+  "//stockProfile.format": "The only one implemented: plaintext XML with every byte XOR'd by 0x7b, as the Raven driver's export writes it. See src/profile/stock.ts.",
+  "//stockProfile.proName": "What the file carries in info@pro_name. Checked on import, not ignored.",
+  "//stockProfile.macroSlots": "How many macro slots the FILE has room for (macro_id 1..n) — the stock driver's number, which may be fewer than the board's.",
+  "//stockProfile.layers": "The fn_layer values this app should read and write: the layers your board actually stores, not every value the file happens to carry.",
+  "//stockProfile.derivedLayers": "fn_layer values the vendor driver derives rather than stores (the Raven61's 101). Read past without comment; never written.",
+  "//stockProfile.example": {
+    "format": "raven-xor-xml",
+    "proName": "Example Pad HE",
+    "macroSlots": 10,
+    "layers": [0],
+    "derivedLayers": []
+  }
 }

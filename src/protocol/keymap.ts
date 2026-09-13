@@ -259,7 +259,8 @@ export function sameBinding(a: KeyBinding, b: KeyBinding): boolean {
 /**
  * Action codes for a 0xf0 record, from the handler at 0x812c. The whole set the
  * firmware decodes is 0x01-0x08, 0x2b-0x3e, 0x51-0x54, 0xfe and 0xff; the ones
- * named here are those the stock driver's remap tab can produce.
+ * named here are those the stock driver's remap tab can produce, plus 0xfe,
+ * which the driver never offers but the factory Fn layer already binds.
  */
 export const ACTION = {
   lock: 0x01,
@@ -275,6 +276,13 @@ export const ACTION = {
   latchProfileB: 0x05,
   boot: 0x07,
   reset: 0x08,
+  /**
+   * Calibration reset (0xfe): drops every sensor's stored scale back to the
+   * 0.62 floor, the same thing the record reset writes (see calibration.ts).
+   * The factory Fn layer binds it, and the keys have to be pressed through
+   * their full travel again afterwards for depth to read correctly.
+   */
+  calibrationReset: 0xfe,
   /** Momentary layer switch: hold for the layer in `arg`. Fn is `f0 ff 01`. */
   momentaryLayer: 0xff,
 } as const
@@ -493,7 +501,9 @@ const action = (label: string, code: number, arg = 0): BindingChoice => ({
 })
 
 /**
- * The stock driver's "Function" list (0x415180-0x41545c), minus the layers.
+ * The stock driver's "Function" list (0x415180-0x41545c), minus the layers,
+ * plus the calibration reset the factory Fn layer binds and the driver's list
+ * leaves out.
  *
  * The names are the driver's. What the firmware does for "Lock" (0x01) and
  * "Reset" (0x08) was not read out of the handler branch by branch, so they are
@@ -505,8 +515,12 @@ export const SYSTEM_SECTIONS: BindingSection[] = [
     action('WinLock', ACTION.winLock),
     action('WASD Change', ACTION.wasdSwap),
   ]),
-  /* The two that stop the keyboard being a keyboard for a moment. */
-  section('keymap.section.board', [action('Boot', ACTION.boot), action('Reset', ACTION.reset)]),
+  /* The ones that stop the keyboard being a keyboard for a moment. */
+  section('keymap.section.board', [
+    action('Boot', ACTION.boot),
+    action('Reset', ACTION.reset),
+    action('Calibration Reset', ACTION.calibrationReset),
+  ]),
 ]
 
 export const SYSTEM_ACTIONS: BindingChoice[] = SYSTEM_SECTIONS.flatMap((s) => s.choices)

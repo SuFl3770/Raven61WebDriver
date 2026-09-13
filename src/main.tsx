@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { loadUserSpecsAndReport } from './device/userSpecs'
 import { startAccent } from './state/accent'
+import { startBackground } from './state/background'
 import { startTheme } from './state/theme'
 import { ApplyToast } from './ui/ApplyToast'
 import { SyncBadge } from './ui/SyncBadge'
@@ -17,6 +18,9 @@ import './styles.css'
 // it keeps rather than flashing the stylesheet's defaults first.
 startTheme()
 startAccent()
+// The two amounts land with these; the picture itself comes from IndexedDB a
+// frame or two later, which is as early as an asynchronous store allows.
+startBackground()
 
 // Board definitions a user dropped into src/device/user/. Before the first
 // render too: the registry decides which layout the key grid draws, and a spec

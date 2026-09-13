@@ -11,7 +11,7 @@ import { globalStore } from '../state/global'
 import { macroSnapshotStore } from '../state/macroSnapshot'
 import { link, useCodec, useConnection } from '../state/link'
 import { Dialog, DialogActions } from './Dialog'
-import { NotDecoded, Notice, Panel } from './Panel'
+import { NotDecoded, Notice, PanelGroup } from './Panel'
 
 /** Seconds the dialog's confirm button is dead for after it opens. */
 const HOLD_SECONDS = 3
@@ -88,9 +88,9 @@ export function FactoryReset() {
 
   if (!canReset) {
     return (
-      <Panel title={t('reset.title')}>
+      <PanelGroup title={t('reset.title')}>
         <NotDecoded what="reset.what" />
-      </Panel>
+      </PanelGroup>
     )
   }
 
@@ -124,7 +124,7 @@ export function FactoryReset() {
   }
 
   return (
-    <Panel title={t('reset.title')}>
+    <PanelGroup title={t('reset.title')}>
       {!running && (
         <div className="row">
           <button className="danger" disabled={!connected} onClick={arm}>
@@ -177,7 +177,7 @@ export function FactoryReset() {
           <Notice kind="err">{error}</Notice>
         </div>
       )}
-    </Panel>
+    </PanelGroup>
   )
 }
 

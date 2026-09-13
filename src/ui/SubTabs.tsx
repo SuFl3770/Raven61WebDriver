@@ -37,6 +37,14 @@ export function SubTabs({
   tabs: readonly SubTab[]
   /** Accessible name for the strip. */
   label: string
+  /**
+   * Which section is open.
+   *
+   * An id no tab has is allowed and means "none chosen": the first section is
+   * drawn and no button is lit. The overview tab uses it for the state it
+   * opens in, where the first section is a greeting rather than an answer to
+   * anything — see `stripActive` in features/Overview.
+   */
   active: string
   onActive: (id: string) => void
 }) {

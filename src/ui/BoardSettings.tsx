@@ -8,7 +8,7 @@ import { DEBOUNCE_LEVELS, debounceLevelName } from '../protocol/types'
 import { globalStore, useGlobalSettings } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
 import { Dialog, DialogActions } from './Dialog'
-import { NotDecoded, Notice, Panel } from './Panel'
+import { NotDecoded, Notice, PanelGroup } from './Panel'
 import { Select } from './Select'
 
 /**
@@ -82,9 +82,9 @@ export function BoardSettings() {
 
   if (!canRead) {
     return (
-      <Panel title={t('board.title')}>
+      <PanelGroup>
         <NotDecoded what="board.what" />
-      </Panel>
+      </PanelGroup>
     )
   }
 
@@ -143,7 +143,7 @@ export function BoardSettings() {
   }
 
   return (
-    <Panel title={t('board.title')}>
+    <PanelGroup>
       <div className="row">
         <span className="small dim" style={{ minWidth: 96 }}>
           {t('board.rate.label')}
@@ -311,6 +311,6 @@ export function BoardSettings() {
           </button>
         </div>
       )}
-    </Panel>
+    </PanelGroup>
   )
 }

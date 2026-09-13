@@ -55,7 +55,8 @@ import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { Select, type SelectOption } from '../ui/Select'
 import { Slider } from '../ui/Slider'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
-import { AdvancedInUse, Argument, rowsOf } from './AdvancedInUse'
+import { Argument, rowsOf } from './AdvancedInUse'
+import { layerName } from '../protocol/layers'
 
 /**
  * Advanced keys — DKS, TGL, MT, RS, SOCD and OKS.
@@ -147,18 +148,6 @@ const DKS_STAGE_KEYS = [
 ] as const
 
 type Draft = { kind: AdvancedKind; record: number; rec: AdvancedRecord; param: number }
-
-/**
- * The one tab on the strip that is not a kind.
- *
- * A string beside six `AdvancedKind`s rather than a seventh kind, so nothing
- * that switches on a kind can be handed it by accident: `TabId` below is the
- * only type that admits both.
- */
-const IN_USE = 'inUse'
-
-/** What the strip under the grid can have open: one of the kinds, or the list. */
-type TabId = AdvancedKind | typeof IN_USE
 
 /**
  * The kinds that are an agreement between two caps rather than a setting on
@@ -375,10 +364,12 @@ export function Advanced() {
    * layer moved up into the grid's bar, which is where the things that act on
    * the grid live — and the grid is what follows the layer.
    *
-   * The list of what is already bound is the seventh section rather than a
-   * panel under the editor, so the page is one thing at a time either way.
+   * Every section is an editor. What the board already runs was a seventh here
+   * and is now the overview tab's advanced-key section — it wrote nothing, and
+   * a strip where one button in seven does not open an editor is a strip that
+   * has to be learned rather than read.
    */
-  const [open, setOpen] = useState<TabId>(ADVANCED_KINDS[0])
+  const [open, setOpen] = useState<AdvancedKind>(ADVANCED_KINDS[0])
   /**
    * The kinds the strip offers.
    *
@@ -395,16 +386,7 @@ export function Advanced() {
    * rather than leaving the strip pointed at a tab that is no longer on it —
    * the same fallback the sidebar makes for the debug tabs (see App.tsx).
    */
-  const active: TabId = open !== IN_USE && !offered.includes(open) ? ADVANCED_KINDS[0] : open
-  /**
-   * The kind the editor is editing.
-   *
-   * The list section has none, and falls back rather than carrying a second
-   * piece of state: nothing on that section reads this, and the strip is left
-   * on the first kind when it is left — which is where a tab that has never
-   * been opened starts anyway.
-   */
-  const kind: AdvancedKind = active === IN_USE ? ADVANCED_KINDS[0] : active
+  const kind: AdvancedKind = offered.includes(open) ? open : ADVANCED_KINDS[0]
   /**
    * The caps being worked on, in the order they were clicked.
    *
@@ -1024,18 +1006,6 @@ export function Advanced() {
     if (u && offered.includes(u.kind)) setOpen(u.kind)
   }
 
-  /**
-   * The layer names, for the row of buttons in the grid's bar.
-   *
-   * Spelled the remap tab's way, and from its bundle keys: the first two are
-   * the base layer and Fn, and a board with more gets numbered ones, because
-   * the bundles cannot name a layer this app has never seen.
-   */
-  const layerName = (i: number) => {
-    if (i === 0) return t('keymap.layer.main')
-    if (i === 1) return t('keymap.layer.fn1')
-    return `FN${i}`
-  }
 
   /*
    * The input-point tab's band with both multi-select gestures off, the same
@@ -1345,40 +1315,18 @@ export function Advanced() {
   )
 
   /**
-   * One tab per kind in the order the protocol lists them, then the list.
+   * One tab per kind, in the order the protocol lists them.
    *
-   * The six are the dropdown that used to sit in the panel, turned into the
-   * strip the rest of the app chooses sections with: they are visible at once
-   * instead of behind a click, and opening one *is* opening its editor rather
-   * than picking a value that has to be applied before anything shows.
-   *
-   * The seventh is what the layer already runs. It was a second panel stacked
-   * under the editor, which made the page two answers long — on the strip it
-   * is one more thing to open, in the place everything else here is opened
-   * from.
+   * They are the dropdown that used to sit in the panel, turned into the strip
+   * the rest of the app chooses sections with: they are visible at once instead
+   * of behind a click, and opening one *is* opening its editor rather than
+   * picking a value that has to be applied before anything shows.
    */
-  const tabs: SubTab[] = [
-    ...offered.map((k) => ({
-      id: k as TabId,
-      labelKey: kindKey(k),
-      render: () => editor,
-    })),
-    {
-      id: IN_USE,
-      labelKey: 'advanced.inUseTab' as const,
-      // The open layer's rows, and the snapshot they were decoded from — the
-      // section draws them, the read belongs to the tab. `hidden` is what the
-      // strip is not offering, so a row of a kind that has no section says why.
-      render: () => (
-        <AdvancedInUse
-          snapshot={snapshot}
-          uses={uses}
-          debug={debug}
-          hidden={ADVANCED_KINDS.filter((k) => !offered.includes(k))}
-        />
-      ),
-    },
-  ]
+  const tabs: SubTab[] = offered.map((k) => ({
+    id: k as string,
+    labelKey: kindKey(k),
+    render: () => editor,
+  }))
 
   return (
     <>
@@ -1386,13 +1334,13 @@ export function Advanced() {
       <SubTabs
         tabs={tabs}
         label={t('advanced.kind')}
-        active={active}
+        active={kind}
         onActive={(id) => {
           // Moving to another tab is moving to another record, not converting
           // the picked key's. Leaving the cap selected would have the new tab
           // offering to rewrite a key nobody asked about on the way in — so
           // the grid goes back to nothing picked, and the pick is the next step.
-          setOpen(id as TabId)
+          setOpen(id as AdvancedKind)
           setPicked([])
           setDraft(null)
           setDuo(null)

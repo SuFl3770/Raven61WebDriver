@@ -15,5 +15,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["tools/check"]
+  "//include": "src/vite-env.d.ts comes along because the checks now reach src/version.ts, which reads the __APP_* globals vite defines at build time. Nothing under tools/check runs through vite, so the declarations are what stand in for it.",
+  "include": ["tools/check", "src/vite-env.d.ts"]
 }

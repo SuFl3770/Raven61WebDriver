@@ -30,6 +30,7 @@ import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { TabActions } from '../ui/TabActions'
 import { Select, type SelectOption } from '../ui/Select'
 import { useExitValue } from '../ui/useExit'
+import { layerName } from '../protocol/layers'
 
 /**
  * Macros — the 32-slot store at flash 0x21100.
@@ -550,9 +551,6 @@ export function Macro() {
    */
   const uses = snapshot?.uses ?? []
 
-  /** The names the layer strip used, now that the strip is gone. */
-  const layerLabel = (n: number) =>
-    n === 0 ? t('keymap.layer.main') : n === 1 ? t('keymap.layer.fn1') : `FN${n}`
 
   if (!canRead) {
     return (
@@ -1107,7 +1105,7 @@ export function Macro() {
                       <tbody>
                         {uses.map((u) => (
                           <tr key={`${u.layer}:${u.slot}`}>
-                            <td className="dim">{layerLabel(u.layer)}</td>
+                            <td className="dim">{layerName(u.layer)}</td>
                             <td>{u.label || `#${u.slot}`}</td>
                             <td>{slotName(u.macro)}</td>
                             <td>{draft?.[u.macro]?.events.length ?? 0}</td>

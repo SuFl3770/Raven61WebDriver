@@ -483,6 +483,43 @@ export interface SlotMapSpec {
   resolveTolerance: number
 }
 
+/**
+ * The vendor driver's own profile file, for a board whose driver has one.
+ *
+ * Absent by default, and absent rather than guessed. This app's own profile
+ * format (`src/profile/json.ts`) works on every board because it is this app's
+ * model written down; a stock file is a *second* board's worth of evidence —
+ * which XML elements exist, which key space each field is in, how many macro
+ * slots the file has room for — and none of that transfers to a sibling just
+ * because the protocol does.
+ *
+ * So a board gets stock-file support by saying so here, and one that does not
+ * is offered JSON alone. See `src/profile/stock.ts` for what `format` selects
+ * and `docs/protocol.md` §5.5 for how the Raven61's was recovered.
+ */
+export interface StockProfileSpec {
+  /**
+   * Which vendor file format. One is implemented: plaintext XML with every
+   * byte XOR'd by 0x7b, as the Raven driver's "export profile" writes it.
+   */
+  format: 'raven-xor-xml'
+  /** `info@pro_name`, what the stock driver writes and what an import checks. */
+  proName: string
+  /** How many macro slots the file has room for — `macro_id` runs 1..n. */
+  macroSlots: number
+  /** `fn_layer` values that are real layers, in the order they are stored. */
+  layers: readonly number[]
+  /**
+   * `fn_layer` values the stock driver derives rather than stores — Raven61's
+   * 101, the merged keymap in which Fn is a layer-switch action.
+   *
+   * Read so an import can tell "a layer this app does not keep" from "a layer
+   * out of range", and never written back: regenerating one from the real
+   * layers would be inventing the stock driver's own rule.
+   */
+  derivedLayers: readonly number[]
+}
+
 /** How far the protocol has been confirmed on real hardware. */
 export type Confidence = 'confirmed' | 'partial' | 'guess' | 'none'
 
@@ -598,4 +635,12 @@ export interface DeviceSpec extends ProtocolSpec {
    */
   lightEffects?: readonly LightEffectSpec[]
   profileSupport: ProfileSupport
+  /**
+   * The vendor driver's profile file, when this board's has been decoded.
+   *
+   * Left out for every board but the one it was read from — see
+   * `StockProfileSpec`. Absent means the storage panel offers this app's own
+   * format and nothing else.
+   */
+  stockProfile?: StockProfileSpec
 }

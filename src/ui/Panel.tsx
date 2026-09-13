@@ -48,3 +48,24 @@ export function NotDecoded({ what }: { what: MessageKey }) {
     </Notice>
   )
 }
+
+/**
+ * One named group of controls inside a panel.
+ *
+ * The settings tab is a handful of small things that all belong to one of two
+ * owners — the board, or this browser — and as a panel each they read as eight
+ * unrelated sections. Grouped, the owner is the panel's heading and each thing
+ * is a group under it, with `.panel-sep` between.
+ *
+ * The title is optional: the first group in a panel is usually the one the
+ * panel's own heading already names, and repeating it would be a heading over
+ * a heading.
+ */
+export function PanelGroup({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className="panel-group">
+      {title && <h3>{title}</h3>}
+      {children}
+    </div>
+  )
+}

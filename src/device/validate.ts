@@ -174,6 +174,7 @@ const TOP_LEVEL = new Set([
   'switchTypes',
   'reportRates',
   'lightEffects',
+  'stockProfile',
   'requestTimeoutMs',
   ...Object.keys(SECTIONS),
 ])
@@ -238,6 +239,7 @@ export function validateSpec(input: unknown, source: string): ValidationResult {
   checkUsb(raw.usb, at, errors)
   checkLayout(raw.layout, at, errors, warnings)
   checkTables(raw, at, errors)
+  checkStockProfile(raw.stockProfile, at, errors)
 
   for (const [section, leaves] of Object.entries(SECTIONS)) {
     const value = raw[section]
@@ -422,6 +424,48 @@ function checkTables(raw: Record<string, unknown>, at: (f: string) => string, er
           errors.push(`${where}.selectable must be true/false`)
         }
       })
+  }
+}
+
+/**
+ * The vendor-file claim, when a definition makes one.
+ *
+ * Checked strictly for the same reason `basedOn` is: this decides whether the
+ * app offers to write a *file the stock driver will read back*, and a
+ * `macroSlots` that came through as a string is a save that silently drops
+ * every macro. Absent is the normal case and the default — see
+ * `StockProfileSpec` for why a board does not inherit this from a sibling.
+ */
+function checkStockProfile(
+  value: unknown,
+  at: (f: string) => string,
+  errors: string[],
+): void {
+  if (value === undefined) return
+  if (!isObject(value)) {
+    errors.push(at('stockProfile must be { format, proName, macroSlots, layers, derivedLayers }'))
+    return
+  }
+  const known = new Set(['format', 'proName', 'macroSlots', 'layers', 'derivedLayers'])
+  for (const key of Object.keys(value)) {
+    if (!known.has(key)) errors.push(at(`unknown field "stockProfile.${key}"`))
+  }
+  // One format is implemented. A name this app does not have a codec for would
+  // otherwise offer a save that produces a file nothing can read.
+  if (value.format !== 'raven-xor-xml') {
+    errors.push(at('stockProfile.format must be "raven-xor-xml" — the only one implemented'))
+  }
+  if (typeof value.proName !== 'string' || value.proName.trim() === '') {
+    errors.push(at('stockProfile.proName must be the name the stock driver writes'))
+  }
+  checkLeaf(value.macroSlots, 'size', at('stockProfile.macroSlots'), errors)
+  for (const field of ['layers', 'derivedLayers'] as const) {
+    const list = value[field]
+    if (!Array.isArray(list)) {
+      errors.push(at(`stockProfile.${field} must be a list`))
+      continue
+    }
+    list.forEach((n, i) => checkLeaf(n, 'count', at(`stockProfile.${field}[${i}]`), errors))
   }
 }
 
