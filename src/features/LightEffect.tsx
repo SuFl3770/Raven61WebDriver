@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useRef, type CSSProperties, type ReactNode } from 'react'
 import { useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
 import { useDeviceSpec } from '../device/active'
@@ -58,8 +58,8 @@ import { Slider } from '../ui/Slider'
  * that mixes its own colour and bit 8 is on Custom Light alone. Two pickers
  * side by side, one of them inert, was this app inventing a choice the firmware
  * does not offer. So the row is one row: it says **팔레트** and writes the
- * effect's byte where the effect has one, and **색** and paints the selected
- * keys where it does not. The presets serve whichever it is.
+ * effect's byte, or **색** and paints the selected keys, and it is not drawn at
+ * all for an effect that reads neither. The presets serve whichever it is.
  *
  * The colours sit at the top of the panel, over the brightness slider, because
  * on Custom Light they are what the panel is opened for.
@@ -83,6 +83,19 @@ const PRESETS: readonly Rgb[] = [
   { r: 0, g: 0, b: 255 },
   { r: 255, g: 0, b: 255 },
 ]
+
+/**
+ * The column every row in the settings panel lines its control up against.
+ *
+ * One object rather than six copies of a number, because the point of it is
+ * that they agree: a row that picked its own width would put its control out
+ * of line with the five above it.
+ *
+ * In `rem` and not pixels — the root font scales with the viewport here, so a
+ * column in pixels would crop its longest label on a wide window. 5.5rem
+ * clears the longest either bundle has (`Cycle colours`, a little over five).
+ */
+const LABEL: CSSProperties = { width: '5.5rem' }
 
 /** The vendor's own name for an effect, translated where we have the key. */
 function effectLabel(effect: LightEffectSpec, t: (k: MessageKey) => string): string {
@@ -146,9 +159,6 @@ export function LightEffect({
     return (
       <Panel title={t('light.fxPanel.title')}>
         <NotDecoded what="light.effect.what" />
-        <div className="small dim" style={{ marginTop: 10 }}>
-          <T k="light.effect.body" />
-        </div>
       </Panel>
     )
   }
@@ -167,44 +177,85 @@ export function LightEffect({
   /**
    * Whether this effect has a parameter of its own under the colours.
    *
-   * The colour is not one of them any more — it moved to the top of the panel
-   * and shares its row with the stored colours — so an effect whose only
-   * control is `color` would leave nothing here. None do: every row with bit 5
-   * carries brightness too.
+   * Neither the colour nor `colorful` is one of them any more: both moved to
+   * the top of the panel, the switch over the picker it decides the fate of.
+   * So an effect whose only controls are those two would leave nothing here.
+   * None do: every row with bit 5 carries brightness too.
    */
   const hasParams =
     lighting !== null &&
     (has(LIGHT_CONTROL.brightness) ||
       has(LIGHT_CONTROL.speed) ||
-      has(LIGHT_CONTROL.direction) ||
-      has(LIGHT_CONTROL.colorful))
+      has(LIGHT_CONTROL.direction))
 
   /**
-   * What the colour control writes, or null when there is nothing to write.
+   * What the colour control writes, or null for no colour control at all.
    *
-   * The effect's own byte wherever the effect mixes its own colour; the keys
-   * otherwise. "Otherwise" covers Custom Light, which is the point, and it also
-   * covers the effects that read neither — Spectrum, Hundred Flowers, off —
-   * where the keys are still worth painting for the effect you switch to next.
-   * The warning that says so is `perKey.notices`.
+   * Only ever a colour this effect actually reads: its own byte where it mixes
+   * one, the stored keys on Custom Light, and nothing on the effects that read
+   * neither — Spectrum, Hundred Flowers, off. A control that wrote a colour the
+   * running effect ignores is the same mistake as a slider for a byte it does
+   * not use, which is the rule the rest of this panel already follows.
+   *
+   * `colorful` takes the palette away for that reason too: while the effect is
+   * walking the hue wheel the byte is there and still written, but nothing
+   * reads it, and a picker that changes nothing is worse than no picker.
    */
   const target: 'palette' | 'keys' | null = has(LIGHT_CONTROL.color)
-    ? 'palette'
-    : perKey
+    ? lighting?.colorful
+      ? null
+      : 'palette'
+    : has(LIGHT_CONTROL.perKey) && perKey
       ? 'keys'
       : null
 
+  /**
+   * The same, but held through the close.
+   *
+   * The picker does not vanish when it stops applying — it closes, and for the
+   * length of that it is still on screen. Reading `target` for what to draw
+   * would swap the label and the colour to the other target's on the first
+   * frame of the close, which is a flicker of something that was never true.
+   * A ref written while rendering, as `editsRef` in features/Lighting.tsx is
+   * and for the same reason: the answer has to survive a render it is not
+   * allowed to schedule.
+   */
+  const held_target = useRef<'palette' | 'keys' | null>(null)
+  if (target !== null) held_target.current = target
+  // Nothing has been open yet on the first render, and it can still be the
+  // shut one that is drawn — an effect whose palette `colorful` is holding
+  // closed. So the fallback asks the same question `target` does, minus the
+  // switch that shut it.
+  const shown = held_target.current ?? (has(LIGHT_CONTROL.color) ? 'palette' : 'keys')
+
+  /**
+   * Whether the hue-cycle switch is one of this effect's settings.
+   *
+   * Custom Light carries the bit and does not get the switch. That effect
+   * paints from the colour block, and what a hue cycle does to a board painting
+   * from stored colours is not established — this app does not offer a switch
+   * whose result it cannot state. The byte is left exactly as the board holds
+   * it: every write here is a read-modify-write of the settings block.
+   */
+  const hasColorful = has(LIGHT_CONTROL.colorful) && !has(LIGHT_CONTROL.perKey)
+
+  /** Whether the colour block is on screen at all, open or closing. */
+  const hasColors = hasColorful || target !== null
+
   /** The colour the picker opens on, which is always a real colour. */
   const baseHex =
-    target === 'palette' && lighting !== null ? hexOf(lighting.color) : (perKey?.picked ?? '#000000')
+    shown === 'palette' && lighting !== null ? hexOf(lighting.color) : (perKey?.picked ?? '#000000')
   /** What the hex box holds: what is being typed, or the colour itself. */
   const hexText = perKey?.typed ?? baseHex
   const hexBad = perKey != null && perKey.typed !== null && parseHex(perKey.typed) === null
-  const colorDisabled =
-    target === 'palette' ? disabled || (lighting?.colorful ?? false) : (perKey?.none ?? true)
+  const colorDisabled = shown === 'palette' ? disabled : (perKey?.none ?? true)
 
   /** Send a chosen colour wherever this effect reads its colour from. */
   const pick = (color: Rgb) => {
+    // Nothing is read from here while the block is closing, and the block is
+    // `inert` then so nothing can be. Belt as well as braces: a write on the
+    // way out would land on whichever target the effect no longer uses.
+    if (target === null) return
     if (target === 'palette') apply({ color })
     else perKey?.onPick(color)
   }
@@ -266,29 +317,60 @@ export function LightEffect({
       </Panel>
 
       {/*
-        The settings, and only the ones this effect has. An effect with none —
-        the off row — gets no panel rather than an empty one, which is what "off
-        has no settings" should look like. Unless the section brought its own
-        colours: those are settings too, and they do not stop being editable
-        because the running effect is one that ignores them.
+        The settings, and only the ones this effect has — which for the off row
+        is none at all. The panel stays anyway, empty under its heading: it used
+        to go, and the column beside it took the width back, so picking "off"
+        moved every effect card under the pointer. An empty box that says what
+        it is beats the whole page rearranging itself around a click.
       */}
-      {(target !== null || hasParams) && (
-          <Panel title={t('light.fxPanel.params')}>
+      <Panel title={t('light.fxPanel.params')}>
+        {/*
+          The colours, over the sliders rather than under them: on Custom Light
+          they are what the panel is opened for, and the effect's own parameters
+          are what you reach for after. The rule under them is drawn only when
+          something follows, since a rule with nothing below reads as something
+          that failed to load.
+        */}
+        {hasColors && (
+          <>
             {/*
-              One colour row, pointed at whichever colour this effect reads —
-              see `target`. Over the sliders rather than under them: on Custom
-              Light it is what the panel is opened for, and the effect's own
-              parameters are what you reach for after. The rule under it is
-              drawn only when something follows, since a rule with nothing below
-              reads as something that failed to load.
+              The switch over the picker it decides the fate of. It used to sit
+              at the foot of the panel, which put a cause below its effect: the
+              picker it takes away was three rows above it, and the row that
+              made it disappear was the last thing on the page.
             */}
-            {target !== null && (
-              <>
-                {target === 'keys' && perKey?.notices}
+            {hasColorful && lighting !== null && (
+              <label className="row">
+                <span className="small dim" style={LABEL}>
+                  {t('light.colorful')}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={lighting.colorful}
+                  disabled={disabled}
+                  onChange={(e) => apply({ colorful: e.target.checked })}
+                />
+              </label>
+            )}
+
+            {/*
+              Opened and closed rather than appearing and vanishing — the same
+              grid trick the cap's second line uses (`.keycap .sub-slot`), for
+              the same reason: one row at `1fr` is as tall as what is in it,
+              `0fr` is nothing, and the two interpolate where `auto` would not.
+
+              `inert` rather than an unmount, because what is closing has to
+              stay on screen to close. Nothing in there can be reached by a
+              pointer, a tab stop or a screen reader while it is shut, so a
+              picker that no longer applies cannot be typed into on its way out.
+            */}
+            <div className={target === null ? 'fxcolor shut' : 'fxcolor'} inert={target === null}>
+              <div className="fxcolor-in">
+                {shown === 'keys' && perKey?.notices}
 
                 <div className="row" style={{ alignItems: 'center' }}>
-                  <span className="small dim" style={{ width: 72 }}>
-                    {target === 'palette' ? t('light.palette') : t('light.color')}
+                  <span className="small dim" style={LABEL}>
+                    {shown === 'palette' ? t('light.palette') : t('light.color')}
                   </span>
                   {/*
                     Held like the sliders. The native picker is an OS dialog, so
@@ -335,19 +417,10 @@ export function LightEffect({
                     <span className="mono small">{baseHex}</span>
                   )}
                   <span style={{ flex: 1 }} />
-                  {target === 'keys' && perKey && (
+                  {shown === 'keys' && perKey && (
                     <button disabled={perKey.none} onClick={perKey.onClear}>
                       {t('light.clear')}
                     </button>
-                  )}
-                  {/*
-                    Greyed while `colorful` is on rather than hidden: the byte is
-                    still there and still written, and the reason it does nothing
-                    right now is the checkbox below — which is worth being able
-                    to see and undo.
-                  */}
-                  {target === 'palette' && lighting?.colorful && (
-                    <span className="small dim">{t('light.colorOverridden')}</span>
                   )}
                 </div>
 
@@ -358,7 +431,7 @@ export function LightEffect({
                 )}
 
                 <div className="row" style={{ marginTop: 12, alignItems: 'center' }}>
-                  <span className="small dim" style={{ width: 72 }}>
+                  <span className="small dim" style={LABEL}>
                     {t('light.preset')}
                   </span>
                   <div className="swatches">
@@ -379,98 +452,93 @@ export function LightEffect({
                   </div>
                 </div>
 
-                {hasParams && <hr className="panel-sep" />}
-              </>
-            )}
-            {lighting !== null && (
-              <>
-                {has(LIGHT_CONTROL.brightness) && (
-                  <div className="row" style={{ alignItems: 'center' }}>
-                    <span className="small dim" style={{ width: 72 }}>
-                      {t('light.brightness')}
-                    </span>
-                    <Slider
-                      {...held}
-                      disabled={disabled}
-                      min={0}
-                      max={LIGHT_LIMITS.brightnessMax}
-                      step={1}
-                      value={lighting.brightness}
-                      onChange={(e) => apply({ brightness: Number(e.target.value) })}
-                      style={{ flex: '1 1 200px' }}
-                    />
-                    <span className="mono small" style={{ width: 44, textAlign: 'right' }}>
-                      {lighting.brightness}%
-                    </span>
-                  </div>
-                )}
+              </div>
+            </div>
 
-                {has(LIGHT_CONTROL.speed) && (
-                  <div className="row" style={{ alignItems: 'center', marginTop: 10 }}>
-                    <span className="small dim" style={{ width: 72 }}>
-                      {t('light.speed')}
-                    </span>
-                    {/*
-                      Five steps, not a percentage: the firmware reads this byte as
-                      a period and rejects anything above 4 (it rewrites it to 2),
-                      so a finer slider would offer values the board would not keep.
-                    */}
-                    <Slider
-                      {...held}
-                      disabled={disabled}
-                      min={0}
-                      max={LIGHT_LIMITS.speedMax}
-                      step={1}
-                      value={lighting.speed}
-                      onChange={(e) => apply({ speed: Number(e.target.value) })}
-                      style={{ flex: '1 1 200px' }}
-                    />
-                    <span className="mono small" style={{ width: 44, textAlign: 'right' }}>
-                      {lighting.speed} / {LIGHT_LIMITS.speedMax}
-                    </span>
-                  </div>
-                )}
-
-                {has(LIGHT_CONTROL.direction) && (
-                  <div className="row" style={{ alignItems: 'center', marginTop: 12 }}>
-                    <span className="small dim" style={{ width: 72 }}>
-                      {t('light.direction')}
-                    </span>
-                    <button
-                      className={lighting.direction ? '' : 'primary'}
-                      aria-pressed={!lighting.direction}
-                      disabled={disabled}
-                      onClick={() => apply({ direction: false })}
-                    >
-                      {t('light.dir.a')}
-                    </button>
-                    <button
-                      className={lighting.direction ? 'primary' : ''}
-                      aria-pressed={lighting.direction}
-                      disabled={disabled}
-                      onClick={() => apply({ direction: true })}
-                    >
-                      {t('light.dir.b')}
-                    </button>
-                  </div>
-                )}
-
-                {has(LIGHT_CONTROL.colorful) && (
-                  <label className="row" style={{ marginTop: 12 }}>
-                    <input
-                      type="checkbox"
-                      checked={lighting.colorful}
-                      disabled={disabled}
-                      onChange={(e) => apply({ colorful: e.target.checked })}
-                    />
-                    <span>{t('light.colorful')}</span>
-                  </label>
-                )}
-
-              </>
-            )}
-          </Panel>
+            {hasParams && <hr className="panel-sep" />}
+          </>
         )}
+        {lighting !== null && (
+              <>
+            {has(LIGHT_CONTROL.brightness) && (
+              <div className="row" style={{ alignItems: 'center', marginTop: 12 }}>
+                <span className="small dim" style={LABEL}>
+                  {t('light.brightness')}
+                </span>
+                <Slider
+                  {...held}
+                  disabled={disabled}
+                  min={0}
+                  max={LIGHT_LIMITS.brightnessMax}
+                  step={1}
+                  value={lighting.brightness}
+                  onChange={(e) => apply({ brightness: Number(e.target.value) })}
+                  style={{ flex: '1 1 200px' }}
+                />
+                <span className="mono small" style={{ width: 44, textAlign: 'right' }}>
+                  {lighting.brightness}%
+                </span>
+              </div>
+            )}
+
+            {has(LIGHT_CONTROL.speed) && (
+              <div className="row" style={{ alignItems: 'center', marginTop: 12 }}>
+                <span className="small dim" style={LABEL}>
+                  {t('light.speed')}
+                </span>
+                {/*
+                  Five stops, whatever the readout says. The firmware reads this
+                  byte as a period and rejects anything above 4 (it rewrites it
+                  to 2), so the slider stays at one step per value the board
+                  will keep — what is written as a percentage is the label, and
+                  it lands on 0, 25, 50, 75 and 100 rather than anywhere between.
+                */}
+                <Slider
+                  {...held}
+                  disabled={disabled}
+                  min={0}
+                  max={LIGHT_LIMITS.speedMax}
+                  step={1}
+                  value={lighting.speed}
+                  onChange={(e) => apply({ speed: Number(e.target.value) })}
+                  style={{ flex: '1 1 200px' }}
+                />
+                {/* Per cent, to be read against the brightness above it: two
+                    sliders reporting in two different units, one of them out of
+                    four, made a pair of settings look like different kinds of
+                    thing. */}
+                <span className="mono small" style={{ width: 44, textAlign: 'right' }}>
+                  {Math.round((lighting.speed / LIGHT_LIMITS.speedMax) * 100)}%
+                </span>
+              </div>
+            )}
+
+            {has(LIGHT_CONTROL.direction) && (
+              <div className="row" style={{ alignItems: 'center', marginTop: 12 }}>
+                <span className="small dim" style={LABEL}>
+                  {t('light.direction')}
+                </span>
+                <button
+                  className={lighting.direction ? '' : 'primary'}
+                  aria-pressed={!lighting.direction}
+                  disabled={disabled}
+                  onClick={() => apply({ direction: false })}
+                >
+                  {t('light.dir.a')}
+                </button>
+                <button
+                  className={lighting.direction ? 'primary' : ''}
+                  aria-pressed={lighting.direction}
+                  disabled={disabled}
+                  onClick={() => apply({ direction: true })}
+                >
+                  {t('light.dir.b')}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </Panel>
     </div>
   )
 }

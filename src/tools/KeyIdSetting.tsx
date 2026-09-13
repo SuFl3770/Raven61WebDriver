@@ -22,17 +22,12 @@ export function KeyIdSetting() {
   return (
     <Panel title={t('debug.keyId.title')}>
       <label className="row">
+        <span>{t('debug.keyId.label')}</span>
         <input
           type="checkbox"
           checked={sensorMap.builtInIgnored}
           onChange={(e) => sensorMap.setIgnoreBuiltIn(e.target.checked)}
         />
-        <span>
-          {t('debug.keyId.label')}
-          <div className="small dim" style={{ marginTop: 2 }}>
-            <T k="debug.keyId.hint" />
-          </div>
-        </span>
       </label>
     </Panel>
   )

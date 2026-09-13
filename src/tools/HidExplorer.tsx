@@ -101,9 +101,6 @@ export function HidExplorer() {
 
   return (
     <Panel title={t('explorer.title')}>
-      <div className="small dim" style={{ marginBottom: 4 }}>
-        {t('explorer.hint')}
-      </div>
       <Notice>
         <span className="small">
           <T k="explorer.chromeNote" />

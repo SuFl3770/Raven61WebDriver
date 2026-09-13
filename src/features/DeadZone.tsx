@@ -40,17 +40,14 @@ export function DeadZone() {
 
   return (
     <Panel title={t('deadzone.title')}>
-      <div className="small dim" style={{ marginBottom: 10 }}>
-        {t('deadzone.hint')}
-      </div>
       <label className="row">
+        <span>{t('deadzone.enable')}</span>
         <input
           type="checkbox"
           disabled={none}
           checked={dz.enabled}
           onChange={(e) => patch({ enabled: e.target.checked })}
         />
-        <span>{t('deadzone.enable')}</span>
       </label>
       <div className="row" style={{ marginTop: 12, opacity: dz.enabled ? 1 : 0.5 }}>
         <label className="small dim">

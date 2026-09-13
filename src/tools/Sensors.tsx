@@ -298,13 +298,13 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           <>
             {debug && (
               <label className="small dim">
+                <T k="sensors.listenOnly" params={{ arm: commandHex(analogModeCommands().arm) }} />{' '}
                 <input
                   type="checkbox"
                   checked={listenOnly}
                   disabled={listening}
                   onChange={(e) => setListenOnly(e.target.checked)}
-                />{' '}
-                <T k="sensors.listenOnly" params={{ arm: commandHex(analogModeCommands().arm) }} />
+                />
               </label>
             )}
             <button className="primary" onClick={() => void toggle()} disabled={!connected}>
@@ -338,11 +338,6 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       </GridFrame>
 
       <Panel title={t('sensors.title')}>
-        <Notice>
-          <span className="small">
-            <T k="sensors.intro" />
-          </span>
-        </Notice>
         <div className="small dim" style={{ marginTop: 10 }}>
           <T k="sensors.gridLegend" />
         </div>
@@ -397,9 +392,6 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
 
       {analysis && sensorSummary.length > 0 && (
         <Panel title={t('sensors.sensorTable.title')}>
-          <div className="small dim" style={{ marginBottom: 8 }}>
-            <T k="sensors.sensorTable.intro" />
-          </div>
           <table>
             <thead>
               <tr>
@@ -531,9 +523,6 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
 
       {analysis && candidates.length > 0 && (
         <Panel title={t('sensors.address.title')}>
-          <div className="small dim" style={{ marginBottom: 8 }}>
-            <T k="sensors.address.intro" params={{ groups: candidates[0]!.groups }} />
-          </div>
           <table>
             <thead>
               <tr>
@@ -621,9 +610,6 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
 
       {analysis && drift.length > 0 && (
         <Panel title={t('sensors.drift.title')}>
-          <div className="small dim" style={{ marginBottom: 8 }}>
-            <T k="sensors.drift.intro" params={{ tolerance: BASELINE_TOLERANCE }} />
-          </div>
           <table>
             <thead>
               <tr>

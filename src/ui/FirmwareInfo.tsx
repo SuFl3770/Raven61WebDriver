@@ -89,10 +89,6 @@ export function FirmwareInfo() {
         </dd>
       </dl>
 
-      <div className="small dim" style={{ marginTop: 10 }}>
-        <T k="firmware.hint" />
-      </div>
-
       {firmware && (
         <div className="small dim mono" style={{ marginTop: 12 }}>
           {firmware.raw}

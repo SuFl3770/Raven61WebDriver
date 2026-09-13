@@ -156,6 +156,32 @@
   --press: #6ea8ff;
   --release: #ff6b6b;
   /*
+   * The six advanced-key kinds, as chips on a cap — see `.keycap .sub .advkind`.
+   *
+   * Six hues spread right around the wheel rather than a ramp, because these
+   * are names and not amounts: DKS is not more of anything than TGL is. Every
+   * one is bright enough to carry the near-black ink the chip is written in,
+   * on a black cap and on a white one, so the set is stated once and not
+   * restated for the light theme — the chip brings its own background with it
+   * either way.
+   */
+  --adv-dks: #f5c518;
+  --adv-mt: #ff9f43;
+  --adv-tgl: #ff4f9a;
+  --adv-rs: #6c7bff;
+  --adv-socd: #3ee07f;
+  --adv-oks: #b06bff;
+  /*
+   * How far that band rises up the cap: one line of its own type.
+   *
+   * As tight as three letters at this size will sit in, because the cap's
+   * legend does not move over for it — the two share the cap, and every pixel
+   * the band takes is one taken off the clearance under the legend. At the
+   * app's own scale that leaves the band below the legend's descenders, which
+   * is the whole of what it has to clear. See `.keycap .advband`.
+   */
+  --advband-h: 0.8125rem;
+  /*
    * The travel trace on the sensors tab, which is drawn into a canvas rather
    * than laid out — see tools/Sensors.tsx.
    *
@@ -663,7 +689,7 @@ input[type="checkbox"] {
   position: relative;
   flex: 0 0 auto;
   width: 2.1em;
-  height: 1.15em;
+  height: 1.25em;
   margin: 0 0.2em 0 0;
   vertical-align: -0.22em;
   border: 1px solid var(--line);
@@ -1296,7 +1322,7 @@ div.rail { position: sticky; top: 0; }
   padding-bottom: 2px;
   border-bottom: 1px solid var(--line);
 }
-.subtabs button {
+.subtabs button, .layer-tabs button {
   background: none;
   border: none;
   /* Sits on the strip's own line, so the selected one can thicken it. */
@@ -1307,10 +1333,42 @@ div.rail { position: sticky; top: 0; }
   font-size: 0.8125rem;
   color: var(--fg-dim);
 }
-.subtabs button:hover:not(:disabled) { color: var(--fg); background: none; }
+.subtabs button:hover:not(:disabled), .layer-tabs button:hover:not(:disabled) {
+  color: var(--fg);
+  background: none;
+}
 /* Underlined rather than filled: the sidebar's accent fill is for the tab you
    are in, and a second filled thing inside it would compete. */
-.subtabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.subtabs button[aria-selected="true"], .layer-tabs button[aria-selected="true"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/*
+ * The layer strip on the remap and advanced-key tabs, which is the same kind
+ * of choice as a section strip — one of a handful of views of the same thing,
+ * exactly one of them open — and so is drawn as one.
+ *
+ * It cannot *be* a `.subtabs`, because it does not live where those do: the
+ * layer is the grid's own state, so the strip rides in the title row beside
+ * the grid's other controls (ui/TabActions.tsx) rather than at the top of the
+ * scrolling box. What it drops is everything about that position — the
+ * sticking, the centring, the ground colour it needs to slide under — and what
+ * it keeps is the part that carries the meaning: dim labels on a line, the
+ * open one lit and standing on a thickened piece of it.
+ *
+ * The line is the strip's own rather than the row's: the row holds buttons of
+ * the ordinary kind on other tabs, and a rule under all of them would read as
+ * a border on the title.
+ */
+.layer-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  /* The 2px under the open layer overhangs this by the same 1px it does on a
+     section strip — see the negative margin above. */
+  border-bottom: 1px solid var(--line);
+}
 
 /* --- connect screen ------------------------------------------------------
    Everything else in the app is a view onto an attached board, so with none
@@ -1398,6 +1456,35 @@ div.rail { position: sticky; top: 0; }
   border-top: 1px solid var(--line);
   margin: 14px 0;
 }
+
+/*
+ * The colour picker and its presets, which open and close rather than
+ * appearing and vanishing — see features/LightEffect.tsx.
+ *
+ * They come and go with the effect: an effect that mixes its own colour has a
+ * palette, Custom Light has the stored keys, and `여러 색 순환` takes the
+ * palette away while it is on. Popped in and out, a block four rows tall moved
+ * every slider under it in one frame, and the switch that did it is the row
+ * directly above — so the thing you just clicked jumped away from the pointer.
+ *
+ * Same grid trick as the cap's second line (`.keycap .sub-slot`): one row at
+ * `1fr` is exactly as tall as what is in it, `0fr` is nothing, and unlike
+ * `auto` the two interpolate. The inner box hides its own overflow, which is
+ * what lets the row close over it, and being a block formatting context it
+ * also keeps the margins inside from escaping a row of no height.
+ *
+ * Height and opacity together, so what is in it is gone before the gap is.
+ */
+.fxcolor {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 200ms ease, opacity 200ms ease;
+}
+.fxcolor.shut { grid-template-rows: 0fr; opacity: 0; }
+.fxcolor-in { overflow: hidden; min-height: 0; }
+/* The gap between the switch and the picker belongs to the picker, so it
+   closes with it rather than being left behind as a stripe of padding. */
+.fxcolor-in > .row:first-child { margin-top: 12px; }
 
 /*
  * The macro tab, in two columns — see features/Macro.tsx.
@@ -1984,6 +2071,19 @@ div.rail { position: sticky; top: 0; }
 .dim { color: var(--fg-dim); }
 .mono { font-family: var(--mono); }
 .small { font-size: 0.8125rem; }
+/*
+ * A block of `small dim` is nearly always the line that explains the control
+ * above it, with the next thing stacked straight after — so the gap below
+ * belongs to the pair of classes rather than to each of the hundred-odd places
+ * that write them.
+ *
+ * Matched on the whole attribute rather than `div.small.dim`, because the two
+ * are also worn by things that are laid out rather than read: the DKS half
+ * labels and the macro gauge readout sit in a grid a margin would push around.
+ * Divs only, for the same reason — the same pair on a span is a label inside a
+ * row, where a flex item picking up a bottom margin moves the row's baseline.
+ */
+div[class="small dim"] { margin-bottom: 8px; }
 
 /* Label / value pairs — a handful of read-only facts, too few for a table. */
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 1rem; margin: 0; font-size: 0.875rem; }
@@ -2263,6 +2363,12 @@ div.rail { position: sticky; top: 0; }
   /* Written as specifically as the rules they override — `.keycap` alone does
      not reach a span inside it. */
   .keycap .stripe, .keycap .sub-slot { transition: none; }
+  /* The caret still arrives and still leaves — where it sits is what says the
+     cap is picked — it just stops travelling to get there. */
+  .keygrid.painted .keycap::after { transition: none; }
+  /* The colour block still opens and closes — `inert` and the height are what
+     make it usable or not — it just does both at once. */
+  .fxcolor { transition: none; }
   /*
    * The drawer and its veil. `transition: none` on the rail also drops the
    * delay that held `visibility` back for the length of the slide — which is
@@ -2500,6 +2606,52 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 .keycap .sub .press { color: var(--press); }
 .keycap .sub .release { color: var(--release); }
 /*
+ * An advanced key named inside a sentence — see ui/KindChip.
+ *
+ * The readout under a grid, where the key the pointer is on is spelled out. The
+ * same fill the cap's own band carries, so the line and the cap it is about are
+ * tied together by colour before either is read; a chip rather than the band's
+ * full bleed, because here it is a word in a sentence and not a label on an
+ * object. The band is `.keycap .advband`, further down.
+ *
+ * Not `--accent` and not the state colours, deliberately. This is a set of
+ * categories with no ordering and no good/bad among them — nothing here is a
+ * warning — so it is its own palette, picked for hues that stay apart from each
+ * other rather than for what they mean. The same reasoning as `--press` and
+ * `--release` above, six ways instead of two.
+ */
+.advkind {
+  display: inline-block;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  /*
+   * Relative, because the chip is drawn in two sizes of type: the cap's second
+   * line and the readout under the grid, which is half again as big. A fixed
+   * size would be right for one of them and a stamp on the other.
+   */
+  font-size: 0.9em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+  white-space: nowrap;
+  /*
+   * One ink for all six, because all six fills are bright.
+   *
+   * The alternative was white on each, which is what a chip usually wants —
+   * but a yellow and a green bright enough to be told apart on a black cap
+   * cannot hold white text, and a palette where half the chips read one way
+   * and half the other stops looking like one set of labels. Near-black on
+   * every fill clears 6:1 on the darkest of them.
+   */
+  color: #0b0d10;
+}
+.advkind-dks, .advband-dks { background: var(--adv-dks); }
+.advkind-tgl, .advband-tgl { background: var(--adv-tgl); }
+.advkind-mt, .advband-mt { background: var(--adv-mt); }
+.advkind-rs, .advband-rs { background: var(--adv-rs); }
+.advkind-socd, .advband-socd { background: var(--adv-socd); }
+.advkind-oks, .advband-oks { background: var(--adv-oks); }
+/*
  * A binding that has been changed but not written yet (key mapping tab).
  *
  * The warning colour rather than the accent, because the accent on a cap means
@@ -2592,6 +2744,44 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 .keycap .stripe.gone { transform: translateY(100%); }
 
 /*
+ * The advanced key's band — the stripe above, with its own name written in it.
+ *
+ * The same band doing the same job: a category on the bottom edge, recognised
+ * without being read. It is taller and it carries a word because six kinds is
+ * past what a colour can carry alone, and because the name is three letters
+ * that every panel on the advanced-keys tab uses — a reader who has seen `MT`
+ * once does not have to look it up.
+ *
+ * It leaves the way the stripe does, by the same transform and over the same
+ * quarter second, so a cap that stops running one is one movement rather than
+ * a band that blinks out.
+ *
+ * The cap's legend does not move over for it. A grid where the bound keys sat
+ * a little higher than their neighbours read as a keyboard with rows out of
+ * line — and the legend is the thing being kept still, since the whole point
+ * of leaving it on the cap is that the key is still where it was.
+ */
+.keycap .advband {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  pointer-events: none;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: var(--advband-h);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  /* The ink, on all six fills — see `.advkind` for why one and not white. */
+  color: #0b0d10;
+  transition: transform 240ms ease;
+}
+.keycap .advband.gone { transform: translateY(100%); }
+
+/*
  * A cap painted with the colour stored for that key — the lighting tab.
  *
  * The paint is an inline background, so it wins over `.selected`'s accent fill
@@ -2603,6 +2793,60 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
  */
 .keycap.tinted .sub { color: inherit; opacity: 0.8; }
 .keycap.tinted.selected { box-shadow: inset 0 0 0 2px var(--accent); }
+/*
+ * And a caret under the legend, on the one grid whose caps are painted a colour
+ * this app did not choose.
+ *
+ * The ring above is the accent, which is a fixed colour; the paint is the
+ * board's, which is any colour at all. When the two are the same colour the
+ * ring is not there — a key lit in the accent looks exactly like a key lit in
+ * the accent and selected. Nothing about the ring can fix that, because the
+ * problem is that it has a colour.
+ *
+ * `currentColor` has none of its own. On a painted cap it is the legend colour
+ * the caller worked out from the paint's own luma (`legendOn` in
+ * features/Lighting.tsx) — black on a light cap, white on a dark one — so the
+ * caret is readable against every colour the board can show, including the
+ * accent. The ring stays: where it *is* visible it is read at a glance across
+ * sixty-one caps, and this is the guarantee under it rather than a replacement.
+ *
+ * Under the legend and not over it, small, and out of the way of the second
+ * line: the cap's content is centred as a block, which leaves the bottom few
+ * pixels free at every cap size the board has.
+ *
+ * It rises through the bottom edge and sinks back out through it — the same
+ * movement the switch band makes, and for the same reason: the cap clips its
+ * own overflow, so a caret pushed down by its own height is simply gone behind
+ * the edge rather than being something that has to be faded or unmounted. That
+ * is also why the rule is on every cap in this grid and only the offset is on
+ * the selected one. A pseudo-element that stops matching its selector does not
+ * animate out; it vanishes. One that is always there can leave.
+ *
+ * `translate` centres it and `transform` moves it, which are two properties
+ * rather than one composed value — so the transition drives the movement on
+ * its own and cannot lose the centring halfway through.
+ *
+ * 120ms, which is what the cap's own background takes (see `.keycap`): the fill
+ * and the caret are one state change and should land together. The band's
+ * 240ms is right for a tab switch and wrong here — a marquee drag crosses
+ * sixty-one caps, and a caret still climbing on the first of them while the
+ * pointer is over the last reads as lag.
+ */
+.keygrid.painted .keycap::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 7px solid currentColor;
+  pointer-events: none;
+  /* Its own height below the edge, and so behind it. */
+  transform: translateY(100%);
+  transition: transform 120ms ease;
+}
+.keygrid.painted .keycap.selected::after { transform: translateY(-1px); }
 
 /*
  * The lighting effect picker: two dozen cards rather than a dropdown.
@@ -2660,12 +2904,6 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
   /* Each panel is the last one in its column, so neither keeps the margin that
      separates it from a panel below it. */
   .fx-cols > .panel { margin-bottom: 0; }
-  /*
-   * An effect with no parameters — the off row — renders no second panel, and
-   * the picker takes the width back rather than sitting beside a column of
-   * nothing.
-   */
-  .fx-cols > .panel:only-child { grid-column: 1 / -1; }
 }
 
 /*

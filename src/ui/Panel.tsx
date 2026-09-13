@@ -46,9 +46,6 @@ export function NotDecoded({ what }: { what: MessageKey }) {
   return (
     <Notice kind="warn">
       <strong>{t('panel.notDecoded.title', { what: t(what) })}</strong>
-      <div className="small dim" style={{ marginTop: 4 }}>
-        <T k="panel.notDecoded.body" />
-      </div>
     </Notice>
   )
 }

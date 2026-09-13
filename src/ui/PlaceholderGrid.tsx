@@ -21,7 +21,11 @@ import { KeyGrid } from './KeyGrid'
 export function PlaceholderGrid() {
   return (
     <GridFrame selectable={false}>
-      <KeyGrid />
+      {/* The caps carry their legends and the advanced-key bands, which is the
+          whole of what there is to say about a keyboard on a tab with nothing
+          on it yet — and what makes this grid the same keyboard as the one on
+          the tab it was opened from. */}
+      <KeyGrid advanced />
     </GridFrame>
   )
 }

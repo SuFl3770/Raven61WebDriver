@@ -109,6 +109,20 @@ export interface Legend {
  * An unbound key reads as a dash. It is the one case where the printing is
  * actively misleading — the cap says A and the key sends nothing — and there is
  * no name to put there instead.
+ *
+ * ## An advanced key keeps the printing
+ *
+ * A key bound to DKS or MT has no keymap record left to name: the three bytes
+ * that used to say what it sends now say which advanced record runs it, and
+ * `bindingLabel` can only read that back as the record's number. "Adv key 3" on
+ * a cap is the one legend in the app that names nothing anybody chose — it is a
+ * row in a table that cannot be seen from here, and it replaces the one thing
+ * still worth reading off a cap, which is which key this is.
+ *
+ * So the printing stays, in the accent that says it is no longer plain. What
+ * the record actually does is spelled out under the grid on the advanced-keys
+ * tab, which is the only place holding the three tables that could answer it —
+ * see the foot in features/Advanced.
  */
 export function legendFor(
   key: KeyDef,
@@ -118,6 +132,7 @@ export function legendFor(
   if (!binding) return { text: key.label, remapped: false }
   if (sameBinding(binding, factoryBinding(key.code))) return { text: key.label, remapped: false }
   if (binding.kind === 'none') return { text: '—', remapped: true }
+  if (binding.kind === 'advanced') return { text: key.label, remapped: true }
   return { text: bindingLabel(binding, keycodeLabel), remapped: true }
 }
 

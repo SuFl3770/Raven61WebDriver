@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
-import { T } from '../i18n/T'
-import { useDeviceSpec, useLayout } from '../device/active'
+import { useLayout } from '../device/active'
 import { supports } from '../protocol/codec'
 import { UNLIT, hexOf, isUnlit, luminanceOf, sameRgb, type Rgb } from '../protocol/keyRgb'
-import { LIGHT_CONTROL, effectOf, supportsControl } from '../protocol/lighting'
 import type { KeyRgbSnapshot } from '../protocol/types'
-import { useGlobalSettings } from '../state/global'
 import { link, useCodec, useConnection } from '../state/link'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { boardSync } from '../state/sync'
@@ -36,12 +33,14 @@ import { LightEffect } from './LightEffect'
  *
  * Three decisions worth the words:
  *
- *   - **Colour edits are not written as they are made**, where effect settings
- *     are. An effect setting is a switch or a slider in a block this app
- *     rewrites all day; a colour write is a flash rewrite of the lighting area,
- *     which is the one thing here with a recorded history of needing the stock
- *     driver to undo (findings.md #4). So it stays an explicit press, as on the
- *     remap tab.
+ *   - **Colour edits write themselves, but not as they are made.** An effect
+ *     setting is a switch or a slider in a block this app rewrites all day; a
+ *     colour write is a flash rewrite of the lighting area, which is the one
+ *     thing here with a recorded history of needing the stock driver to undo
+ *     (findings.md #4). It used to wait for a press for that reason. It now
+ *     waits for the painting to stop instead — see `AUTO_WRITE_MS`, which is
+ *     what keeps a drag across the picker from being one flash rewrite per
+ *     frame. What went away is the button, not the care.
  *   - **The caps are painted, not labelled.** A colour is recognised without
  *     being read, and a hex triplet across 61 caps is a page of codes. What the
  *     grid cannot say — which key is which colour, by name — the line under it
@@ -58,6 +57,21 @@ import { LightEffect } from './LightEffect'
  */
 
 /**
+ * How long the painting has to stop before what was painted is written.
+ *
+ * There is no apply button: a colour lands on the board by itself. What it must
+ * not do is land on the board *per change* — the picker emits one change per
+ * pointer move, the hex box one per keystroke, and every one of those would be
+ * a flash rewrite of the lighting area. So each edit restarts this, and the
+ * write goes out once nothing has moved for its length.
+ *
+ * Long enough to cover the gap between two swatch clicks or two keystrokes,
+ * short enough that a colour is on the board before anyone has looked up from
+ * the keyboard to check.
+ */
+const AUTO_WRITE_MS = 500
+
+/**
  * A legend colour that can be read against a cap painted `color`.
  *
  * On luma rather than on any single channel or a mean of the three: saturated
@@ -72,12 +86,8 @@ export function Lighting() {
   const codec = useCodec()
   const t = useT()
   const { keys } = useLayout()
-  // For the poll interval the panel quotes — it is the board's spec, not a
-  // constant, so a board that answers more slowly says a different number.
-  const spec = useDeviceSpec()
   const { connected } = useConnection()
   const sel = useSelection()
-  const global = useGlobalSettings()
 
   /** The stored layer, as the board last reported it. */
   const [stored, setStored] = useState<KeyRgbSnapshot | null>(null)
@@ -370,6 +380,47 @@ export function Lighting() {
   }
 
   /**
+   * The write, once the painting has stopped — see `AUTO_WRITE_MS`.
+   *
+   * The dependencies are every reason the timer should start over, and nothing
+   * else. `edits` is state, so it is the same object until something is
+   * painted: this tab re-renders on every light frame the board answers with,
+   * several times a second, and a timer that restarted on each of those would
+   * never reach its end.
+   *
+   * `apply` is reached through a ref rather than named as a dependency for the
+   * same reason — it is a new function every render, and depending on it would
+   * be depending on the frame poll. The ref is written during the render, as
+   * `editsRef` above it is, so what fires is always the current one.
+   */
+  const applyRef = useRef(apply)
+  applyRef.current = apply
+  useEffect(() => {
+    if (dirty === 0 || !connected || !canWrite || busy !== null) return
+    const timer = setTimeout(() => void applyRef.current(), AUTO_WRITE_MS)
+    return () => clearTimeout(timer)
+  }, [edits, dirty, connected, canWrite, busy])
+
+  /*
+   * Leaving the tab with a colour still waiting sends it now.
+   *
+   * Half a second is not long, and it is exactly long enough to walk away
+   * inside. A press could be not-pressed and the edit was visibly still
+   * pending; a write that promises to happen by itself has to happen even when
+   * what it was waiting for is the user leaving. Straight to the codec and not
+   * through `apply`, because there is nothing left to show the result on.
+   */
+  const flushRef = useRef<() => void>(() => {})
+  flushRef.current = () => {
+    if (dirty === 0 || !connected || !canWrite || busy !== null) return
+    void codec.writeKeyColors?.(
+      link,
+      keys.map((k) => edits[k.index] ?? null),
+    )
+  }
+  useEffect(() => () => flushRef.current(), [])
+
+  /**
    * Nothing selected: the controls stay on screen but do nothing.
    *
    * Disabled rather than hidden, for the reason the input-point panels give —
@@ -429,18 +480,6 @@ export function Lighting() {
         : t('light.picked', { key: hoveredKey.label, color: hexOf(hoveredColor) })
 
   /**
-   * Whether the stored colours are the ones the board is showing.
-   *
-   * They are only ever shown by **Custom Light** — every other effect generates
-   * its own colours and never reads this block. The effect table says which
-   * one: `LIGHT_CONTROL.perKey` is the bit the stock page uses to swap its
-   * colour picker for a per-key editor, and only that row carries it. So the
-   * app asks the table rather than hard-coding a mode number.
-   */
-  const effect = global?.lighting ? effectOf(spec.lightEffects, global.lighting.mode) : undefined
-  const perKeyLive = supportsControl(effect, LIGHT_CONTROL.perKey)
-
-  /**
    * The per-key colour controls, for the settings panel to put over its
    * sliders.
    *
@@ -477,21 +516,6 @@ export function Lighting() {
             </Notice>
           </div>
         )}
-        {/*
-          The one fact that decides whether any of this reaches the LEDs. It is
-          a warning rather than an explanation: the effect list is on the same
-          screen, so what to do about it is a click away and does not need
-          describing. It is only ever shown while the keys are what the colour
-          control writes — on an effect that mixes its own colour, the control
-          is that colour and there is nothing here to warn about.
-        */}
-        {global?.lighting && !perKeyLive && (
-          <div style={{ marginBottom: 10 }}>
-            <Notice kind="warn">
-              <T k="light.notCustom" />
-            </Notice>
-          </div>
-        )}
       </>
     ),
     picked,
@@ -525,29 +549,14 @@ export function Lighting() {
         then the selection gestures go, as they do during a calibration pass,
         rather than offering a selection nothing can act on.
 
-        There is nothing here to choose what the grid shows. It shows the frame
-        the board is displaying, which is the only thing on this tab that can
-        answer "what is lit" — see the note at the top of the file.
+        Nothing of this tab's own in the bar. There is nothing here to choose
+        what the grid shows — it shows the frame the board is displaying, which
+        is the only thing that can answer "what is lit" — and nothing to press
+        to keep a colour, which goes to the board by itself.
       */}
       <GridFrame
         selectable={painting}
         marquee={painting}
-        top={
-          painting && (
-            <>
-              <button
-                className="primary"
-                disabled={!connected || !canWrite || busy !== null || dirty === 0}
-                onClick={() => void apply()}
-              >
-                {dirty === 0 ? t('light.apply') : t('light.applyCount', { count: dirty })}
-              </button>
-              <button disabled={dirty === 0 || busy !== null} onClick={() => setEdits({})}>
-                {t('light.revert')}
-              </button>
-            </>
-          )
-        }
         foot={
           <>
             {/* Beside the selection count, and answering what the effect

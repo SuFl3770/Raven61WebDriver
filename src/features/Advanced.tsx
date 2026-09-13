@@ -35,6 +35,7 @@ import {
   type AdvancedKind,
   type AdvancedRecord,
   type DksSpan,
+  UNSTABLE_KINDS,
   type PairRecord,
   type ToggleRecord,
 } from '../protocol/advancedKeys'
@@ -42,16 +43,19 @@ import { supports } from '../protocol/codec'
 import { BINDING_GROUPS, encodeRecord, groupChoices, type KeyBinding } from '../protocol/keymap'
 import type { AdvancedKeySnapshot, AdvancedKeyUse, KeymapEntry } from '../protocol/types'
 import { useKeyConfigs } from '../state/config'
+import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
+import { useSettings } from '../state/settings'
 import { boardSync } from '../state/sync'
 import { GridFrame } from '../ui/GridFrame'
 import { KeyCapture } from '../ui/KeyCapture'
 import { KeyGrid } from '../ui/KeyGrid'
+import { MessageToast } from '../ui/MessageToast'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { Select, type SelectOption } from '../ui/Select'
 import { Slider } from '../ui/Slider'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
-import { AdvancedInUse } from './AdvancedInUse'
+import { AdvancedInUse, Argument, rowsOf } from './AdvancedInUse'
 
 /**
  * Advanced keys — DKS, TGL, MT, RS, SOCD and OKS.
@@ -345,6 +349,13 @@ export function Advanced() {
   const spec = useDeviceSpec()
   const { keys } = useLayout()
   const { connected } = useConnection()
+  /*
+   * Record slots, the bytes in them and the orphan sweep are the table
+   * underneath the six kinds, not the setting — someone binding a mod-tap
+   * has no use for "#4 · 70 00 01". They stay for the protocol work that
+   * needs to see what was written, behind the same flag as the debug tabs.
+   */
+  const { debug } = useSettings()
 
   const canRead = supports(codec, 'readAdvancedKeys')
   const canWrite = supports(codec, 'writeAdvancedKey') && supports(codec, 'writeKeymap')
@@ -369,6 +380,23 @@ export function Advanced() {
    */
   const [open, setOpen] = useState<TabId>(ADVANCED_KINDS[0])
   /**
+   * The kinds the strip offers.
+   *
+   * All six in debug mode; outside it, the ones the firmware actually runs —
+   * see `UNSTABLE_KINDS`. Derived rather than stored, so turning debug off puts
+   * the section away on the next render instead of leaving a tab that writes a
+   * kind this app has decided not to write.
+   */
+  const offered = ADVANCED_KINDS.filter((k) => debug || !UNSTABLE_KINDS.includes(k))
+  /**
+   * Which section is open, once the strip has had its say.
+   *
+   * Debug mode going off while one of its kinds is open falls back to the first
+   * rather than leaving the strip pointed at a tab that is no longer on it —
+   * the same fallback the sidebar makes for the debug tabs (see App.tsx).
+   */
+  const active: TabId = open !== IN_USE && !offered.includes(open) ? ADVANCED_KINDS[0] : open
+  /**
    * The kind the editor is editing.
    *
    * The list section has none, and falls back rather than carrying a second
@@ -376,7 +404,7 @@ export function Advanced() {
    * on the first kind when it is left — which is where a tab that has never
    * been opened starts anyway.
    */
-  const kind: AdvancedKind = open === IN_USE ? ADVANCED_KINDS[0] : open
+  const kind: AdvancedKind = active === IN_USE ? ADVANCED_KINDS[0] : active
   /**
    * The caps being worked on, in the order they were clicked.
    *
@@ -386,6 +414,17 @@ export function Advanced() {
    * keeps the list at whatever the open kind needs.
    */
   const [picked, setPicked] = useState<number[]>([])
+  /**
+   * The cap the pointer is on, for the readout under the grid.
+   *
+   * Hover rather than the selection alone, because the question the foot
+   * answers — "what is this key running?" — is asked *before* clicking: a cap
+   * now reads what is printed on it whatever advanced key it runs (see
+   * `legendFor`), so pointing is how the grid is read. The selection is the
+   * fallback, so the answer stays up for the key being edited once the pointer
+   * has left the keyboard.
+   */
+  const [hovered, setHovered] = useState<number | null>(null)
   const [snapshot, setSnapshot] = useState<AdvancedKeySnapshot | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   /** The pair's edits, kept apart from `draft`: two records, not one. */
@@ -419,6 +458,8 @@ export function Advanced() {
   const [busy, setBusy] = useState<null | 'read' | 'write'>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
+  /** Stable, so the toast's timer is not restarted by every render. */
+  const clearStatus = useCallback(() => setStatus(null), [])
   const [mismatch, setMismatch] = useState<string | null>(null)
   /** What the last read's sweep did, if anything. Its own line — see `read`. */
   const [swept, setSwept] = useState<{ cleared: number[]; failed: number[] }>({
@@ -532,28 +573,45 @@ export function Advanced() {
     void boardSync.read()
   }, [connected])
 
-  /*
-   * And the open layer's keymap, once per layer, for the defaults above.
+  /**
+   * Reads one layer's keymap into `layerBindings`, and hands the base layer on
+   * to the legend store.
    *
-   * A failure stores an empty layer rather than nothing, so this does not ask
-   * a board that will not answer again on every render. The tab still works
-   * without it; the pair's dropdowns just start on a dash.
+   * Two callers, and the second is the one that matters outside this tab.
+   * Opening a layer needs it for the defaults above. Every write here needs it
+   * because **this tab changes what a cap sends**: binding a key to an advanced
+   * record replaces its keymap entry, and the remap tab — the only other place
+   * that reads the keymap — re-reads on being opened and so looks right, while
+   * every other grid in the app draws its caps off `legends` and would go on
+   * naming a key the board no longer has. Nothing else re-reads that store, so
+   * a write that did not publish here left the whole app stale until the remap
+   * tab had been visited.
+   *
+   * A failure stores an empty layer rather than nothing, so the effect below
+   * does not ask a board that will not answer again on every render. The tab
+   * still works without it; the pair's dropdowns just start on a dash.
    */
+  const refreshKeymap = useCallback(
+    async (which: number) => {
+      if (!codec.readKeymap) return
+      try {
+        const entries = await codec.readKeymap(link, which)
+        setLayerBindings((prev) => ({ ...prev, [which]: entries }))
+        // Only the base layer. An Fn layer is a held state and no grid outside
+        // the remap tab draws it — see state/legends.ts.
+        if (which === 0) legends.set(entries)
+      } catch {
+        setLayerBindings((prev) => ({ ...prev, [which]: [] }))
+      }
+    },
+    [codec],
+  )
+
+  /* And the open layer's keymap, once per layer, for the defaults above. */
   useEffect(() => {
     if (!connected || !canReadKeymap || layerBindings[layer]) return
-    let live = true
-    void (async () => {
-      try {
-        const entries = await codec.readKeymap!(link, layer)
-        if (live) setLayerBindings((prev) => ({ ...prev, [layer]: entries }))
-      } catch {
-        if (live) setLayerBindings((prev) => ({ ...prev, [layer]: [] }))
-      }
-    })()
-    return () => {
-      live = false
-    }
-  }, [connected, canReadKeymap, codec, layer, layerBindings])
+    void refreshKeymap(layer)
+  }, [connected, canReadKeymap, layer, layerBindings, refreshKeymap])
 
   const uses = snapshot?.uses.filter((u) => u.layer === layer) ?? []
   const useByKey = new Map<number, AdvancedKeyUse>()
@@ -774,12 +832,10 @@ export function Advanced() {
       }
       setDuo(null)
       await read()
-      setStatus(
-        t('advanced.appliedPair', {
-          records: `#${pairRecords[0]}, #${pairRecords[1]}`,
-          kind: t(kindKey(kind)),
-        }),
-      )
+      // The keymap the pair was just written into, so the rest of the app's
+      // caps follow it — see `refreshKeymap`.
+      await refreshKeymap(layer)
+      setStatus(t('advanced.appliedToast'))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -834,7 +890,10 @@ export function Advanced() {
       // After the read, not before: the read clears the status line, so a
       // message set first would be wiped by the refresh it triggered.
       await read()
-      setStatus(t('advanced.applied', { record: current.record, kind: t(kindKey(current.kind)) }))
+      // And the keymap this just wrote into, so the rest of the app's caps
+      // follow it — see `refreshKeymap`.
+      await refreshKeymap(layer)
+      setStatus(t('advanced.appliedToast'))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -910,10 +969,10 @@ export function Advanced() {
       setDraft(null)
       setDuo(null)
       await read()
-      const parts = [t('advanced.unboundOk')]
-      if (cleared.length > 0) parts.push(t('advanced.unbound', { records: recordList(cleared) }))
-      if (kept.length > 0) parts.push(t('advanced.unboundShared', { records: recordList(kept) }))
-      setStatus(parts.join(' '))
+      // The caps are back on their factory bindings; the rest of the app has
+      // to be told — see `refreshKeymap`.
+      await refreshKeymap(layer)
+      setStatus(t('advanced.unboundToast'))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -955,7 +1014,14 @@ export function Advanced() {
     // Whatever was waiting was waiting about the caps that were picked before
     // this click, so it is not waiting any more.
     setWaitingOn(null)
-    if (u) setOpen(u.kind)
+    /*
+     * A cap already bound to a kind opens that kind — unless the strip is not
+     * offering it (see `UNSTABLE_KINDS`), where the strip stays put and the
+     * panel's "this key is already bound as …" notice is what says so. That
+     * leaves the one way out of an unstable binding without debug mode: apply
+     * another kind over the cap.
+     */
+    if (u && offered.includes(u.kind)) setOpen(u.kind)
   }
 
   /**
@@ -980,17 +1046,62 @@ export function Advanced() {
    * remap tab keeps it: which key runs an advanced key is a keymap entry, so
    * it is per layer — and the grid is the thing that follows it.
    */
+  /*
+   * What the cap under the pointer is running, spelled out under the grid.
+   *
+   * The caps themselves keep the board's printing — a key bound to an advanced
+   * key has no keymap record left that names anything a person chose, so the
+   * legend that used to read `Adv key 3` now reads what the key is. That moves
+   * the whole answer down here, and this is the one place in the app that can
+   * give it: the three tables are read by this tab, and the record is what says
+   * what the key does.
+   *
+   * Rows rather than uses, so an RS or SOCD pair is answered as the one setting
+   * it is — pointing at either half reads out both. Same folding the in-use
+   * table does, and the same component reads it out, in its one-line mode.
+   */
+  const rows = rowsOf(uses)
+  const readingKey = hovered ?? picked[0] ?? null
+  const readingRow =
+    readingKey === null
+      ? undefined
+      : rows.find((r) => r.uses.some((u) => u.index === readingKey))
+
   const grid = (
     <GridFrame
       selectable={false}
       marquee={false}
+      foot={
+        canRead ? (
+          readingRow ? (
+            <span>
+              {t('advanced.foot.runs', {
+                keys: readingRow.uses
+                  .map((u) => u.label || t('advanced.unmappedSlot', { slot: u.slot }))
+                  .join(', '),
+                kind: t(kindKey(readingRow.kind)),
+              })}
+              {/* The record number only where the rest of them are — see the
+                  in-use table's `debug` column. */}
+              {debug && ` #${readingRow.uses.map((u) => u.record).join(', #')}`}
+              {' · '}
+              <Argument row={readingRow} snapshot={snapshot} inline />
+            </span>
+          ) : (
+            <span>{t(uses.length === 0 ? 'advanced.noneBound' : 'advanced.foot.none')}</span>
+          )
+        ) : undefined
+      }
       top={
         canRead ? (
-          <div className="row" style={{ gap: 4 }} role="group" aria-label={t('advanced.layers')}>
+          /* The same section strip the remap tab's layers get, for the same
+             reason — see the comment on the strip there. */
+          <div className="layer-tabs" role="tablist" aria-label={t('advanced.layers')}>
             {Array.from({ length: spec.keymap.layers }, (_, i) => (
               <button
                 key={i}
-                className={i === layer ? 'primary' : ''}
+                role="tab"
+                aria-selected={i === layer}
                 onClick={() => {
                   setLayer(i)
                   setDraft(null)
@@ -1011,19 +1122,32 @@ export function Advanced() {
         // strip is where the kind is chosen now, so landing anywhere else
         // would hide the very record the click asked about. See `pick`.
         onSelect={pick}
-        /* Which layer's advanced keys are on the caps — switching layer
-           rewrites the second line, and this is what fades the new one in. */
-        subKey={String(layer)}
-        sub={(key) => {
-          const u = useByKey.get(key.index)
-          return u ? t(kindKey(u.kind)) : undefined
-        }}
+        /* What the foot is reading out. Cleared on the way off the grid, so
+           the line falls back to the picked key rather than to the last cap
+           the pointer happened to cross on its way out. */
+        onHover={(i) => setHovered(i ?? null)}
+        /*
+         * Which layer's advanced keys are on the caps.
+         *
+         * The grid draws the band itself and would otherwise draw the base
+         * layer's, which is right on every tab but this one and the remap tab —
+         * here the layer is the thing being chosen, and an Fn layer's bands are
+         * not layer 0's. Handed over only once the read has landed: until then
+         * the grid's own answer is the better one, and a band that dropped off
+         * every cap for the length of a read is exactly what switching to this
+         * tab used to look like.
+         */
+        advanced={snapshot ? (key) => useByKey.get(key.index)?.kind : true}
         label={(key) => {
           const u = useByKey.get(key.index)
           // `undefined`, not `''`: a key with no advanced record has nothing
           // this tab wants to say about it, so it keeps the legend the rest of
-          // the app gives it rather than being blanked.
-          return u ? t('advanced.capLabel', { kind: t(kindKey(u.kind)), record: u.record }) : undefined
+          // the app gives it rather than being blanked. Which slot holds it is
+          // the same answer without the flag on — the line under the cap already
+          // says the kind, so the legend it came with is worth more than a
+          // record number nothing outside debug mode can act on.
+          if (!u || !debug) return undefined
+          return t('advanced.capLabel', { kind: t(kindKey(u.kind)), record: u.record })
         }}
       />
     </GridFrame>
@@ -1035,9 +1159,6 @@ export function Advanced() {
         {grid}
         <Panel title={t('advanced.title')}>
           <NotDecoded what="advanced.what" />
-          <div className="small dim" style={{ marginTop: 8 }}>
-            <T k="advanced.note" />
-          </div>
         </Panel>
       </>
     )
@@ -1065,9 +1186,6 @@ export function Advanced() {
 
       {complete && isDuoKind(kind) && (
         <div className="adv-body">
-          <div className="small dim">
-            <T k={`advanced.${kind}.help` as const} />
-          </div>
           {/*
             One row per cap: the key that was picked, and what it sends. No
             partner slot — the slot map already knows both, and each record is
@@ -1089,24 +1207,21 @@ export function Advanced() {
                     setDuo({ kind, usages })
                   }}
                 />
-                <span className="small dim">
-                  {record === undefined ? '' : `#${record}`}
-                  {(() => {
-                    const rec = pairRecordAt(at)
-                    return rec ? ` · ${recordBytes(rec)}` : ''
-                  })()}
-                </span>
+                {debug && (
+                  <span className="small dim">
+                    {record === undefined ? '' : `#${record}`}
+                    {(() => {
+                      const rec = pairRecordAt(at)
+                      return rec ? ` · ${recordBytes(rec)}` : ''
+                    })()}
+                  </span>
+                )}
               </Row>
             )
           })}
           {!pairRecords && (
             <Notice kind="err">
               {t('advanced.noFreeRecord', { limit: spec.advancedKeys.usable })}
-            </Notice>
-          )}
-          {kind === 'socd' && (
-            <Notice kind="info">
-              <T k="advanced.socd.modeNote" />
             </Notice>
           )}
           {inert && (
@@ -1164,11 +1279,13 @@ export function Advanced() {
           )}
           {current && (
             <>
-              <Row label={t('advanced.record')}>
-                <span className="small">
-                  #{current.record} · <code>{recordBytes(current.rec)}</code>
-                </span>
-              </Row>
+              {debug && (
+                <Row label={t('advanced.record')}>
+                  <span className="small">
+                    #{current.record} · <code>{recordBytes(current.rec)}</code>
+                  </span>
+                </Row>
+              )}
               <Editor
                 draft={current}
                 maxSteps={dksSteps}
@@ -1212,17 +1329,16 @@ export function Advanced() {
         </div>
       )}
 
-      {swept.cleared.length > 0 && (
+      {debug && swept.cleared.length > 0 && (
         <Notice kind="info">
           {t('advanced.orphansCleared', { records: recordList(swept.cleared) })}
         </Notice>
       )}
-      {swept.failed.length > 0 && (
+      {debug && swept.failed.length > 0 && (
         <Notice kind="err">
           {t('advanced.orphansFailed', { records: recordList(swept.failed) })}
         </Notice>
       )}
-      {status && <Notice kind="ok">{status}</Notice>}
       {mismatch && <Notice kind="err">{mismatch}</Notice>}
       {error && <Notice kind="err">{error}</Notice>}
     </Panel>
@@ -1242,7 +1358,7 @@ export function Advanced() {
    * from.
    */
   const tabs: SubTab[] = [
-    ...ADVANCED_KINDS.map((k) => ({
+    ...offered.map((k) => ({
       id: k as TabId,
       labelKey: kindKey(k),
       render: () => editor,
@@ -1251,8 +1367,16 @@ export function Advanced() {
       id: IN_USE,
       labelKey: 'advanced.inUseTab' as const,
       // The open layer's rows, and the snapshot they were decoded from — the
-      // section draws them, the read belongs to the tab.
-      render: () => <AdvancedInUse snapshot={snapshot} uses={uses} />,
+      // section draws them, the read belongs to the tab. `hidden` is what the
+      // strip is not offering, so a row of a kind that has no section says why.
+      render: () => (
+        <AdvancedInUse
+          snapshot={snapshot}
+          uses={uses}
+          debug={debug}
+          hidden={ADVANCED_KINDS.filter((k) => !offered.includes(k))}
+        />
+      ),
     },
   ]
 
@@ -1262,7 +1386,7 @@ export function Advanced() {
       <SubTabs
         tabs={tabs}
         label={t('advanced.kind')}
-        active={open}
+        active={active}
         onActive={(id) => {
           // Moving to another tab is moving to another record, not converting
           // the picked key's. Leaving the cap selected would have the new tab
@@ -1275,6 +1399,14 @@ export function Advanced() {
           setWaitingOn(null)
         }}
       />
+
+      {/*
+        Outside the panel, and outside the strip that swaps its contents: it is
+        fixed to the window rather than laid out in the tab, and a confirmation
+        must not go away with the section that raised it. See `.toast` in
+        styles.css.
+      */}
+      <MessageToast message={status} onDone={clearStatus} />
     </>
   )
 }
@@ -1626,9 +1758,6 @@ function Editor({
      */
     return (
       <>
-        <div className="small dim" style={{ marginTop: 8 }}>
-          <T k="advanced.dks.help" />
-        </div>
         <div className="dks">
           {/* One picker per column, over the track it fills. */}
           <div className="dks-heads">
@@ -1696,9 +1825,6 @@ function Editor({
     const rec: ToggleRecord = draft.rec
     return (
       <>
-        <div className="small dim" style={{ marginTop: 8 }}>
-          <T k="advanced.tgl.help" />
-        </div>
         <Row label={t('advanced.tgl.key')}>
           <BindingSelect
             label={t('advanced.tgl.key')}
@@ -1718,9 +1844,6 @@ function Editor({
     const { tap, hold } = mtBindings(rec)
     return (
       <>
-        <div className="small dim" style={{ marginTop: 8 }}>
-          <T k="advanced.mt.help" />
-        </div>
         <Row label={t('advanced.mt.tap')}>
           <BindingSelect
             label={t('advanced.mt.tap')}
@@ -1767,9 +1890,6 @@ function Editor({
   const oks = oksBindings(rec)
   return (
     <>
-      <div className="small dim" style={{ marginTop: 8 }}>
-        <T k="advanced.oks.help" />
-      </div>
       <Row label={t('advanced.pair.own')}>
         <UsageSelect
           label={t('advanced.pair.own')}

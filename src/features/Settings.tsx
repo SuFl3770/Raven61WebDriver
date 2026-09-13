@@ -37,14 +37,6 @@ export function Settings() {
       <FirmwareInfo />
       <BoardSettings />
 
-      <Panel title={t('settings.storage.title')}>
-        <Notice>
-          <span className="small">
-            <T k="settings.storage.hint" />
-          </span>
-        </Notice>
-      </Panel>
-
       <ThemePicker />
       <AccentPicker />
 
