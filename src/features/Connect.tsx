@@ -10,7 +10,9 @@ import { useT } from '../i18n'
 import { LanguageSelect } from '../i18n/LanguageSelect'
 import { T } from '../i18n/T'
 import { startDemo } from '../state/demo'
-import { link, refreshCodec } from '../state/link'
+import { useAttaching } from '../state/attach'
+import { link, refreshCodec, useConnection } from '../state/link'
+import { BoardArt } from '../ui/BoardArt'
 import { Notice } from '../ui/Panel'
 
 /**
@@ -26,6 +28,14 @@ import { Notice } from '../ui/Panel'
  */
 export function Connect() {
   const t = useT()
+  /*
+   * A board has answered and its picture is lighting up — see state/attach.ts,
+   * which holds this screen for exactly as long as that takes. The line under
+   * the board says which keyboard it was for that moment, and the device card
+   * in the rail carries the same name from there on.
+   */
+  const attaching = useAttaching()
+  const { device } = useConnection()
   const [known, setKnown] = useState<HIDDevice[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,26 +71,40 @@ export function Connect() {
 
   return (
     <div className="connect">
-      <div className="connect-card">
-        <svg className="connect-art" viewBox="0 0 64 34" aria-hidden="true">
-          <rect x="1" y="1" width="62" height="32" rx="5" />
-          <path d="M9 10h6M20 10h6M31 10h6M42 10h6M53 10h2M9 17h6M20 17h6M31 17h6M42 17h6M53 17h2M9 24h6M20 24h24M49 24h6" />
-        </svg>
+      {/*
+        The board is placed across the middle of the window and everything else
+        below it — see `.connect` in styles.css for how. Nothing is framed:
+        with a keyboard drawn across the middle of the screen there is no
+        second thing up here for a card to tell it apart from.
+      */}
+      <BoardArt />
 
-        <h2>{t('connect.title')}</h2>
+      <div className="connect-stage">
+        {/*
+          Above the branch, because a board attached in demo mode is a board
+          attached whether or not this browser has WebHID — see startDemo. The
+          key is what replays the fade: the two are different things to say, so
+          they have to be different elements.
+
+          Blank in the bundle until there is something worth saying; an empty
+          string must not leave an empty paragraph's margin behind.
+        */}
+        {attaching && device ? (
+          <p key="attached" className="dim connect-said" style={{fontSize: 16}}>
+            {device.productName || t('device.unnamed')}
+          </p>
+        ) : (
+          t('connect.body') && (
+            <p key="waiting" className="dim connect-said" style={{fontSize: 16}}>
+              <T k="connect.body" />
+            </p>
+          )
+        )}
 
         {supported ? (
           <>
-            {/* Blank in the bundle until there is something worth saying; an
-                empty string must not leave an empty paragraph's margin behind. */}
-            {t('connect.body') && (
-              <p className="dim">
-                <T k="connect.body" />
-              </p>
-            )}
-
             <div className="connect-actions">
-              <button className="primary" disabled={busy} onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
+              <button disabled={busy} onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
                 {busy ? t('connect.connecting') : t('device.pick')}
               </button>
 
@@ -111,27 +135,17 @@ export function Connect() {
         )}
 
         {/*
-          Outside the branch above, because it is the one thing on this screen
-          that does not need WebHID. A browser that cannot open a keyboard can
-          still run the whole app against the simulated board — see
-          src/demo/board.ts — and telling someone on Firefox that their browser
-          is unsupported and then offering them nothing would be the wrong end
-          of that story.
-
-          Under a rule, and worded as what it is. Nothing about the app changes
-          in demo mode except the thing on the other end of the wire, so the
-          reader has to be told which one they are looking at; afterwards the
-          device card names the board and the corner badge keeps saying it is a
-          simulated one.
+          The foot of the window, not of the board. Neither of these is about
+          the keyboard above them — the demo is the way in without one (a
+          browser that cannot open a keyboard can still run the whole app
+          against the simulated board, see src/demo/board.ts), and the language
+          picker is chrome this window would carry on any screen. Both sit out
+          of the way, under everything, centred.
         */}
-        <div className="connect-demo">
+        <div className="connect-foot">
           <button disabled={busy} onClick={run(startDemo)}>
             {t('connect.demo.action')}
           </button>
-          <p className="small dim">{t('connect.demo.body')}</p>
-        </div>
-
-        <div className="connect-foot">
           <LanguageSelect />
         </div>
       </div>

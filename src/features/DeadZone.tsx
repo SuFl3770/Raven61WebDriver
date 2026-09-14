@@ -1,10 +1,14 @@
+import { useCallback, useState } from 'react'
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
 import { MM_PER_COUNT, countsToMm, quantizeMm } from '../protocol/encoding'
 import { KEY_PERF_LIMITS } from '../protocol/keyPerf'
 import { configStore, useKeyConfigs } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
+import { Dialog, DialogActions } from '../ui/Dialog'
+import { Hint } from '../ui/Hint'
 import { Panel } from '../ui/Panel'
+import { SliderRow, SliderRows } from '../ui/Slider'
 import { useHeldWrites } from '../ui/useHeldWrites'
 
 /**
@@ -31,6 +35,16 @@ export function DeadZone() {
   const none = targets.length === 0
   const dz = configs[targets[0] ?? 0]!.deadZone
 
+  /**
+   * Whether the "you are about to turn it off" question is on screen.
+   *
+   * Asked every time rather than once per run: unlike the switch-type caution
+   * this is not a thing to learn, it is a thing to mean. The box is one click
+   * from the sliders and the two values it clears are not recoverable from the
+   * board once the write lands, so the second click is the whole point.
+   */
+  const [confirmingOff, setConfirmingOff] = useState(false)
+
   // Targets are read at event time, not render time — see the note in Actuation.
   const patch = (p: Partial<typeof dz>) =>
     configStore.update(targetKeys(selection.current()), (c) => ({
@@ -38,55 +52,96 @@ export function DeadZone() {
       deadZone: { ...c.deadZone, ...p },
     }))
 
+  // Backing out is the default: Escape and the backdrop both land here, and
+  // neither of them is an answer of "yes".
+  const keepOn = useCallback(() => setConfirmingOff(false), [])
+
+  const turnOff = () => {
+    setConfirmingOff(false)
+    patch({ enabled: false })
+  }
+
   return (
-    <Panel title={t('deadzone.title')}>
-      <label className="row">
-        <span>{t('deadzone.enable')}</span>
-        <input
-          type="checkbox"
-          disabled={none}
-          checked={dz.enabled}
-          onChange={(e) => patch({ enabled: e.target.checked })}
-        />
-      </label>
-      <div className="row" style={{ marginTop: 12, opacity: dz.enabled ? 1 : 0.5 }}>
-        <label className="small dim">
-          {t('deadzone.top')}
-          <input
-            type="number"
-            {...held}
+    <>
+    {/*
+      The same halves as rapid trigger, and for the same reason: the two
+      tracks want the width and the one switch does not. Two sections of one
+      tab that read alike should be built alike, so both use `.split-two` and
+      the column measure that comes with it.
+    */}
+    <div className="split-two">
+      <Panel title={t('deadzone.title')} hintKey="inputPoint.hint.deadzone">
+      {/* Laid out like the rapid-trigger sensitivities: a track each, stacked,
+          because these two are read against each other the same way. The max
+          is 5 bits — the old cap of 1 mm was past the field, and 50 counts
+          would have gone on the wire as 18, i.e. 0.36 mm, with no complaint. */}
+      <div className="fields-center" style={{ marginTop: 12, opacity: dz.enabled ? 1 : 0.5 }}>
+        <SliderRows>
+          <SliderRow
+            held={held}
+            label={t('deadzone.top')}
             min={0}
-            // 5 bits. The old cap of 1 mm was past the field: 50 counts would
-            // have gone on the wire as 18, i.e. 0.36 mm, with no complaint.
             max={DZ_MAX_MM}
             step={MM_PER_COUNT}
             value={dz.topMm}
             disabled={none || !dz.enabled}
-            onChange={(e) => patch({ topMm: quantizeMm(Number(e.target.value)) })}
-            style={{ width: 90, display: 'block', marginTop: 4 }}
+            onValue={(mm) => patch({ topMm: quantizeMm(mm) })}
           />
-        </label>
-        <label className="small dim">
-          {t('deadzone.bottom')}
-          <input
-            type="number"
-            {...held}
+          <SliderRow
+            held={held}
+            label={t('deadzone.bottom')}
             min={0}
             max={DZ_MAX_MM}
             step={MM_PER_COUNT}
             value={dz.bottomMm}
             disabled={none || !dz.enabled}
-            onChange={(e) => patch({ bottomMm: quantizeMm(Number(e.target.value)) })}
-            style={{ width: 90, display: 'block', marginTop: 4 }}
+            onValue={(mm) => patch({ bottomMm: quantizeMm(mm) })}
           />
-        </label>
-        <span className="small dim" style={{ alignSelf: 'end' }}>
-          <T
-            k="deadzone.limit"
-            params={{ mm: DZ_MAX_MM.toFixed(2), counts: KEY_PERF_LIMITS.deadZoneMax }}
-          />
-        </span>
+        </SliderRows>
       </div>
-    </Panel>
+      </Panel>
+
+      {/* Carries the left panel's heading as a ghost so its switch starts level
+          with the first track — see `ghostHead`. */}
+      <Panel title={t('deadzone.title')} hintKey="inputPoint.hint.deadzone" ghostHead>
+        <div className="switch-rows">
+          <label className="row switch-row">
+            <span className="switch-label">{t('deadzone.enable')}</span>
+            <input
+              type="checkbox"
+              disabled={none}
+              checked={dz.enabled}
+              // Only the off direction asks. Turning it on costs nothing — the
+              // two values are still there and the sliders are one click away
+              // — so a dialog in front of it would be a dialog in front of
+              // nothing.
+              onChange={(e) =>
+                e.target.checked ? patch({ enabled: true }) : setConfirmingOff(true)
+              }
+            />
+          </label>
+          <Hint k="deadzone.hint.enable" />
+        </div>
+      </Panel>
+    </div>
+
+      <Dialog
+        open={confirmingOff}
+        onClose={keepOn}
+        title={t('deadzone.offConfirm.title')}
+        tone="warn"
+      >
+        <div className="small">{t('deadzone.offConfirm.body', { count: targets.length })}</div>
+        <DialogActions>
+          {/* First in the source, so the dialog opens with the keyboard on the
+              button that changes nothing — the same order the report-rate
+              confirmation uses. */}
+          <button onClick={keepOn}>{t('apply.cancel')}</button>
+          <button className="primary" onClick={turnOff}>
+            {t('deadzone.offConfirm.continue')}
+          </button>
+        </DialogActions>
+      </Dialog>
+    </>
   )
 }

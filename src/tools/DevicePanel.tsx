@@ -67,7 +67,7 @@ export function DevicePanel() {
           onChange={setPresetId}
           options={presets.map((p) => ({ value: p.id, label: t(p.labelKey) }))}
         />
-        <button className="primary" onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
+        <button onClick={run(() => link.pickDevice(preset.filters, pickConfigInterface))}>
           {t('device.pick')}
         </button>
         <button onClick={run(() => link.close())} disabled={!connected}>

@@ -3,7 +3,7 @@ import type { MacroSnapshot } from '../protocol/types'
 /**
  * The macro store as last read off the board, kept between visits to the tab.
  *
- * A store rather than component state for the reason state/firmware.ts is one:
+ * A store rather than component state for the reason state/global.ts is one:
  * the tab is unmounted the moment another one is opened, so its read went out
  * again on every visit — 4 KB in 76 packets, which is most of a second on a
  * real board and the whole of the wait a user sees. What that wait is *for* is
@@ -23,7 +23,7 @@ import type { MacroSnapshot } from '../protocol/types'
  * A reader that wants the list therefore reads, every time, which is what the
  * macro tab's debug mode does.
  *
- * ### No subscription, unlike state/firmware.ts
+ * ### No subscription, unlike state/global.ts
  *
  * Nothing needs telling when this changes. It is read once, in the initialiser
  * of the state it seeds, and the only writer while the tab is up is that tab.

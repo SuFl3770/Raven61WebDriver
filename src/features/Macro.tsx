@@ -30,6 +30,7 @@ import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { TabActions } from '../ui/TabActions'
 import { Select, type SelectOption } from '../ui/Select'
 import { useExitValue } from '../ui/useExit'
+import { layerName } from '../protocol/layers'
 
 /**
  * Macros — the 32-slot store at flash 0x21100.
@@ -155,13 +156,49 @@ function AppliedToast({ message, onDone }: { message: string | null; onDone: () 
   )
 }
 
-function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
+/**
+ * One labelled control in the add and bulk-edit panels.
+ *
+ * The label is a grid item rather than a span padded out to a number: every
+ * row in a panel shares one label column, sized to the longest label in
+ * whatever bundle is loaded, so every field in the panel starts at one edge
+ * and the space that separates the two columns is the grid's own.
+ *
+ * That column used to be a 120px minimum on the label, which is the same
+ * measure written by hand — and one label had already outgrown it. "Gap
+ * between passes (ms)" is wider than 120px in both bundles, so its own field
+ * sat a few pixels right of the two above it.
+ *
+ * The labels stay left-aligned, flush with the panel's own edge, so the column
+ * of them reads down as a list of names rather than as a ragged edge pushed up
+ * against the fields. What that costs is the space after a short label, which
+ * is the column's width and not the gap's.
+ */
+function Row({
+  label,
+  unit,
+  children,
+}: {
+  label: ReactNode
+  /**
+   * The value's unit, drawn against the field rather than inside the name.
+   *
+   * Every one of these but the key was "(ms)" on the end of its label, which
+   * is a word the reader has to carry from the left of the row to the right to
+   * use it. Beside the spinner it is where the number is. Inside the field
+   * side and not a column of its own, because it belongs to the box it follows
+   * — the same reason the sliders keep theirs against their own spinner.
+   */
+  unit?: ReactNode
+  children: ReactNode
+}) {
   return (
-    <div className="row">
-      <span className="small dim" style={{ minWidth: 120 }}>
-        {label}
-      </span>
-      {children}
+    <div className="field-row">
+      <span className="small dim">{label}</span>
+      <div className="row">
+        {children}
+        {unit !== undefined && <span className="small dim">{unit}</span>}
+      </div>
     </div>
   )
 }
@@ -550,9 +587,6 @@ export function Macro() {
    */
   const uses = snapshot?.uses ?? []
 
-  /** The names the layer strip used, now that the strip is gone. */
-  const layerLabel = (n: number) =>
-    n === 0 ? t('keymap.layer.main') : n === 1 ? t('keymap.layer.fn1') : `FN${n}`
 
   if (!canRead) {
     return (
@@ -927,54 +961,56 @@ export function Macro() {
             */}
             <div className="macro-col-scroll">
               <Panel title={t('macro.addTitle')}>
-                <Row label={t('macro.addKey')}>
-                  <Select
-                    label={t('macro.addKey')}
-                    value={String(addUsage)}
-                    options={USAGES}
-                    disabled={busy !== null || recording || !canWrite}
-                    onChange={(v) => {
-                      setAddUsage(Number(v))
-                      // Picking from the list answers the question the button
-                      // beside it is waiting for.
-                      setPicking(false)
-                    }}
-                  />
-                  {/*
-                    The same choice, made on the keyboard — see ui/KeyCapture,
-                    which is where this used to live in full. It is shared with
-                    the advanced-key tab's binding fields now, which ask the
-                    same question this one does.
-                  */}
-                  <KeyCapture
-                    armed={picking}
-                    onArmed={setPicking}
-                    onCapture={setAddUsage}
-                    disabled={busy !== null || recording || !canWrite}
-                  />
-                </Row>
-                <Row label={t('macro.holdMs')}>
-                  <input
-                    type="number"
-                    min={0}
-                    max={MACRO_MAX_DELAY_MS}
-                    value={holdMs}
-                    disabled={busy !== null || recording || !canWrite}
-                    style={{ width: '5.5rem' }}
-                    onChange={(e) => setHoldMs(Number(e.target.value) || 0)}
-                  />
-                </Row>
-                <Row label={t('macro.gapMs')}>
-                  <input
-                    type="number"
-                    min={0}
-                    max={MACRO_MAX_DELAY_MS}
-                    value={gapMs}
-                    disabled={busy !== null || recording || !canWrite}
-                    style={{ width: '5.5rem' }}
-                    onChange={(e) => setGapMs(Number(e.target.value) || 0)}
-                  />
-                </Row>
+                <div className="field-rows">
+                  <Row label={t('macro.addKey')}>
+                    <Select
+                      label={t('macro.addKey')}
+                      value={String(addUsage)}
+                      options={USAGES}
+                      disabled={busy !== null || recording || !canWrite}
+                      onChange={(v) => {
+                        setAddUsage(Number(v))
+                        // Picking from the list answers the question the button
+                        // beside it is waiting for.
+                        setPicking(false)
+                      }}
+                    />
+                    {/*
+                      The same choice, made on the keyboard — see ui/KeyCapture,
+                      which is where this used to live in full. It is shared with
+                      the advanced-key tab's binding fields now, which ask the
+                      same question this one does.
+                    */}
+                    <KeyCapture
+                      armed={picking}
+                      onArmed={setPicking}
+                      onCapture={setAddUsage}
+                      disabled={busy !== null || recording || !canWrite}
+                    />
+                  </Row>
+                  <Row label={t('macro.holdMs')} unit={t('unit.ms')}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={MACRO_MAX_DELAY_MS}
+                      value={holdMs}
+                      disabled={busy !== null || recording || !canWrite}
+                      style={{ width: '5.5rem' }}
+                      onChange={(e) => setHoldMs(Number(e.target.value) || 0)}
+                    />
+                  </Row>
+                  <Row label={t('macro.gapMs')} unit={t('unit.ms')}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={MACRO_MAX_DELAY_MS}
+                      value={gapMs}
+                      disabled={busy !== null || recording || !canWrite}
+                      style={{ width: '5.5rem' }}
+                      onChange={(e) => setGapMs(Number(e.target.value) || 0)}
+                    />
+                  </Row>
+                </div>
                 <div className="row">
                   <button
                     disabled={busy !== null || recording || !canWrite || !current || full}
@@ -1007,39 +1043,41 @@ export function Macro() {
               </Panel>
 
               <Panel title={t('macro.tools')}>
-                <Row label={t('macro.repeatTimes')}>
-                  <input
-                    type="number"
-                    min={1}
-                    max={64}
-                    value={repeatTimes}
-                    disabled={busy !== null || recording || !canWrite}
-                    style={{ width: '5.5rem' }}
-                    onChange={(e) => setRepeatTimes(Number(e.target.value) || 1)}
-                  />
-                </Row>
-                <Row label={t('macro.repeatGap')}>
-                  <input
-                    type="number"
-                    min={0}
-                    max={MACRO_MAX_DELAY_MS}
-                    value={repeatGapMs}
-                    disabled={busy !== null || recording || !canWrite}
-                    style={{ width: '5.5rem' }}
-                    onChange={(e) => setRepeatGapMs(Number(e.target.value) || 0)}
-                  />
-                </Row>
-                <Row label={t('macro.fixedDelay')}>
-                  <input
-                    type="number"
-                    min={0}
-                    max={MACRO_MAX_DELAY_MS}
-                    value={fixedDelayMs}
-                    disabled={busy !== null || recording || !canWrite}
-                    style={{ width: '5.5rem' }}
-                    onChange={(e) => setFixedDelayMs(Number(e.target.value) || 0)}
-                  />
-                </Row>
+                <div className="field-rows">
+                  <Row label={t('macro.repeatTimes')} unit={t('unit.times')}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={64}
+                      value={repeatTimes}
+                      disabled={busy !== null || recording || !canWrite}
+                      style={{ width: '5.5rem' }}
+                      onChange={(e) => setRepeatTimes(Number(e.target.value) || 1)}
+                    />
+                  </Row>
+                  <Row label={t('macro.repeatGap')} unit={t('unit.ms')}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={MACRO_MAX_DELAY_MS}
+                      value={repeatGapMs}
+                      disabled={busy !== null || recording || !canWrite}
+                      style={{ width: '5.5rem' }}
+                      onChange={(e) => setRepeatGapMs(Number(e.target.value) || 0)}
+                    />
+                  </Row>
+                  <Row label={t('macro.fixedDelay')} unit={t('unit.ms')}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={MACRO_MAX_DELAY_MS}
+                      value={fixedDelayMs}
+                      disabled={busy !== null || recording || !canWrite}
+                      style={{ width: '5.5rem' }}
+                      onChange={(e) => setFixedDelayMs(Number(e.target.value) || 0)}
+                    />
+                  </Row>
+                </div>
                 <div className="row">
                   <button
                     className="ghost"
@@ -1107,7 +1145,7 @@ export function Macro() {
                       <tbody>
                         {uses.map((u) => (
                           <tr key={`${u.layer}:${u.slot}`}>
-                            <td className="dim">{layerLabel(u.layer)}</td>
+                            <td className="dim">{layerName(u.layer)}</td>
                             <td>{u.label || `#${u.slot}`}</td>
                             <td>{slotName(u.macro)}</td>
                             <td>{draft?.[u.macro]?.events.length ?? 0}</td>

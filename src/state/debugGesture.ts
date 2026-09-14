@@ -82,6 +82,39 @@ export function advanceGesture(
   return { next: { count: 0, last: event.timeStamp }, fire: true }
 }
 
+/**
+ * How many things on screen are reading bare keypresses as something other than
+ * typing.
+ *
+ * The overview tab is the case: its key-info section answers "which key is
+ * this" by taking the next keystroke, and Shift is one of the keys it can be
+ * asked about. Five taps there are a reader inspecting the Shift key five
+ * times, not a request for a protocol lab — and a tab strip that grew two tabs
+ * while somebody was doing that would be answering a question nobody asked.
+ *
+ * A count rather than a flag, so two overlapping claims cannot put it back
+ * before the second one has finished with it. Read inside the listener, so it
+ * is the state at the moment of the press that decides.
+ */
+let suppressing = 0
+
+/**
+ * Turn the gesture off for as long as the caller is on screen, and back on
+ * when it goes. The return value is the release, which is what makes it an
+ * effect body: `useEffect(() => suppressDebugGesture(), [])`.
+ */
+export function suppressDebugGesture(): () => void {
+  suppressing++
+  let released = false
+  return () => {
+    // Guarded, because a release called twice would take somebody else's claim
+    // with it — the count is shared.
+    if (released) return
+    released = true
+    suppressing--
+  }
+}
+
 /** The last toggle the gesture made, so something on screen can say it happened. */
 export interface DebugToggle {
   on: boolean
@@ -108,6 +141,8 @@ export function useDebugGesture(): DebugToggle | null {
       // of them is not something a keypress should do, and during a recording
       // the keys are the thing being recorded.
       if (windowHeld()) return
+      // Something on screen is asking about keys — see `suppressing`.
+      if (suppressing > 0) return
 
       const { next, fire } = advanceGesture(run, {
         key: event.key,

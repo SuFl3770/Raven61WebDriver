@@ -5,6 +5,7 @@ import { DEBUG_GESTURE } from '../state/debugGesture'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
 import { Events } from './Events'
 import { HidExplorer } from './HidExplorer'
+import { KeyPerfBlock } from './KeyPerfBlock'
 import { KeyIdSetting } from './KeyIdSetting'
 import { Prober } from './Prober'
 import { ReportConsole } from './ReportConsole'
@@ -49,6 +50,11 @@ const TOOLS: SubTab[] = [
     id: 'log',
     labelKey: 'debug.tool.log.label',
     render: () => <TrafficLogView />,
+  },
+  {
+    id: 'perf',
+    labelKey: 'debug.tool.perf.label',
+    render: () => <KeyPerfBlock />,
   },
 ]
 

@@ -113,4 +113,29 @@ export const raven61Spec: DeviceSpec = {
    * hardware-verified.
    */
   profileSupport: RAVEN61_PROFILE_SUPPORT,
+  /**
+   * The stock driver's exported profile, decoded from two of them — see
+   * `docs/protocol.md` §5.5 and `src/profile/stock.ts`.
+   *
+   * `proName` is what both files carry in `info@pro_name`, and it is checked
+   * on import rather than ignored: the driver ships layouts for three boards
+   * and writes this string from the one the profile was taken on.
+   */
+  stockProfile: {
+    format: 'raven-xor-xml',
+    proName: 'Raven61 HE',
+    macroSlots: 10,
+    /*
+     * Two, not the four `fn_layer` values the file carries.
+     *
+     * The stock export writes rows for layers 2 and 3, and the board has no
+     * storage behind either: the firmware indexes four, but layer 2 lands on
+     * the per-key RGB blob and layer 3 on the macro table (see
+     * `protocol/layers.ts`). The rows are inert in the file and writing them
+     * would not be. So this app reads and writes the two that exist, and says
+     * out loud that it skipped the rest.
+     */
+    layers: [0, 1],
+    derivedLayers: [101],
+  },
 }

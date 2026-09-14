@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { BASELINE_TOLERANCE, KEY_FINGERPRINTS, type KeyFingerprint } from '../keyboard/fingerprints'
 import { activeLayout, activeSpec, useLayout } from '../device/active'
+import { travelMmFor } from '../device/tables'
+import { useKeyConfigs } from '../state/config'
 import { t as translate, useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
 import { isActiveEvent, parseActiveEvent } from '../protocol/events'
@@ -8,6 +10,7 @@ import { analogModeCommands, armActiveStream, commandHex } from '../state/link'
 import { sensorMap, useSensorMap } from '../state/sensorMap'
 import { selection, useSelection } from '../state/selection'
 import { useSettings } from '../state/settings'
+import { Dialog, DialogActions } from '../ui/Dialog'
 import { KeyGrid } from '../ui/KeyGrid'
 import { Notice, Panel } from '../ui/Panel'
 import { GridFrame } from '../ui/GridFrame'
@@ -56,12 +59,44 @@ interface Observation {
   /** `payload[1]` and `payload[2]` — the fields that identify a modifier. */
   type: number
   modifierBits: number
+  /** ADC counts per 1/800 of travel, as calibration has learned this key. */
+  calScale: number
   /** False while the board reports no total stroke, i.e. before calibration. */
   calibrated: boolean
   /** False for reports that cannot name a key at all — kept, but labelled. */
   identifiable: boolean
   /** Distinct values seen at each payload offset, for the address hunt. */
   bytes: Set<number>[]
+}
+
+/**
+ * The three things the tab has to interrupt for.
+ *
+ * They were four notices stacked under the grid, on a tab whose whole point is
+ * the live display above them — so a board with something to say pushed the
+ * thing being watched down the page, and a warning that had been read stayed
+ * there for the rest of the session. A modal says it once instead.
+ */
+type AlertKey = 'armFailed' | 'staleTable' | 'uncalibrated'
+
+/**
+ * Every arm and disarm the tab issues, in the order it issued them.
+ *
+ * The tab arms itself on the way in rather than waiting for a button, so there
+ * is no click left to serialise against StrictMode's mount / unmount / mount.
+ * Done naively that is the old bug back: the first `armActiveStream` resolves
+ * after its own cleanup has run, and the disarm that cleanup asked for lands
+ * after the second arm and leaves the board out of analog mode.
+ *
+ * One chain fixes it whatever order the promises resolve in — arm, disarm, arm
+ * take effect in that order, and the double mount ends armed.
+ */
+let armQueue: Promise<unknown> = Promise.resolve()
+
+function queue(fn: () => Promise<void>): Promise<void> {
+  const next = armQueue.then(fn, fn)
+  armQueue = next.catch(() => {})
+  return next
 }
 
 /** Table refresh. The live grid and trace run at display rate instead. */
@@ -87,17 +122,27 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
   const { connected } = useConnection()
   const sel = useSelection()
   const [listening, setListening] = useState(false)
-  const [arm, setArm] = useState(false)
   const { debug } = useSettings()
   const [listenOnly, setListenOnly] = useState(false)
   const [armError, setArmError] = useState<string | null>(null)
+  const [alert, setAlert] = useState<AlertKey | null>(null)
+  /** Alerts already raised once, so a standing condition asks once. */
+  const raised = useRef<Set<AlertKey>>(new Set())
+  /**
+   * Bumped by "clear", and a dependency of everything the capture is made of.
+   *
+   * Which is what makes the button a restart rather than an erase: the stream
+   * is disarmed and armed again, the input subscription is torn down and
+   * rebuilt, and the clock the timestamps are measured from starts over — so
+   * what comes back is a fresh run and not the old one with its table emptied.
+   */
+  const [run, setRun] = useState(0)
   const [, forceRender] = useState(0)
   const t = useT()
   const obs = useRef<Map<string, Observation>>(new Map())
   const undecoded = useRef(0)
   const t0 = useRef(0)
   const release = useRef<(() => Promise<void>) | null>(null)
-  const armSeq = useRef(0)
   // Subscribes to the binding store, so toggling the built-in table or binding
   // a key in the events tab re-resolves these rows immediately.
   useSensorMap()
@@ -135,6 +180,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           lastAt: 0,
           type: e.type,
           modifierBits: e.modifierBits,
+          calScale: e.calScale,
           calibrated: e.calibrated,
           identifiable: e.identifiable,
           bytes: Array.from({ length: data.length }, () => new Set<number>()),
@@ -143,6 +189,7 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       }
       row.type = e.type
       row.modifierBits = e.modifierBits
+      row.calScale = e.calScale
       row.calibrated = e.calibrated
       row.identifiable = e.identifiable
       for (let i = 0; i < data.length && i < row.bytes.length; i++) row.bytes[i]!.add(data[i]!)
@@ -158,59 +205,56 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       row.count++
       row.lastAt = Math.round(performance.now() - t0.current)
     })
-  }, [listening])
+  }, [listening, run])
 
   /**
-   * Arming is driven from the checkbox, not from an effect.
+   * The capture runs for as long as the tab is open.
    *
-   * In an effect it fought itself: StrictMode mounts, unmounts and remounts, so
-   * the first `armAnalogStream` resolved *after* its own cleanup had run and
-   * sent the disarm — which landed after the second arm and left the board out
-   * of analog mode. The monitor tab was unaffected because it arms from a click
-   * handler, which is why only this tab looked dead.
-   *
-   * The sequence number covers the same race for fast toggling.
+   * There is no start button any more. Opening a tab called "test" to be told
+   * that the test has not started yet is a step that only ever had one answer,
+   * and the stop half of it was a second way of doing what leaving the tab
+   * already does — the cleanup below hands typing back whatever the reason for
+   * leaving. See `queue` for why arming from an effect is safe here, and
+   * `run` for the one thing that stops and starts it again.
    */
-  const toggle = async () => {
-    const seq = ++armSeq.current
-    const previous = release.current
-    release.current = null
-    await previous?.()
-    if (listening) {
-      setListening(false)
-      setArm(false)
-      return
-    }
+  useEffect(() => {
+    if (!connected) return
+    let cancelled = false
     setArmError(null)
     setListening(true)
-    if (listenOnly) return
-    try {
-      const fn = await armActiveStream()
-      if (seq !== armSeq.current) await fn()
-      else {
-        release.current = fn
-        setArm(true)
-      }
-    } catch (e) {
-      setArmError(e instanceof Error ? e.message : String(e))
+    if (!listenOnly) {
+      void queue(async () => {
+        if (cancelled) return
+        try {
+          release.current = await armActiveStream()
+        } catch (e) {
+          setArmError(e instanceof Error ? e.message : String(e))
+        }
+      })
     }
-  }
+    return () => {
+      cancelled = true
+      setListening(false)
+      void queue(async () => {
+        const fn = release.current
+        release.current = null
+        await fn?.()
+      })
+    }
+  }, [connected, listenOnly, run])
 
   const clear = () => {
     obs.current = new Map()
     undecoded.current = 0
-    forceRender((n) => n + 1)
+    /*
+      The warnings go with the observations that raised them. A restart is
+      asking the board the question again, and "some keys are not calibrated"
+      is worth hearing again if it is still true of the new run — the modal
+      only opens if the condition comes back.
+    */
+    raised.current = new Set()
+    setRun((n) => n + 1)
   }
-
-  // Leaving the tab must hand typing back, whatever the reason for leaving.
-  useEffect(
-    () => () => {
-      armSeq.current++
-      void release.current?.()
-      release.current = null
-    },
-    [],
-  )
 
   useEffect(() => {
     if (!listening) return
@@ -274,8 +318,31 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
   // value it has never heard of, or more baselines under one value than that
   // value has keys.
   const staleTable =
-    unnamedRows.some((r) => !keysPerSensor.has(r.sensorId)) ||
-    excessSensors(siblings, keysPerSensor)
+    (unnamedRows.some((r) => !keysPerSensor.has(r.sensorId)) ||
+      excessSensors(siblings, keysPerSensor)) &&
+    !sensorMap.builtInIgnored
+  const uncalibrated = rows.some((r) => r.identifiable && !r.calibrated)
+
+  /*
+    Raised the first time the stream says so, and then left alone. Both
+    conditions stand for as long as the board is in that state, so re-opening
+    on every table refresh would be a modal that cannot be dismissed.
+  */
+  useEffect(() => {
+    for (const key of ['staleTable', 'uncalibrated'] as const) {
+      const active = key === 'staleTable' ? staleTable : uncalibrated
+      if (!active || raised.current.has(key)) continue
+      raised.current.add(key)
+      setAlert(key)
+      return
+    }
+  }, [staleTable, uncalibrated])
+
+  // Its own, because this one is an event rather than a state: each failed arm
+  // is worth saying again, and the message that comes with it is new.
+  useEffect(() => {
+    if (armError) setAlert('armFailed')
+  }, [armError])
 
   return (
     <>
@@ -287,38 +354,35 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
         pressing moved down the page as the board had more to say about it.
       */}
       {/*
-        `selectable={false}` on purpose: the grid here is the capture's, not
-        the selection's. Clicking picks the key the trace follows, and "select
-        all" would mean nothing to a graph of one key.
+        `selectable={false}` on purpose, and no marquee: the grid here is the
+        capture's, not the selection's. A click picks the one key the trace
+        follows, so "select all" and a rubber band would both be offering to
+        pick a set for a graph that draws one.
       */}
       <GridFrame
-        marquee
         selectable={false}
         top={
           <>
+            {/*
+              Only with debug mode on. It suppresses the command that puts the
+              board into analog mode, which is a thing to try while working out
+              what the board answers to and a way to get a silent capture and
+              no explanation otherwise. Off is the default, so a reader who
+              never turns debug on gets the working path. Live rather than
+              disabled now that the capture runs by itself: the checkbox is a
+              dependency of the effect, so ticking it re-arms.
+            */}
             {debug && (
               <label className="small dim">
                 <T k="sensors.listenOnly" params={{ arm: commandHex(analogModeCommands().arm) }} />{' '}
                 <input
                   type="checkbox"
                   checked={listenOnly}
-                  disabled={listening}
                   onChange={(e) => setListenOnly(e.target.checked)}
                 />
               </label>
             )}
-            <button className="primary" onClick={() => void toggle()} disabled={!connected}>
-              {listening ? t('sensors.stop') : t('sensors.start')}
-            </button>
             <button onClick={clear}>{t('sensors.clear')}</button>
-            {/*
-              Only with debug mode on. It suppresses the command that puts the
-              board into analog mode, which is a thing to try while working out
-              what the board answers to and a way to get a silent capture and
-              no explanation otherwise. Off is the default, so a reader who
-              never turns debug on gets the working path.
-            */}
-            
           </>
         }
         foot={
@@ -336,57 +400,6 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
       >
         <LiveGrid current={current} selected={sel} running={listening} physical={analysis} />
       </GridFrame>
-
-      <Panel title={t('sensors.title')}>
-        <div className="small dim" style={{ marginTop: 10 }}>
-          <T k="sensors.gridLegend" />
-        </div>
-        {rows.some((r) => r.identifiable && !r.calibrated) && (
-          <div style={{ marginTop: 10 }}>
-            <Notice kind="warn">
-              <span className="small">
-                <T k="sensors.uncalibrated" params={{ nominal: layout.travelMm.toFixed(2) }} />
-              </span>
-            </Notice>
-          </div>
-        )}
-        {staleTable && !sensorMap.builtInIgnored && (
-          <div style={{ marginTop: 10 }}>
-            <Notice kind="err">
-              <span className="small">
-                <T k="sensors.staleTable" />
-              </span>
-            </Notice>
-          </div>
-        )}
-        {armError && (
-          <div style={{ marginTop: 10 }}>
-            <Notice kind="err">
-              <span className="small">
-                {t('sensors.armFailed')} <span className="mono">{armError}</span>
-                <div style={{ marginTop: 4 }}>
-                  <T k="sensors.armFailedHint" />
-                </div>
-              </span>
-            </Notice>
-          </div>
-        )}
-        {arm && (
-          <div style={{ marginTop: 10 }}>
-            <Notice kind="warn">
-              <span className="small">
-                <T
-                  k="sensors.armed"
-                  params={{
-                    arm: commandHex(analogModeCommands().arm),
-                    disarm: commandHex(analogModeCommands().disarm),
-                  }}
-                />
-              </span>
-            </Notice>
-          </div>
-        )}
-      </Panel>
 
       <LiveTrace current={current} focus={focus} label={focusKey?.label ?? ''} running={listening} />
 
@@ -662,6 +675,40 @@ export function Sensors({ analysis = false }: { analysis?: boolean }) {
           )}
         </Panel>
       )}
+
+      {/*
+        One modal for all three. They cannot arrive at the same instant — the
+        arm fails before any event is decoded, and the other two are read off
+        the same refresh — so a queue would be machinery for a case that does
+        not happen, and the second condition still has its own panel to be
+        found in.
+      */}
+      <Dialog
+        open={alert !== null}
+        onClose={() => setAlert(null)}
+        title={alert ? t(`sensors.alert.${alert}`) : ''}
+        tone={alert === 'uncalibrated' ? 'warn' : 'danger'}
+      >
+        <div className="small">
+          {alert === 'uncalibrated' && (
+            <T k="sensors.uncalibrated" params={{ nominal: layout.travelMm.toFixed(2) }} />
+          )}
+          {alert === 'staleTable' && <T k="sensors.staleTable" />}
+          {alert === 'armFailed' && (
+            <>
+              {t('sensors.armFailed')} <span className="mono">{armError}</span>
+              <div style={{ marginTop: 6 }}>
+                <T k="sensors.armFailedHint" />
+              </div>
+            </>
+          )}
+        </div>
+        <DialogActions>
+          <button className="primary" onClick={() => setAlert(null)}>
+            {t('sensors.alert.dismiss')}
+          </button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }
@@ -955,8 +1002,21 @@ function LiveGrid({
   physical,
 }: LiveProps & { selected: ReadonlySet<number>; physical?: boolean }) {
   useDisplayClock(running)
-  // The cap fill is a fraction of full travel, which is the board's own.
-  const travelMm = useLayout().travelMm
+  /*
+   * The cap fill is a fraction of that key's *own* full travel.
+   *
+   * Not the layout's nominal 4.00 mm: the board reports a switch type per key
+   * and the table behind `travelMmFor` gives five different strokes across the
+   * types (2.50 to 4.00 mm). Measured against 4 mm a 3.40 mm switch tops out
+   * at 85% and a 2.50 mm one at 62%, so a key that is bottomed out never
+   * finishes filling and the grid reads as if the board were under-reporting.
+   * The event's own `travelMm` is no help here — this board reports 200 counts
+   * for every key whatever is fitted, see boards/raven61/layout.ts.
+   *
+   * Before the perf block has been read there is no switch type and this falls
+   * back to the nominal, which is what it always did.
+   */
+  const configs = useKeyConfigs()
   return (
     <KeyGrid
       /*
@@ -971,8 +1031,10 @@ function LiveGrid({
       // now, so it appears the moment there is one. It still leaves the way
       // every other cap's line does — see `subLive`.
       subLive
-      onToggle={(i, on) => selection.setSelected(i, on)}
-      fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / travelMm}
+      onSelect={(i) => selection.replace([i])}
+      fill={(k) =>
+        (current.current?.get(k.index)?.depthMm ?? 0) / travelMmFor(configs[k.index]?.switchType)
+      }
       sub={(k) => {
         const r = current.current?.get(k.index)
         return r ? `${r.depthMm.toFixed(2)} / ${r.adcLast}` : undefined
@@ -990,6 +1052,9 @@ function LiveTrace({
   const t = useT()
   const canvas = useRef<HTMLCanvasElement>(null)
   const history = useRef<number[]>([])
+  // The top of the graph is this key's bottom-out, for the same reason the
+  // caps fill against their own stroke — see LiveGrid.
+  const fullMm = travelMmFor(useKeyConfigs()[focus]?.switchType)
 
   // The trace belongs to one key, so it starts over when the focus moves.
   useEffect(() => {
@@ -999,29 +1064,53 @@ function LiveTrace({
   useDisplayClock(running, () => {
     history.current.push(current.current?.get(focus)?.depthMm ?? 0)
     if (history.current.length > HISTORY) history.current.shift()
-    drawTrace(canvas.current, history.current)
+    drawTrace(canvas.current, history.current, fullMm)
   })
 
   const row = current.current?.get(focus)
-  const noise = row && row.depthMaxMm > row.depthMinMm ? row.depthMaxMm - row.depthMinMm : 0
 
   return (
     <Panel title={t('sensors.trace.title', { index: focus, key: label })}>
-      <canvas ref={canvas} width={880} height={160} style={{ width: '100%', maxWidth: 880 }} />
-      <div className="row small dim" style={{ marginTop: 8 }}>
-        <span>{t('sensors.trace.current', { mm: (row?.depthMm ?? 0).toFixed(3) })}</span>
-        <span>{t('sensors.trace.min', { mm: row ? row.depthMinMm.toFixed(3) : '—' })}</span>
-        <span>{t('sensors.trace.max', { mm: row ? row.depthMaxMm.toFixed(3) : '—' })}</span>
-        <span>{t('sensors.trace.adc', { value: row?.adcLast ?? '—' })}</span>
-        <span>{t('sensors.trace.baseline', { value: row?.lastBaseline ?? '—' })}</span>
-        <span>{t('sensors.trace.noise', { mm: noise.toFixed(3) })}</span>
+      {/*
+        Beside the graph rather than under it. They were a row along the
+        bottom, which put the number you are watching furthest from the line
+        drawing it and left the panel taller than the trace it is about — and
+        four values stand as a column where six did not fit as one.
+      */}
+      <div className="trace">
+        <canvas ref={canvas} width={880} height={160} />
+        {/* The same vertical rule the tab's title row uses to tell two kinds
+            of control apart — see `.tab-actions .sep`. */}
+        <hr className="sep" />
+        {/* The `.facts` pair the firmware and profile panels read with: a dim
+            label and the number beside it, rather than one sentence a reader
+            has to find the value inside. */}
+        <dl className="facts trace-read">
+          <dt>{t('sensors.trace.current')}</dt>
+          <dd className="mono">
+            {(row?.depthMm ?? 0).toFixed(3)} {t('unit.mm')}
+          </dd>
+
+          <dt>{t('sensors.trace.adc')}</dt>
+          <dd className="mono">{row?.adcLast ?? '—'}</dd>
+
+          <dt>{t('sensors.trace.baseline')}</dt>
+          <dd className="mono">{row?.lastBaseline ?? '—'}</dd>
+
+          <dt>{t('sensors.trace.scale')}</dt>
+          <dd className="mono">{row ? row.calScale.toFixed(2) : '—'}</dd>
+        </dl>
       </div>
     </Panel>
   )
 }
 
-/** Trace of one key's travel, oldest sample at the left. */
-function drawTrace(el: HTMLCanvasElement | null, data: readonly number[]): void {
+/** Trace of one key's travel, oldest sample at the left, `fullMm` at the top. */
+function drawTrace(
+  el: HTMLCanvasElement | null,
+  data: readonly number[],
+  fullMm: number,
+): void {
   const ctx = el?.getContext('2d')
   if (!el || !ctx) return
   const { width: w, height: h } = el
@@ -1045,8 +1134,7 @@ function drawTrace(el: HTMLCanvasElement | null, data: readonly number[]): void 
   ctx.beginPath()
   data.forEach((mm, i) => {
     const x = (i / (HISTORY - 1)) * w
-    const full = activeSpec().layout.travelMm
-    const y = (Math.min(mm, full) / full) * h
+    const y = (Math.min(mm, fullMm) / fullMm) * h
     if (i === 0) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
   })

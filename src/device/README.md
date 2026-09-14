@@ -166,6 +166,27 @@ In the order that stops you wasting effort:
 Set `confidence` to match how far you actually got. `guess` is not an insult —
 it is what the UI shows the user before they let it write to their keyboard.
 
+## The vendor's own profile file
+
+A board may also declare `stockProfile`, which says *the driver that shipped
+with this keyboard writes a profile file, and here is what is in it*. The app
+then offers "save as stock XML" alongside its own JSON, and opens such a file
+when one is picked.
+
+**It is not inherited, and that is deliberate.** Everything else in this
+baseline is a fact about hardware that a sibling plausibly shares; this is a
+fact about *another piece of software*. A board that inherited the Raven61's
+would offer to write a file stamped `pro_name="Raven61 HE"` carrying its ten
+macro slots and its layer list, and the stock driver would read that back onto a
+keyboard it does not describe. So a board claims it by stating it, once someone
+has an export from that board and has looked inside.
+
+Leaving it out is the normal case and costs nothing: the app's own JSON format
+is this app's model written down, it works on every board, and it is the one
+format that drops nothing. `src/device/user/example.device.json.sample` has the
+field spelled out; `src/profile/stock.ts` says what the format can and cannot
+hold.
+
 ## What a spec may *not* change
 
 The record layouts. The 8-byte performance record's bit packing and the 3-byte

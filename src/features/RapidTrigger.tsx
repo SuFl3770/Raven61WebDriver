@@ -1,13 +1,15 @@
 import { useT } from '../i18n'
 import { useLayout } from '../device/active'
 import { travelMmFor } from '../device/tables'
-import { FACTORY_DEFAULTS, MM_PER_COUNT, countsToMm, mmToCounts, quantizeMm } from '../protocol/encoding'
+import { FACTORY_DEFAULTS, MM_PER_COUNT, countsToMm, quantizeMm } from '../protocol/encoding'
 import { KEY_PERF_LIMITS } from '../protocol/keyPerf'
 import type { KeyConfig, RapidTrigger as RT } from '../protocol/types'
-import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/config'
+import { configStore, useKeyConfigs, useLastRead } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
-import { BottomOutTrigger } from '../ui/BottomOutTrigger'
+import { BottomOutToggle } from '../ui/BottomOutTrigger'
+import { Hint } from '../ui/Hint'
 import { Notice, Panel } from '../ui/Panel'
+import { SliderRow, SliderRows } from '../ui/Slider'
 import { useHeldWrites } from '../ui/useHeldWrites'
 
 /**
@@ -60,7 +62,6 @@ function common<T>(
 export function RapidTrigger() {
   const { keys } = useLayout()
   const configs = useKeyConfigs()
-  const base = useBaseline()
   const lastRead = useLastRead()
   const sel = useSelection()
   const t = useT()
@@ -80,10 +81,6 @@ export function RapidTrigger() {
     : Math.min(...targets.map((i) => travelOf(configs[i])))
 
   const enabledCommon = common(configs, targets, (c) => c.rapidTrigger.enabled)
-  const boardEnabled = common(base, targets, (c) => c.rapidTrigger.enabled)
-  const boardPress = common(base, targets, (c) => c.rapidTrigger.pressMm)
-  const boardRelease = common(base, targets, (c) => c.rapidTrigger.releaseMm)
-  const boardMode = common(base, targets, (c) => c.rapidTrigger.continuous)
 
   // Read the selection at event time — see the note in Actuation.
   const patch = (p: Partial<RT>) =>
@@ -142,8 +139,23 @@ export function RapidTrigger() {
   })
 
   return (
-    <>
-      <Panel title={t('rt.title')}>
+    /*
+      Two panels, even halves: the numbers on the left, the switches on the
+      right.
+
+      Split by what a control *is* rather than by what it belongs to. All three
+      switches read as one list — is it on, does it run above actuation, does
+      bottoming out always fire — while the sensitivities are a different kind
+      of question and have tracks that want the width. Mixed into one column
+      the switches were three separate lines with sliders between them, and the
+      global one, which had to sit apart from the per-key pair, ended up in a
+      panel of its own saying almost nothing.
+
+      The odd one out is still odd, and says so: `BottomOutToggle` is global and
+      writes immediately, which its own label and readout carry.
+    */
+    <div className="split-two">
+      <Panel title={t('rt.title')} hintKey="inputPoint.hint.rt">
 
         {lastRead === null && (
           <div style={{ marginBottom: 10 }}>
@@ -152,91 +164,41 @@ export function RapidTrigger() {
         )}
 
 
-        <label className="row" style={{ marginTop: 16 }}>
-          <span>{t('rt.enable')}</span>
-          <input
-            type="checkbox"
-            disabled={none}
-            checked={enabledCommon === true}
-            // Targets that disagree get the third state, so the checkbox does
-            // not claim they are all off.
-            ref={(el) => {
-              if (el) el.indeterminate = enabledCommon === null
-            }}
-            onChange={(e) => setEnabled(e.target.checked)}
-          />
-          {enabledCommon === null && <span className="small dim">({t('actuation.mixed')})</span>}
-        </label>
-
-        <div className="row" style={{ marginTop: 12, opacity: enabledCommon === false ? 0.5 : 1 }}>
-          <label className="small dim">
-            {t('rt.pressSensitivity')}
-            <input
-              type="number"
-              {...held}
+        {/*
+          One line each, stacked, so the two tracks share a left edge and a
+          length: with press above release, which of the pair is the wider is
+          visible without reading either number. The spinners are still there
+          for the exact count.
+        */}
+        {/* 12, not 16: it collapses against the header's own 12 below, so this
+            is what puts the first track level with the first switch across the
+            split rather than 4px under it. */}
+        <div
+          className="fields-center"
+          style={{ marginTop: 12, opacity: enabledCommon === false ? 0.5 : 1 }}
+        >
+          <SliderRows>
+            <SliderRow
+              held={held}
+              label={t('rt.pressSensitivity')}
               min={RT_MIN_MM}
               max={limit}
               step={MM_PER_COUNT}
               value={first.pressMm}
               disabled={none || enabledCommon === false}
-              onChange={(e) => setSensitivity(Number(e.target.value))}
-              style={{ width: 90, display: 'block', marginTop: 4 }}
+              onValue={setSensitivity}
             />
-          </label>
-          <label className="small dim">
-            {t('rt.releaseSensitivity')}
-            <input
-              type="number"
-              {...held}
+            <SliderRow
+              held={held}
+              label={t('rt.releaseSensitivity')}
               min={RT_MIN_MM}
               max={limit}
               step={MM_PER_COUNT}
               value={first.releaseMm}
               disabled={none || enabledCommon === false}
-              onChange={(e) => patch({ releaseMm: quantizeMm(Number(e.target.value)) })}
-              style={{ width: 90, display: 'block', marginTop: 4 }}
+              onValue={(mm) => patch({ releaseMm: quantizeMm(mm) })}
             />
-          </label>
-          <span className="small dim" style={{ alignSelf: 'end' }}>
-            {t('rt.counts', {
-              press: mmToCounts(first.pressMm),
-              release: mmToCounts(first.releaseMm),
-              max: KEY_PERF_LIMITS.rtMax,
-            })}
-          </span>
-        </div>
-
-        <div className="row" style={{ marginTop: 10, opacity: enabledCommon === false ? 0.5 : 1 }}>
-          <label className="small">
-            {t('rt.continuous')}{' '}
-            <input
-              type="checkbox"
-              checked={first.continuous}
-              disabled={none || enabledCommon === false}
-              onChange={(e) => patch({ continuous: e.target.checked })}
-            />
-          </label>
-        </div>
-
-        {/* Board next to pending, the same way the actuation panel does it. */}
-        <div className="row" style={{ marginTop: 12, alignItems: 'baseline' }}>
-          <span className="small dim">{t('actuation.target', { count: targets.length })}</span>
-          <span className="small">
-            <span className="dim">{t('actuation.board')} </span>
-            <b className="mono">{describe(boardEnabled, boardPress, boardRelease, boardMode, t)}</b>
-          </span>
-          <span className="small">
-            <span className="dim">→ {t('actuation.pending')} </span>
-            <b className="mono" style={{ color: 'var(--warn)' }}>
-              {describe(
-                enabledCommon,
-                common(configs, targets, (c) => c.rapidTrigger.pressMm),
-                common(configs, targets, (c) => c.rapidTrigger.releaseMm),
-                common(configs, targets, (c) => c.rapidTrigger.continuous),
-                t,
-              )}
-            </b>
-          </span>
+          </SliderRows>
         </div>
 
         {belowFactory.length > 0 && (
@@ -272,22 +234,55 @@ export function RapidTrigger() {
         )}
       </Panel>
 
-      <BottomOutTrigger />
-    </>
-  )
-}
+      {/*
+        No heading of its own: the three rows say what they are, and a word
+        over them — "modes" — only repeated that at a larger size. It carries
+        the left panel's heading as a ghost instead, so its first switch starts
+        level with the left panel's first track. See `ghostHead`.
+      */}
+      <Panel title={t('rt.title')} hintKey="inputPoint.hint.rt" ghostHead>
+        <div className="switch-rows">
+          <label className="row switch-row">
+            <span className="switch-label">{t('rt.enable')}</span>
+            {/* Before the switch, not after it. The switch has to be the last
+                thing in every one of these rows or the one with a note beside it
+                sits a word to the left of the others. */}
+            {enabledCommon === null && <span className="small dim">({t('actuation.mixed')})</span>}
+            <input
+              type="checkbox"
+              disabled={none}
+              checked={enabledCommon === true}
+              // Targets that disagree get the third state, so the checkbox does
+              // not claim they are all off.
+              ref={(el) => {
+                if (el) el.indeterminate = enabledCommon === null
+              }}
+              onChange={(e) => setEnabled(e.target.checked)}
+            />
+          </label>
+          <Hint k="rt.hint.enable" />
 
-/** "off", "0.10", "0.10 / 0.20 FULL", or "여러 값" when the targets disagree. */
-function describe(
-  enabled: boolean | null,
-  press: number | null,
-  release: number | null,
-  continuous: boolean | null,
-  t: (k: 'perf.off' | 'actuation.mixed' | 'rt.full', p?: Record<string, string | number>) => string,
-): string {
-  if (enabled === null) return t('actuation.mixed')
-  if (!enabled) return t('perf.off')
-  if (press === null || release === null) return t('actuation.mixed')
-  const value = press === release ? press.toFixed(2) : `${press.toFixed(2)} / ${release.toFixed(2)}`
-  return continuous ? `${value} ${t('rt.full')}` : value
+          {/* Under the switch it depends on: continuous mode is not a thing you
+              can have with rapid trigger off — one wire field holds both, and 2
+              cannot be set without 1. See the note at the top. */}
+          <div style={{ marginTop: 12, opacity: enabledCommon === false ? 0.5 : 1 }}>
+            <label className="row switch-row">
+              <span className="switch-label">{t('rt.continuous')}</span>
+              <input
+                type="checkbox"
+                checked={first.continuous}
+                disabled={none || enabledCommon === false}
+                onChange={(e) => patch({ continuous: e.target.checked })}
+              />
+            </label>
+            <Hint k="rt.hint.continuous" />
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <BottomOutToggle />
+        </div>
+        </div>
+      </Panel>
+    </div>
+  )
 }

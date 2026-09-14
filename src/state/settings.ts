@@ -25,6 +25,14 @@ import { DEFAULT_THEME, type Theme } from './theme'
  * Stored alongside the accent because they are the same kind of thing: how this
  * browser draws the app, which never reaches the board.
  *
+ * `bgBlur` and `bgDim` are the two amounts that go with the wallpaper — how far
+ * it is blurred, and how much of the page colour is laid back over it. The
+ * picture itself is not here: it is a `Blob` in IndexedDB, because this store
+ * is `localStorage` and a photograph in it would either not fit or crowd out
+ * every other preference. See state/background.ts. They stay even with no
+ * wallpaper set, so that picking a second one lands on the amounts that suited
+ * the first rather than back at the defaults.
+ *
  * How big the interface is drawn is deliberately *not* here. It follows the
  * window on its own — see `html { font-size }` in styles.css — and a control
  * for it would be a second answer to a question already answered, with the
@@ -34,11 +42,28 @@ export interface Settings {
   debug: boolean
   accent: string
   theme: Theme
+  bgBlur: number
+  bgDim: number
 }
 
 const STORAGE_KEY = 'raven61.settings.v1'
 
-const DEFAULTS: Settings = { debug: false, accent: DEFAULT_ACCENT, theme: DEFAULT_THEME }
+const DEFAULTS: Settings = {
+  debug: false,
+  accent: DEFAULT_ACCENT,
+  theme: DEFAULT_THEME,
+  /*
+   * Not zero, either of them.
+   *
+   * A wallpaper is the only thing in this app someone can choose that the app
+   * then has to draw its own text on, and a photograph at full strength behind
+   * a column of 13-pixel labels is unreadable. The defaults are what makes the
+   * first picture anyone picks a background rather than a problem; both slide
+   * to zero for anyone who wants the picture itself.
+   */
+  bgBlur: 14,
+  bgDim: 55,
+}
 
 class SettingsStore {
   private value: Settings = DEFAULTS
@@ -91,6 +116,10 @@ function known(value: Partial<Settings>): Settings {
     // Same division of labour as the accent above: shape here, and whether the
     // name is still one this version knows is state/theme.ts's call.
     theme: typeof value.theme === 'string' ? (value.theme as Theme) : DEFAULTS.theme,
+    // And again: a number is a number here, and whether it is in range is
+    // state/background.ts's call, made every time it applies.
+    bgBlur: typeof value.bgBlur === 'number' ? value.bgBlur : DEFAULTS.bgBlur,
+    bgDim: typeof value.bgDim === 'number' ? value.bgDim : DEFAULTS.bgDim,
   }
 }
 

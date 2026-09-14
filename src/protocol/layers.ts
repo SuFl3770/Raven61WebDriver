@@ -23,6 +23,8 @@
  * before any of this can be implemented.
  */
 
+import { t } from '../i18n'
+
 /**
  * A keymap entry is three bytes: `[type][param][code]`.
  *
@@ -189,4 +191,21 @@ export const RAVEN61_PROFILE_SUPPORT: ProfileSupport = {
   count: 2,
   scope: ['keymap'],
   hostSwitchable: false,
+}
+
+/**
+ * What to call a layer.
+ *
+ * The first two are the base layer and Fn, and a board with more gets numbered
+ * ones, because the bundles cannot name a layer this app has never seen.
+ *
+ * Here rather than in each component that asks: four of them wanted the same
+ * three lines — the remap, advanced-key, macro and overview tabs — and a layer
+ * called one thing on one tab and another somewhere else is the kind of drift
+ * nobody notices until a board with a third layer arrives.
+ */
+export function layerName(index: number): string {
+  if (index === 0) return t('keymap.layer.main')
+  if (index === 1) return t('keymap.layer.fn1')
+  return `FN${index}`
 }

@@ -1,16 +1,27 @@
 # Vendored fonts
 
-## Cafe24 Lovingu
+## SUIT
 
 Used for the top bar's wordmark, and nothing else — see the `@font-face` at the
 top of `src/styles.css`.
 
-- Foundry: Cafe24 — <https://fonts.cafe24.com/>
-- File taken from the `fonts-archive` mirror, which repackages the foundry's
-  own release as web formats:
-  <https://cdn.jsdelivr.net/gh/fonts-archive/Cafe24Lovingu/Cafe24Lovingu.woff2>
-- Licence: free for personal and commercial use, redistribution included, per
-  the foundry's terms on the page above. Selling the font file itself is not.
+- Foundry: SUNN YOUN — <https://sunn.us/suit/>
+- Licence: SIL Open Font License 1.1. Free to use, embed and redistribute;
+  the licence travels with the files.
+- Vendored from the family's own repository, the variable face (`wght`
+  100–900), cut down to Basic Latin:
+
+  ```
+  curl -L -o SUIT-Variable.woff2 \
+    "https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@main/fonts/variable/woff2/SUIT-Variable.woff2"
+  python -m fontTools.subset SUIT-Variable.woff2 \
+    --unicodes="U+0020-007E" --flavor=woff2 \
+    --output-file=SUIT-Variable-latin.woff2
+  ```
+
+  The wordmark is two Latin letters and the full family is 610 kB, nearly all
+  of it Hangul that nothing here asks this family for — Hangul in the app is
+  Noto Sans KR's job. The cut is 17 kB and keeps the whole weight axis.
 
 Vendored rather than linked from a CDN so the app draws its own mark with no
 network and on a `file://` build. Only the `woff2` is kept: the app is built on

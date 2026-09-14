@@ -1,11 +1,12 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { activeSpec, subscribeActiveSpec } from '../device/active'
 import type { KeyDef } from '../device/spec'
 import { keycodeLabel } from '../keyboard/keycodes'
 import { supports } from '../protocol/codec'
-import { bindingLabel, factoryBinding, sameBinding } from '../protocol/keymap'
+import { RECORD_TYPE, bindingLabel, factoryBinding, sameBinding } from '../protocol/keymap'
 import type { KeymapEntry } from '../protocol/types'
 import { link, useCodec, useConnection } from './link'
+import { peek } from './prefetch'
 
 /**
  * What the caps read, once the keymap has been changed.
@@ -106,9 +107,16 @@ export interface Legend {
  * board with a stock keymap must look like a stock keyboard, not like 61 keys
  * that have all been "changed" to themselves.
  *
- * An unbound key reads as a dash. It is the one case where the printing is
- * actively misleading — the cap says A and the key sends nothing — and there is
- * no name to put there instead.
+ * An unbound key reads as a dash — but only where "unbound" is a decision.
+ * `KC_NO`, which is what emptying a key writes, is a setting whose whole
+ * visible effect is that the key stopped working, so it shows wherever it is
+ * set: the cap says A and the key sends nothing, and there is no name to put
+ * there instead. The factory's never-set marker is a different byte and a
+ * different fact — it is most of an Fn layer straight out of the box, and a
+ * grid of 87 dashes says only "this is an Fn layer" while losing which key is
+ * which. Those caps keep their printing, and only off the base layer, where
+ * every key has a factory binding and empty means somebody emptied it. Same
+ * split the remap tab's second line makes — see `capBinding` there.
  *
  * ## An advanced key keeps the printing
  *
@@ -127,11 +135,17 @@ export interface Legend {
 export function legendFor(
   key: KeyDef,
   entries: readonly (KeymapEntry | undefined)[],
+  /** False when `entries` is a layer the board holds above the base one. */
+  baseLayer = true,
 ): Legend {
   const binding = entries[key.index]?.binding
   if (!binding) return { text: key.label, remapped: false }
   if (sameBinding(binding, factoryBinding(key.code))) return { text: key.label, remapped: false }
-  if (binding.kind === 'none') return { text: '—', remapped: true }
+  if (binding.kind === 'none') {
+    return binding.raw === RECORD_TYPE.key || baseLayer
+      ? { text: '—', remapped: true }
+      : { text: key.label, remapped: false }
+  }
   if (binding.kind === 'advanced') return { text: key.label, remapped: true }
   return { text: bindingLabel(binding, keycodeLabel), remapped: true }
 }
@@ -172,11 +186,61 @@ export function useLegendSync(): void {
     // the remap tab — has filled the store for the attached board.
     if (inFlight.current || legends.current().length > 0) return
     inFlight.current = true
-    void read(link, 0)
+    /*
+     * The base layer is usually already on its way: it is one of the blocks
+     * fetched the moment the board was attached — see state/prefetch.ts.
+     * Peeked rather than taken, because the remap tab wants this same read and
+     * neither of us is the only asker. A prefetch that failed falls through to
+     * a request of our own, which is where this was before there was one.
+     */
+    const ahead = peek<KeymapEntry[]>('keymap0')
+    void (ahead ? ahead.catch(() => read(link, 0)) : read(link, 0))
       .then((entries) => legends.set(entries))
       .catch(() => {})
       .finally(() => {
         inFlight.current = false
       })
   }, [codec, connected])
+}
+
+/**
+ * One layer's keymap, for a grid whose own strip chooses which layer it draws.
+ *
+ * The store above is the base layer and nothing else, on purpose: an Fn layer
+ * is a held state, and a cap naming what it sends while Fn is down would be
+ * wrong on every tab that is not asking about layers. The overview tab *is*
+ * asking — its strip picks one — so it reads the layer it is showing and hands
+ * the entries to `KeyGrid`.
+ *
+ * Layer 0 reads nothing and returns null. The store already holds it, filled
+ * once per connection by the sync above, and a second read of the same bytes
+ * would be traffic spent to arrive at the value already on screen — null is
+ * "use the store", which is what the grid does with no entries of its own.
+ *
+ * Kept per layer, so moving back and forth across the strip reads each one
+ * once. A failure caches an empty layer rather than nothing, so a board that
+ * will not answer is not asked again on every render; the caps fall back to
+ * their printing, which is what they showed before any of this existed.
+ */
+export function useLayerKeymap(layer: number): readonly (KeymapEntry | undefined)[] | null {
+  const codec = useCodec()
+  const { connected } = useConnection()
+  const [byLayer, setByLayer] = useState<Record<number, readonly (KeymapEntry | undefined)[]>>({})
+  /** The layer being read, so a second render does not start the same read. */
+  const inFlight = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!connected || layer === 0 || byLayer[layer] || inFlight.current === layer) return
+    const read = supports(codec, 'readKeymap') ? codec.readKeymap : undefined
+    if (!read) return
+    inFlight.current = layer
+    void read(link, layer)
+      .then((entries) => setByLayer((prev) => ({ ...prev, [layer]: entries })))
+      .catch(() => setByLayer((prev) => ({ ...prev, [layer]: [] })))
+      .finally(() => {
+        inFlight.current = null
+      })
+  }, [codec, connected, layer, byLayer])
+
+  return layer === 0 ? null : (byLayer[layer] ?? null)
 }

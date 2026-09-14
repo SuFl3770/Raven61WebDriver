@@ -23,12 +23,15 @@ import { isMacroEmpty, macroSlotsExposed } from '../protocol/macros'
 import type { KeymapEntry, MacroSnapshot } from '../protocol/types'
 import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
+import { take } from '../state/prefetch'
 import { useSettings } from '../state/settings'
+import { Dialog, DialogActions } from '../ui/Dialog'
 import { KeyGrid } from '../ui/KeyGrid'
 import { KindChip } from '../ui/KindChip'
 import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { GridFrame } from '../ui/GridFrame'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
+import { layerName } from '../protocol/layers'
 
 /**
  * Remapping — the stock driver's "Remap" tab, against the live keymap.
@@ -279,6 +282,8 @@ export function Keymap() {
   const [macroBusy, setMacroBusy] = useState(false)
   const [macroError, setMacroError] = useState<string | null>(null)
   const macroInFlight = useRef(false)
+  /** Whether the malformed-store dialog is on screen — see the effect below. */
+  const [macroAlert, setMacroAlert] = useState(false)
   /** The debug category's two fields, as typed. */
   const [rawUsage, setRawUsage] = useState('')
   const [rawRecord, setRawRecord] = useState('')
@@ -334,7 +339,11 @@ export function Keymap() {
       setError(null)
       setMismatch(null)
       try {
-        const entries = await codec.readKeymap(link, which)
+        /* The base layer was read the moment the board was attached — see
+           state/prefetch.ts. Taken, so only this first visit gets it and
+           every one after reads for itself. */
+        const ahead = which === 0 ? take<KeymapEntry[]>('keymap0') : undefined
+        const entries = await (ahead ?? codec.readKeymap(link, which))
         setReads((prev) => ({ ...prev, [which]: { entries } }))
         // Every other grid in the app reads its caps off the base layer. This
         // is the tab that has it, so this is where it is handed over — see
@@ -409,6 +418,27 @@ export function Keymap() {
     if (!connected) setMacros(null)
   }, [connected])
 
+  /*
+   * A store that is not canonical stops the category, so it is said out loud.
+   *
+   * A store every slot of which ends in a stop record says nothing at all —
+   * nothing happened, and a line confirming that is a line read every visit for
+   * no reason. The other half is not a remark: the slot buttons are dead until
+   * the store is written from the macro tab, and without this the category is a
+   * row of disabled buttons with no cause on screen.
+   *
+   * It comes back on every entry to the category rather than once per run,
+   * because it is not a caution to be remembered — it is the reason this
+   * category cannot be used yet, and it holds for as long as the store does.
+   * Dismissing closes it until the category is left, or until a fresh read
+   * replaces the snapshot.
+   */
+  useEffect(() => {
+    if (open !== MACRO || !macros || macros.canonical) return
+    setMacroAlert(true)
+  }, [open, macros])
+
+  const dismissMacroAlert = useCallback(() => setMacroAlert(false), [])
 
   /**
    * Steps to the next cap, in layout order.
@@ -483,12 +513,7 @@ export function Keymap() {
         // stale. Dropping the snapshot re-reads it, and only while that category
         // is the one open (see the effect above).
         setMacros(null)
-        const key = keys.find((k) => k.index === index)
-        setStatus(
-          result.slots.length === 0
-            ? t('keymap.noChange')
-            : t('keymap.appliedOne', { key: key?.label ?? `#${index}` }),
-        )
+
         if (result.mismatched.length > 0) {
           setMismatch(
             t('keymap.mismatch', {
@@ -639,15 +664,23 @@ export function Keymap() {
     </div>
   ) : (
     <>
-      <div style={{ marginBottom: 10 }}>
-        <Notice kind={macros.canonical ? 'ok' : 'warn'}>
-          {macros.canonical ? (
-            <T k="keymap.macro.ready" params={{ total: spec.macros.slots }} />
-          ) : (
-            <T k="keymap.macro.unsafe" params={{ slots: macros.malformed.length }} />
-          )}
-        </Notice>
-      </div>
+      <Dialog
+        open={macroAlert}
+        onClose={dismissMacroAlert}
+        title={t('keymap.macro.unsafeTitle')}
+        tone="warn"
+      >
+        <div className="small">
+          <T k="keymap.macro.unsafe" params={{ slots: macros.malformed.length }} />
+        </div>
+        <DialogActions>
+          {/* The only button: nothing here is being asked, the store is what it
+              is and this says why the slots below cannot be bound. */}
+          <button className="primary" onClick={dismissMacroAlert}>
+            {t('keymap.macro.unsafeDismiss')}
+          </button>
+        </DialogActions>
+      </Dialog>
       <div className="row" style={{ gap: 4 }}>
         {Array.from({ length: macroSlots }, (_, slot) => {
           const body = macros.macros[slot]
@@ -982,11 +1015,6 @@ export function Keymap() {
    * all: on the Raven61 those addresses hold the RGB blob and the macro table,
    * and reading them as a keymap is what layers.ts warns about.
    */
-  const layerName = (i: number) => {
-    if (i === 0) return t('keymap.layer.main')
-    if (i === 1) return t('keymap.layer.fn1')
-    return `FN${i}`
-  }
 
   return (
     <>

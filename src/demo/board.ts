@@ -34,7 +34,7 @@ import { FACTORY_GLOBAL } from '../protocol/global'
 import { encodeKeyPerfRecord } from '../protocol/keyPerf'
 import { ADVANCED_KEY_BLOCKS } from '../protocol/advancedKeys'
 import { keyRgbBlobSize } from '../protocol/keyRgb'
-import { MACRO_STOCK, macroBlobSize } from '../protocol/macros'
+import { emptyMacro, encodeMacros, type Macro, type MacroEvent } from '../protocol/macros'
 import {
   LIGHT_CONTROL,
   LIGHT_LIMITS,
@@ -60,6 +60,37 @@ const FIRMWARE_IDENTITY = 'DEMO_TKL_87,Jan 01 2025,00:00:00'
 
 /** How long the flash rewrite behind a factory reset takes to land. */
 const RESET_APPLY_MS = 900
+
+/**
+ * The switch every key on the demo board reports: Magnetic Jade.
+ *
+ * The number rather than the name, because the number is what rec[0] carries —
+ * value 2 of `RAVEN61_SWITCH_TYPES`, which the demo spec inherits, and with it a
+ * 3.32 mm stroke rather than the 4.00 mm the layout falls back to. That is the
+ * point of picking it: every millimetre on screen is then bent through a switch
+ * curve that is not the fallback, which is the case worth exercising.
+ */
+const SWITCH_TYPE = 2
+
+/** Actuation every key ships at, in mm. */
+const ACTUATION_MM = 1.5
+
+/**
+ * Rapid-trigger sensitivity every key ships at, both directions, in mm.
+ *
+ * Stored *and* switched on — `keyMode` is `rapidTrigger`, not `off`. A board
+ * carrying sensitivities that nothing acts on is the state where the panel's
+ * numbers and the board's behaviour disagree, which is not the one to open on.
+ */
+const RT_MM = 0.6
+
+/**
+ * Degrees of hue the shipped colour layer covers, red through to magenta.
+ *
+ * Short of a full turn on purpose: a ramp that closes the wheel puts red back
+ * under the arrow keys, and the two ends of the board stop being told apart.
+ */
+const HUE_SPAN = 320
 
 /** One tick of the event generator. ~60 Hz, like a board that is scanning. */
 const TICK_MS = 16
@@ -113,23 +144,19 @@ export class DemoBoard {
   private advancedPair!: Uint8Array
   private advancedToggle!: Uint8Array
   /**
-   * The macro store, laid out the way the stock driver leaves it.
+   * The macro store, in the shape this app writes one.
    *
-   * Not zeroed, and not tidy either — both of those hide the two states this
-   * panel exists to cope with, and a real board sent back this shape:
+   * Canonical: every one of the 32 slots names its own body and every body ends
+   * in a stop record, which is what `isCanonical` checks and what makes binding
+   * a macro key safe from any slot. That is the state the demo ships in rather
+   * than the stock driver's, which leaves empty slots sharing the next body's
+   * offset and the 22 entries it does not manage at zero, pointing back into
+   * the offset table — the shape the panel has to warn about before it will
+   * bind anything. A board arrives in that shape; the demo ships past it, so
+   * the panel opens on a store that is ready to bind.
    *
-   * - an **empty slot carries the next body's offset**, because the stock
-   *   encoder's cursor does not advance for a body with no records. Nothing in
-   *   the bytes says "empty"; the driver knows from its own database, which is
-   *   why it never reads the store back at all.
-   * - the **22 entries it does not manage stay at zero**, pointing into the
-   *   offset table, which is the state where binding a macro key sends the
-   *   player walking through the flash.
-   *
-   * `buildMacros` writes the profile a real board was read from: QWER in slot
-   * 0, ASDF in 2, ZXCV in 4, 1234 in 6, and the four slots between them empty.
-   * A store the app has written is canonical; this one is not, and the panel
-   * has to say so before it will bind anything.
+   * `buildMacros` fills the first four slots — QWER, ASDF, ZXCV, 1234 — so the
+   * panel has bodies to show, and leaves the rest empty.
    */
   private macros!: Uint8Array
 
@@ -408,15 +435,7 @@ export class DemoBoard {
     this.keyPerf = this.buildKeyPerf()
     this.keymapDefaults = this.buildKeymapDefaults()
     this.keymapLive = this.buildKeymapLive()
-    /*
-     * Zeroed, which on this block means *no custom colour* rather than black.
-     *
-     * The real reset copies a defaults table out of code flash (0x175f4) whose
-     * contents nobody has dumped, so a demo that invented colours there would
-     * be inventing evidence. An empty layer is the one thing the block is known
-     * to say.
-     */
-    this.keyRgb = new Uint8Array(keyRgbBlobSize(this.spec.keyRgb))
+    this.keyRgb = this.buildKeyRgb()
     this.advancedDks = new Uint8Array(ADVANCED_KEY_BLOCKS.dks.blobSize)
     this.advancedPair = new Uint8Array(ADVANCED_KEY_BLOCKS.pair.blobSize)
     this.advancedToggle = new Uint8Array(ADVANCED_KEY_BLOCKS.toggle.blobSize)
@@ -424,40 +443,66 @@ export class DemoBoard {
   }
 
   /**
-   * A stock-shaped macro store. See the field's comment for why this shape.
+   * A canonical macro store. See the field's comment for why this shape.
    *
-   * Four recorded slots and four empty ones between them, in the stock layout:
-   * offsets 64, 96, 96, 128, 128, 160, 160, 192, then the last two slots share
-   * the byte after the final body — the trailing-empty case, which reads back
-   * as unwritten space rather than as a body.
+   * Laid out by the app's own encoder rather than by hand, which is what makes
+   * it canonical in the sense the panel means: `encodeMacros` gives every slot
+   * its own offset and its own stop record, including the 22 the stock driver
+   * never manages. Four words in the first four slots, each key held 90 ms with
+   * a 120 ms gap after it.
    */
   private buildMacros(): Uint8Array {
     const spec = this.spec.macros
-    const blob = new Uint8Array(macroBlobSize(spec))
     const words = [
       [0x14, 0x1a, 0x08, 0x15], // QWER
       [0x04, 0x16, 0x07, 0x09], // ASDF
       [0x1d, 0x1b, 0x06, 0x19], // ZXCV
       [0x1e, 0x1f, 0x20, 0x21], // 1234
     ]
-    let cursor = spec.slots * 2
-    // Ten, because that is how many the stock driver writes — the rest of the
-    // table stays at zero, which is the state the panel has to notice.
-    for (let slot = 0; slot < MACRO_STOCK.slots; slot++) {
-      blob[slot * 2] = cursor & 0xff
-      blob[slot * 2 + 1] = (cursor >> 8) & 0xff
-      // Odd slots were left empty, so the cursor stays where it is and the
-      // entry ends up naming the next body.
-      const word = slot % 2 === 0 ? words[slot / 2] : undefined
-      if (!word) continue
-      word.forEach((usage, i) => {
-        const last = i === word.length - 1
-        blob.set([90, 0, 0x42, usage], cursor)
-        blob.set([120, 0, last ? 0x82 : 0x02, usage], cursor + spec.eventBytes)
-        cursor += spec.eventBytes * 2
-      })
+    const macros: Macro[] = []
+    for (let slot = 0; slot < spec.slots; slot++) {
+      const word = words[slot]
+      const macro = emptyMacro(slot)
+      if (word) macro.events = word.flatMap(typeEvents)
+      macros.push(macro)
     }
-    return blob
+    return encodeMacros(macros, spec)
+  }
+
+  /**
+   * The colour layer the demo board comes painted with: a hue ramp across it.
+   *
+   * ⚠ The colours are this file's, not the firmware's. The real reset copies a
+   * defaults table out of code flash (0x175f4) that nobody has dumped, so
+   * nothing here is a claim about what a board comes up with — it is a board
+   * somebody has painted, which is the state worth putting on screen. The
+   * *block* is real: Custom Light paints from it (`protocol/keyRgb.ts`), and
+   * that is the effect the demo's own factory defaults name, so what the
+   * lighting panel reads back is what this wrote.
+   *
+   * The hue comes off each key's own centre against the span the layout covers,
+   * so it is the geometry that lays the ramp out rather than a table of colours
+   * that would have to be rewritten for every key added to `layout.ts`.
+   */
+  private buildKeyRgb(): Uint8Array {
+    const rgb = this.spec.keyRgb
+    const out = new Uint8Array(keyRgbBlobSize(rgb))
+    const centres = this.layout.keys.map(centreOf)
+    const first = Math.min(...centres)
+    // Never zero on a board with more than one key; guarded so a one-key layout
+    // gets the first hue instead of a division by zero.
+    const span = Math.max(...centres) - first || 1
+    for (const key of this.layout.keys) {
+      const slot = this.slotByKey.get(key.index)
+      if (slot === undefined) continue
+      const at = slot * rgb.recordSize
+      if (at + 3 > out.length) continue
+      const [r, g, b] = hueRgb((HUE_SPAN * (centreOf(key) - first)) / span)
+      out[at] = r
+      out[at + 1] = g
+      out[at + 2] = b
+    }
+    return out
   }
 
   private buildGlobal(): Uint8Array {
@@ -510,12 +555,12 @@ export class DemoBoard {
     for (const slot of this.keyBySlot.keys()) {
       const record = encodeKeyPerfRecord(
         {
-          switchType: 0,
+          switchType: SWITCH_TYPE,
           switchFlags: 0,
-          keyMode: perf.keyMode.off,
-          actuationCounts: counts(1.5),
-          rtPressCounts: counts(0.3),
-          rtReleaseCounts: counts(0.3),
+          keyMode: perf.keyMode.rapidTrigger,
+          actuationCounts: counts(ACTUATION_MM),
+          rtPressCounts: counts(RT_MM),
+          rtReleaseCounts: counts(RT_MM),
           pressDeadzoneCounts: 0,
           releaseDeadzoneCounts: 0,
           deadzoneState: false,
@@ -550,13 +595,14 @@ export class DemoBoard {
   }
 
   /**
-   * The live keymap: layer 0 is the factory table, layer 1 is empty.
+   * The live keymap: layer 0 is the factory table, layer 1 unbound.
    *
-   * Empty on purpose, and it is what the second layer of a board that ships
-   * without an Fn key looks like. This one has no Fn — a tenkeyless has the
-   * room not to need one — so nothing on it reaches layer 1, and filling the
-   * layer with bindings no key can select would be showing the reader a state
-   * their board could not be in.
+   * Unbound rather than unreachable. The board has an Fn key — it is where a
+   * tenkeyless would put Menu, and `factoryBinding` turns its 0xff usage into
+   * the momentary-layer action — so holding it selects layer 1 and the remap
+   * tab can put something there. Every record in the layer is zeros, which
+   * decodes as `none`; inventing a set of media keys to sit on it would be
+   * inventing a factory table this project has not read.
    */
   private buildKeymapLive(): Uint8Array {
     const km = this.spec.keymap
@@ -570,15 +616,6 @@ export class DemoBoard {
   }
 
   /**
-   * A believable spread of calibration health, so the panel has all three of
-   * its verdicts on screen at once.
-   *
-   * Every tenth slot is left at the shipped floor — a key that has never been
-   * calibrated — and the one after it partway up. The rest sit at their own
-   * scale with the firmware's latched `done` state. The AA BB FF tag is what
-   * the boot path checks before trusting a record, so every record carries it.
-   */
-  /**
    * What the LEDs are showing: the stored layer, with the firmware's
    * calibration overlay painted over it.
    *
@@ -588,9 +625,11 @@ export class DemoBoard {
    * for it. That is exactly why 0xde cannot stand in for a verify read, and the
    * demo would be misleading if its two blocks always agreed.
    *
-   * No effect animation. The demo runs no lighting mode because none has been
-   * decoded, so an unlit key comes back unlit rather than carrying a pattern
-   * this project would be inventing.
+   * No effect animation, and the board's own default does not need one: Custom
+   * Light is what it comes up in, and that effect paints the stored block
+   * rather than moving. Every other effect is an animation nobody has decoded,
+   * so it comes back as its single colour rather than as a pattern this project
+   * would be inventing.
    */
   private ledFrame(): Uint8Array {
     const rgb = this.spec.keyRgb
@@ -653,19 +692,32 @@ export class DemoBoard {
     return frame
   }
 
+  /**
+   * A fully calibrated board: every wired key at its own scale, `done`.
+   *
+   * Each key gets a different scale — they are not eight bytes of the same
+   * number — because the scale is what a particular switch and a particular
+   * magnet measured at, and a table of identical records would be the tell that
+   * nothing was ever learned. `done` is the firmware's latched state, which is
+   * also what leaves the calibration overlay off every key and lets the colour
+   * layer show through; the three verdicts the panel can draw are still
+   * reachable from here, by resetting a key and pressing it back up.
+   *
+   * A slot with no key behind it keeps the shipped floor and `fresh` — a
+   * channel the firmware has never had anything to learn from.
+   *
+   * The AA BB FF tag is what the boot path checks before trusting a record, so
+   * every record carries it.
+   */
   private buildCalibration(): Uint8Array {
     const { records, recordSize } = this.spec.calibration
     const out = new Uint8Array(records * recordSize)
     const view = new DataView(out.buffer)
     for (let slot = 0; slot < records; slot++) {
       const wired = this.keyBySlot.has(slot)
-      const target = targetScale(slot)
-      const phase = slot % 10
-      const scale = !wired || phase === 0 ? CAL.scaleFloor : phase === 1 ? (CAL.scaleFloor + target) / 2 : target
-      const state = !wired || phase === 0 ? CAL_STATE.fresh : phase === 1 ? CAL_STATE.learning : CAL_STATE.done
       const at = slot * recordSize
-      view.setFloat32(at, scale, true)
-      out[at + 4] = state
+      view.setFloat32(at, wired ? targetScale(slot) : CAL.scaleFloor, true)
+      out[at + 4] = wired ? CAL_STATE.done : CAL_STATE.fresh
       out.set([0xaa, 0xbb, 0xff], at + 5)
     }
     return out
@@ -862,6 +914,39 @@ const ZERO_BLOB = new Uint8Array(4096)
 function keyForCode(layout: Layout, code: string): KeyDef | undefined {
   const usage = usageForCode(code)
   return usage === undefined ? undefined : layout.byUsage(usage)
+}
+
+/** One key of a macro body: down, held, up, and a gap before the next. */
+function typeEvents(usage: number): MacroEvent[] {
+  return [
+    { action: { kind: 'key', usage }, press: true, delayMs: 90 },
+    { action: { kind: 'key', usage }, press: false, delayMs: 120 },
+  ]
+}
+
+/** A key's midpoint along the board, in keyboard units. */
+function centreOf(key: KeyDef): number {
+  return key.x + key.w / 2
+}
+
+/**
+ * A hue in degrees at full saturation and value, as the block's three bytes.
+ *
+ * The plain HSV sextant walk rather than a library: three channels, one of
+ * which is always 0 and one always 255, and the third the ramp between them.
+ */
+function hueRgb(hue: number): [number, number, number] {
+  const sector = (((hue % 360) + 360) % 360) / 60
+  const ramp = Math.round(255 * (1 - Math.abs((sector % 2) - 1)))
+  const sextants: [number, number, number][] = [
+    [255, ramp, 0],
+    [ramp, 255, 0],
+    [0, 255, ramp],
+    [0, ramp, 255],
+    [ramp, 0, 255],
+    [255, 0, ramp],
+  ]
+  return sextants[Math.floor(sector) % 6] ?? [0, 0, 0]
 }
 
 /** The scale a well-calibrated key settles at, deterministic per slot. */

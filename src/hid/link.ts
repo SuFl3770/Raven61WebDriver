@@ -15,6 +15,7 @@ export interface RequestOptions {
 
 type InputListener = (reportId: number, data: Uint8Array) => void
 type ChangeListener = () => void
+type LostListener = (device: HIDDevice) => void
 
 interface Waiter {
   match: (reportId: number, data: Uint8Array) => boolean
@@ -39,9 +40,18 @@ export class HidLink {
   private waiters: Waiter[] = []
   private inputListeners = new Set<InputListener>()
   private changeListeners = new Set<ChangeListener>()
+  private lostListeners = new Set<LostListener>()
   private readonly onInputReport = (e: HIDInputReportEvent) => this.handleInput(e)
   private readonly onDisconnect = (e: HIDConnectionEvent) => {
-    if (e.device === this.dev) this.detach('device disconnected')
+    if (e.device !== this.dev) return
+    /*
+     * Said before the detach, not after. What listens for this decides whether
+     * the app waits for the board to come back — and it has to have decided by
+     * the time `onChange` reports an empty link, because that is what the
+     * window is swapped on. See state/reconnect.ts.
+     */
+    for (const fn of this.lostListeners) fn(e.device)
+    this.detach('device disconnected')
   }
 
   constructor(log = new TrafficLog()) {
@@ -290,6 +300,20 @@ export class HidLink {
   onChange(fn: ChangeListener): () => void {
     this.changeListeners.add(fn)
     return () => this.changeListeners.delete(fn)
+  }
+
+  /**
+   * A device that went away on its own — unplugged, or reset by the firmware.
+   *
+   * `onChange` cannot answer this: it fires for a link that emptied, and the
+   * disconnect button empties one exactly as well as pulling the cable does.
+   * The difference is the whole question for anything that wants to wait for
+   * the same board to come back, since nobody should be waiting for a board
+   * the user has just let go of.
+   */
+  onLost(fn: LostListener): () => void {
+    this.lostListeners.add(fn)
+    return () => this.lostListeners.delete(fn)
   }
 
   private emitChange(): void {

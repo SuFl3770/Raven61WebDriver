@@ -9,7 +9,6 @@ import { codecLabel, type KeyboardCodec } from '../protocol/codec'
 import { selectCodec } from '../protocol/registry'
 import { unknownCodec } from '../protocol/unknown'
 import { configStore } from './config'
-import { firmwareStore } from './firmware'
 import { globalStore } from './global'
 import { macroSnapshotStore } from './macroSnapshot'
 import { forcedProtocol, setForcedProtocol, subscribeForcedProtocol } from './forcedProtocol'
@@ -19,12 +18,10 @@ import { selection } from './selection'
 export const link = new HidLink()
 
 // A disconnect invalidates everything read off the board. Leaving the global
-// block or the firmware identity behind would show one device's settings while
-// another is attached.
+// block behind would show one device's settings while another is attached.
 link.onChange(() => {
   if (link.connected) return
   globalStore.clear()
-  firmwareStore.clear()
   macroSnapshotStore.clear()
 })
 

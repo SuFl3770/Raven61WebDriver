@@ -10,7 +10,6 @@ import { Actuation } from './Actuation'
 import { DeadZone } from './DeadZone'
 import { CalibrationGuide, CalibrationProgress, useCalibrationRun } from './Calibration'
 import { KeyMetrics, type Metric } from './KeyMetrics'
-import { PerfOverview } from './PerfOverview'
 import { RapidTrigger } from './RapidTrigger'
 import { SwitchType } from './SwitchType'
 
@@ -47,11 +46,6 @@ import { SwitchType } from './SwitchType'
  */
 const SECTIONS: SubTab[] = [
   {
-    id: 'overview',
-    labelKey: 'inputPoint.section.overview',
-    render: () => <PerfOverview />,
-  },
-  {
     id: 'trigger',
     labelKey: 'inputPoint.section.trigger',
     render: () => <Actuation />,
@@ -75,7 +69,6 @@ const SECTIONS: SubTab[] = [
 
 /** What the shared grid shows for each section. */
 const SECTION_METRIC: Record<string, Metric> = {
-  overview: 'actuation',
   trigger: 'actuation',
   rt: 'rt',
   deadzone: 'deadzone',
@@ -127,7 +120,7 @@ export function InputPoint() {
   /*
    * The caution in front of the switch section, once per run of the app.
    *
-   * Of the five sections this is the only one where a wrong answer is silent:
+   * Of the four sections this is the only one where a wrong answer is silent:
    * every other value here is a number the board either takes or does not,
    * while the switch type is the scale the rest are read against — pick one the
    * board does not have and nothing breaks, every millimetre on the tab is

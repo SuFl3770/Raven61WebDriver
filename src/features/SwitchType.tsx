@@ -1,12 +1,10 @@
 import { useT } from '../i18n'
 import { T } from '../i18n/T'
 import { useLayout } from '../device/active'
-import { selectableSwitchTypes, switchColor, switchTypeInfo, switchTypeName } from '../device/tables'
-import { configStore, useBaseline, useKeyConfigs, useLastRead } from '../state/config'
-import { useHoverKey } from '../state/hover'
+import { selectableSwitchTypes, switchColor, switchTypeInfo } from '../device/tables'
+import { configStore, useKeyConfigs, useLastRead } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { Notice, Panel } from '../ui/Panel'
-import { SwitchSwatch } from '../ui/SwitchSwatch'
 
 /**
  * Which magnetic switch each key has fitted — `switch_type`, the low 5 bits of
@@ -58,10 +56,8 @@ function commonType(
 export function SwitchType() {
   const { keys } = useLayout()
   const configs = useKeyConfigs()
-  const base = useBaseline()
   const lastRead = useLastRead()
   const sel = useSelection()
-  const hovered = useHoverKey()
   const t = useT()
 
   const targets = targetKeys(sel)
@@ -74,15 +70,11 @@ export function SwitchType() {
    * exist.
    */
   const pending = none ? null : commonType(configs, targets)
-  const onBoard = none ? null : commonType(base, targets)
 
   // Targets are read at event time, not render time — see the note in Actuation.
   const setType = (value: number) =>
     configStore.update(targetKeys(selection.current()), (c) => ({ ...c, switchType: value }))
 
-  /** The key the pointer is on, and what it is set to. */
-  const hoveredKey = hovered === undefined ? undefined : keys[hovered]
-  const hoveredType = hovered === undefined ? undefined : configs[hovered]?.switchType
 
   /** Keys whose actuation no longer fits the switch they are now set to. */
   const tooDeep = keys.filter((k) => {
@@ -97,7 +89,7 @@ export function SwitchType() {
   )
 
   return (
-    <Panel title={t('switch.title')}>
+    <Panel title={t('switch.title')} hintKey="inputPoint.hint.switch">
       {lastRead === null && (
         <div style={{ marginBottom: 10 }}>
           <Notice kind="warn">{t('switch.unread')}</Notice>
@@ -131,54 +123,6 @@ export function SwitchType() {
         ))}
       </div>
 
-      <div className="row" style={{ marginTop: 12, alignItems: 'baseline' }}>
-        <span className="small dim">{t('switch.target', { count: targets.length })}</span>
-      </div>
-
-      {/*
-        One line, two jobs, and a fixed height so it cannot make the buttons
-        above it jump as the pointer crosses the grid.
-
-        Hovering asks about one key; with nothing hovered the line is about the
-        selection — the board's value beside the pending one, the same way
-        actuation shows it, because a control on its own cannot say whether what
-        it displays is what the hardware holds or an edit waiting to be applied.
-      */}
-      <div className="row" style={{ marginTop: 6, alignItems: 'baseline', minHeight: '1.375rem' }}>
-        {none && !hoveredKey ? null : hoveredKey ? (
-          <span className="small">
-            <b className="mono">{hoveredKey.label}</b>{' '}
-            <SwitchSwatch value={hoveredType} />
-            <b className="mono">{switchTypeName(hoveredType)}</b>
-            {switchTypeInfo(hoveredType) && (
-              <span className="dim">
-                {' · '}
-                {t('switch.travel', {
-                  travel: switchTypeInfo(hoveredType)!.travelMm.toFixed(2),
-                })}
-              </span>
-            )}
-          </span>
-        ) : (
-          <>
-            <span className="small">
-              <span className="dim">{t('switch.board')} </span>
-              <b className="mono">
-                {onBoard !== null && <SwitchSwatch value={onBoard} />}
-                {onBoard === null ? t('switch.mixed') : switchTypeName(onBoard)}
-              </b>
-            </span>
-            {pending !== onBoard && (
-              <span className="small">
-                <span className="dim">→ {t('switch.pending')} </span>
-                <b className="mono" style={{ color: 'var(--warn)' }}>
-                  {pending === null ? t('switch.mixed') : switchTypeName(pending)}
-                </b>
-              </span>
-            )}
-          </>
-        )}
-      </div>
 
       {unknown.length > 0 && (
         <div style={{ marginTop: 10 }}>

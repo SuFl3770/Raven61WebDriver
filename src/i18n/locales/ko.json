@@ -29,15 +29,20 @@
   },
 
   "connect": {
-    "title": "키보드 연결",
-    "body": "장치를 연결하고 쉽고 빠르게 컨트롤 하세요.",
-    "connecting": "연결하는 중…",
+    "body": "연결 대기 중입니다.",
+    "connecting": "연결 중…",
     "remembered": "다시 연결",
-    "requirements": "Windows/Mac/Linux 필요, WebHID 지원 브라우저 필요",
+    "requirements": "WebHID 지원 브라우저 필요",
     "demo": {
-      "action": "데모 모드로 둘러보기",
-      "body": "키보드 없이 시뮬레이션된 보드로 모든 화면을 사용해 볼 수 있습니다. WebHID를 지원하지 않는 브라우저에서도 동작합니다."
+      "action": "데모 모드"
     }
+  },
+
+  "reconnect": {
+    "title": "연결이 끊어졌습니다",
+    "waiting": "재연결 대기 중",
+    "seconds": "{seconds}초",
+    "stop": "초기 화면으로"
   },
 
   "demo": {
@@ -65,6 +70,12 @@
     "notDecoded": {
       "title": "{what} — 프로토콜 미해독"
     }
+  },
+
+  "unit": {
+    "mm": "mm",
+    "ms": "ms",
+    "times": "회"
   },
 
   "apply": {
@@ -141,53 +152,163 @@
 
   "reset": {
     "title": "공장 초기화",
-    "what": "공장 초기화 (0xee)",
+    "what": "공장 초기화",
+    "button": "초기화",
     "start": "공장 초기화",
     "startNote": "누르면 확인 창이 열립니다. 확인하기 전까지는 보드에 아무것도 보내지 않습니다.",
     "cancel": "취소",
     "confirm": {
       "title": "공장 초기화",
       "body": "키보드의 모든 설정이 삭제됩니다.",
-      "go": "공장 초기화",
-      "wait": "공장 초기화 ({seconds})"
+      "go": "확인",
+      "wait": "({seconds})"
     },
     "stage": {
       "sending": "초기화 명령을 보내는 중…",
       "waiting": "보드가 플래시를 지우는 중…",
       "reading": "보드에서 결과를 읽는 중…",
-      "note": "순정 드라이버와 같이 {seconds}초를 기다린 뒤 전역 블록을 다시 읽습니다. 그동안 케이블을 뽑지 마세요."
+      "note": "케이블을 뽑지 마세요."
+    },
+    "toast": {
+      "ok": "초기화 완료"
     },
     "done": {
-      "ok": "초기화 완료 — 되읽은 값이 펌웨어 기본값과 일치합니다.",
       "different": "초기화 후 되읽은 값이 이 펌웨어의 기본값 표와 다릅니다.",
       "unread": "명령은 전달됐지만 결과를 읽지 못했습니다.",
       "unreadNote": "보드가 아직 플래시를 쓰고 있거나 USB 를 다시 잡는 중일 수 있습니다. <b>실패했다는 뜻은 아닙니다.</b> 잠시 뒤 <b>보드 설정</b>에서 다시 읽어 보세요.",
-      "reread": "키별 설정은 비웠습니다. <b>입력 지점</b> 탭에서 보드에서 읽기를 눌러 새 값을 받아오세요."
+      "reread": "키별 설정은 비웠습니다. <b>입력 지점</b> 탭을 열면 보드에서 새 값을 읽어 옵니다."
     }
   },
 
-  "firmware": {
-    "title": "키보드 펌웨어",
-    "what": "펌웨어 빌드 정보 읽기 (0x03)",
+  "profile": {
+    "fileSave": "프로파일 내보내기",
+    "fileLoad": "프로파일 가져오기",
+    "title": "프로파일",
+    "cancel": "취소",
+    "block": {
+      "keyPerf": "퍼포먼스",
+      "keymap": "키맵",
+      "macros": "매크로",
+      "advancedKeys": "고급 키",
+      "keyRgb": "키별 색",
+      "global": "보드 설정"
+    },
+    "stage": {
+      "firmware": "펌웨어"
+    },
+    "summary": {
+      "keys": "{count}키",
+      "layers": "{count}레이어",
+      "macros": "{count}칸",
+      "tables": "표 3개",
+      "fields": "{count}항목"
+    },
+    "save": {
+      "start": "내보내기",
+      "reading": "보드 읽는 중",
+      "title": "프로파일 저장",
+      "body": "저장 방식을 선택해 주세요.",
+      "json": "JSON으로 저장",
+      "stock": "호환모드로 저장",
+      "noStock": "이 보드는 순정 파일 형식이 정의되어 있지 않습니다.",
+      "noLoss": "빠지는 항목 없음",
+      "lossTitle": "순정 XML 로 저장하면 다음이 빠집니다",
+      "partial": "읽지 못한 블록: {blocks}"
+    },
+    "load": {
+      "noStockFormat": "{board} 은 순정 파일 형식이 정의되어 있지 않아 XML 을 읽을 수 없습니다.",
+      "start": "가져오기",
+      "title": "프로파일 불러오기",
+      "empty": "이 파일에는 적용할 수 있는 블록이 없습니다.",
+      "apply": "보드에 적용 ({count})"
+    },
+    "apply": {
+      "writing": "보드에 쓰는 중",
+      "disconnectedTitle": "연결 끊김",
+      "failedTitle": "일부 단계 실패",
+      "dismiss": "확인",
+      "disconnected": "쓰는 도중 보드 연결이 끊겼습니다."
+    },
+    "toast": {
+      "ok": "불러오기 완료"
+    },
+    "outcome": {
+      "written": "적용됨",
+      "skipped": "건너뜀",
+      "failed": "실패",
+      "mismatch": "되읽기 불일치"
+    },
+    "loss": {
+      "global": "폴링 레이트 · 디바운스 · 바텀아웃 트리거 · 액추에이션 체크 · 자석 테스트",
+      "advanced": "고급 키 표 전체, 그리고 고급 키를 가리키는 키맵 항목",
+      "bindings": "표현할 수 없는 키맵 항목 {count}개 (미할당으로 저장)",
+      "modifiers": "수정자를 둘 이상 쓰는 키 {count}개 (첫 하나만 저장)",
+      "macroSlots": "11번 이후 매크로 칸 {count}개",
+      "macroEvents": "표현할 수 없는 매크로 이벤트 {count}개",
+      "roundTrip": "보드가 준 그대로 되쓰기 위한 값 {count}키"
+    },
+    "note": {
+      "advanced": "고급 키가 들어 있지만 이 앱은 순정 XML 의 고급 키를 아직 적용하지 않습니다.",
+      "perfShort": "퍼포먼스 항목이 이 보드의 키를 전부 담고 있지 않아 제외했습니다.",
+      "layers": "이 보드가 저장하지 않는 레이어 {count}개는 건너뜀습니다.",
+      "keymap": "해석하지 못한 키맵 항목 {count}개",
+      "macroEvents": "변환하지 못한 매크로 이벤트 {count}개",
+      "perf": "이 보드에 없는 키의 퍼포먼스 항목 {count}개"
+    },
+    "check": {
+      "badVersion": "프로파일 버전이 없거나 올바르지 않습니다.",
+      "newer": "프로파일 버전 {version} 은 이 빌드(최대 {supported})보다 새 형식입니다.",
+      "otherSpec": "다른 보드에서 저장한 파일입니다 ({from}).",
+      "otherProduct": "제품 id 가 다릅니다 ({from} → {to}).",
+      "otherKeyCount": "키 수가 다릅니다 ({from} → {to}).",
+      "length": "항목 수가 {got}개, 이 보드는 {want}개입니다.",
+      "keyBad": "{index}번 키 값이 올바르지 않습니다.",
+      "saturate": "범위를 넘는 값 {count}개는 보드 한계로 잘립니다.",
+      "noSwitch": "스위치 종류가 없는 키 {count}개는 0 으로 기록됩니다.",
+      "unknownSwitch": "이 보드가 모르는 스위치 종류: {types}",
+      "noLayers": "레이어가 하나도 없습니다.",
+      "layerRange": "레이어 {layer} 는 범위 밖입니다 (최대 {max}).",
+      "layerDup": "레이어 {layer} 가 두 번 있습니다.",
+      "layerLength": "레이어 {layer} 의 항목이 {got}개, 이 보드는 {want}개입니다.",
+      "bindingBad": "레이어 {layer} 의 {index}번 항목을 인코딩할 수 없습니다.",
+      "macroSlotRange": "매크로 칸 {slot} 은 범위 밖입니다 (최대 {max}).",
+      "advRecordRange": "고급 키 레코드 {record} 는 범위 밖입니다 (최대 {max}).",
+      "unknownBinding": "레이어 {layer} 의 {index}번은 해석되지 않은 레코드입니다.",
+      "unresolved": "슬롯을 찾지 못한 키 {count}개는 건너뜁니다.",
+      "partialLayers": "레이어 {got}개만 들어 있습니다 (이 보드는 {want}개).",
+      "macroDup": "매크로 칸 {slot} 이 두 번 있습니다.",
+      "macroBad": "매크로 칸 {slot} 의 내용이 올바르지 않습니다.",
+      "macroDelay": "매크로 칸 {slot} 의 지연이 0-{max} ms 를 벗어납니다.",
+      "macroBudget": "매크로 레코드가 {stored}개로 용량 {budget}개를 넘습니다.",
+      "blobBad": "{table} 표를 읽을 수 없습니다.",
+      "blobSize": "{table} 표 크기가 {got}바이트, 이 보드는 {want}바이트입니다.",
+      "colorBad": "{index}번 키 색이 올바르지 않습니다.",
+      "rateUnknown": "이 보드가 모르는 폴링 레이트 값 {value} 입니다.",
+      "rateReplug": "폴링 레이트를 바꾸면 연결이 끊길 수 있습니다.",
+      "debounceRange": "디바운스 값 {value} 는 범위 밖입니다.",
+      "noEffectTable": "이 보드의 조명 효과 표가 없어 모드를 확인하지 못했습니다.",
+      "modeUnknown": "이 보드가 모르는 조명 모드 {mode} 입니다.",
+      "brightnessRange": "밝기 {value} 는 0-100 밖입니다."
+    }
+  },
+
+  "deviceInfo": {
+    "title": "장치 정보",
     "device": "장치",
-    "ids": "VID : PID",
-    "build": "빌드",
-    "built": "빌드 시각"
+    "ids": "VID : PID"
   },
 
   "board": {
     "title": "보드 설정",
     "what": "전역 설정 읽기 (0x05)",
-    "applied": "적용 후 전역 블록을 다시 읽어 확인했습니다.",
+    "applied": "적용 되었습니다.",
     "mismatch": "기록한 값과 다르게 읽혔습니다: {detail}",
     "rate": {
       "label": "폴링 레이트",
       "hz": "{hz} Hz",
       "unknown": "알 수 없는 값 {value}",
-      "warn": "폴링 레이트를 바꾸면 보드가 USB 를 다시 잡을 수 있습니다. 그러면 브라우저의 연결이 끊기고 다시 연결해야 합니다.",
-      "confirmTitle": "폴링 레이트를 바꿉니다",
-      "confirmChange": "<b>{from}</b> 에서 <b>{to}</b> 로 바꿉니다.",
-      "writeLost": "폴링 레이트 변경으로 장치가 다시 열렸을 수 있습니다. 다시 연결한 뒤 값을 확인하세요."
+      "confirmTitle": "안내",
+      "confirmChange": "폴링 레이트를 바꾸면 연결이 해제됩니다."
     },
     "debounce": {
       "label": "디바운스",
@@ -253,11 +374,16 @@
 
   "inputPoint": {
     "section": {
-      "overview": "개요",
       "trigger": "동작 지점",
       "rt": "래피드 트리거",
       "switch": "스위치",
       "deadzone": "데드존"
+    },
+    "hint": {
+      "trigger": "키 입력이 시작되는 지점을 설정합니다.",
+      "rt": "키 입력이 해제/재입력이 되는 지점을 동적으로 설정합니다.",
+      "switch": "장착된 스위치를 설정합니다.",
+      "deadzone": "오입력을 방지하기 위해 무시되는 지점을 설정합니다."
     },
     "sections": "입력 지점 구역",
     "switchWarning": {
@@ -284,39 +410,45 @@
 
   "actuation": {
     "title": "액추에이션 포인트",
-    "counts": "mm = {counts} counts ({step}mm 단위) · 총 스트로크 {travel}mm 기준",
-    "preset": {
-      "fast": "빠름 {mm}mm",
-      "default": "기본 {mm}mm",
-      "deep": "깊음 {mm}mm"
-    },
+    "counts": "mm",
     "board": "보드",
-    "pending": "변경 예정",
-    "target": "대상 {count}개 키",
     "mixed": "여러 값",
-    "travelNote": "최대값은 선택한 키에 꽂힌 스위치의 총 스트로크({travel}mm)입니다.",
     "unread": "아직 보드를 읽지 않았습니다. 위 “보드 현재 설정”에서 읽은 뒤 조절하세요.",
     "deeperThanTravel": "{count}개 키의 액추에이션이 스위치 총 스트로크를 넘습니다."
   },
 
   "rt": {
     "title": "래피드 트리거",
-    "enable": "선택한 키에 래피드 트리거 사용",
-    "pressSensitivity": "누름 민감도 (mm)",
-    "releaseSensitivity": "뗌 민감도 (mm)",
-    "continuous": "연속 모드 (액추에이션 위에서도 동작)",
-    "full": "FULL",
-    "counts": "누름 {press} / 뗌 {release} counts (필드 최대 {max})",
+    "enable": "래피드 트리거 활성화",
+    "hint": {
+      "enable": "키 입력 해제 지점을 동적으로 설정합니다.",
+      "continuous": "입력 지점보다 높은 지점에서도 래피드 트리거를 활성화 합니다."
+    },
+    "pressSensitivity": "누름 민감도",
+    "releaseSensitivity": "뗌 민감도",
+    "continuous": "연속 모드",
     "belowFactory": "{count}개 키의 민감도가 공장 기본값 {mm}mm 보다 낮습니다. 정지 상태 노이즈가 입력으로 새어 나올 수 있습니다.",
     "noRoom": "{count}개 키는 래피드 트리거가 동작할 구간이 없습니다 — 민감도가 액추에이션 아래 남은 스트로크보다 큽니다. 연속 모드를 켜거나 민감도를 줄이세요."
   },
 
+  "liveDepth": {
+    "title": "실시간 깊이"
+  },
+
   "deadzone": {
     "title": "데드존",
+    "hint": {
+      "enable": ""
+    },
     "enable": "선택한 키에 데드존 사용",
-    "top": "위쪽 (mm)",
-    "bottom": "아래쪽 (mm)",
-    "limit": "필드가 5비트라 최대 {mm}mm({counts} counts)입니다. 넘기면 값이 접혀 들어갑니다."
+    "top": "위쪽",
+    "bottom": "아래쪽",
+    "limit": "필드가 5비트라 최대 {mm}mm({counts} counts)입니다. 넘기면 값이 접혀 들어갑니다.",
+    "offConfirm": {
+      "title": "데드존 해제",
+      "body": "데드존을 끄면 의도치 않는 입력이 발생하거나 입력이 끊기는 문제가 발생할 수 있습니다.",
+      "continue": "계속"
+    }
   },
 
   "advanced": {
@@ -336,22 +468,21 @@
     "applying": "적용 중…",
     "revert": "되돌리기",
     "unbind": "고급 키 해제",
-    "unboundToast": "임시2",
+    "unboundToast": "해제 되었습니다.",
     "unbindUnavailable": "보드의 공장 표에 이 키의 매핑이 없어 되돌릴 것이 없습니다.",
-    "appliedToast": "임시1",
+    "appliedToast": "적용 되었습니다.",
     "noSlot": "슬롯 맵에 {key} 의 슬롯이 없어 두 키를 서로 알려줄 수 없습니다.",
     "mismatch": "레코드 #{record} 가 쓴 대로 읽히지 않았습니다: {wanted} → {got}. 키맵은 건드리지 않았습니다.",
     "keymapMismatch": "레코드는 썼지만 키맵 레코드가 보낸 대로 읽히지 않았습니다: {detail}. 키는 연결되지 않았습니다.",
     "noFreeRecord": "레코드 {limit} 개가 모두 사용 중입니다. 쓰고 있는 키를 풀어 하나 비우세요.",
     "capLabel": "{kind} · 레코드 {record}",
     "inUse": "이 레이어의 고급 키",
-    "inUseTab": "사용 중",
     "noneBound": "이 레이어에는 고급 키에 연결된 키가 없습니다.",
     "orphans": "바이트는 있지만 어느 레이어도 가리키지 않는 레코드: {records}. 비우지 못했습니다 — 이 보드가 레코드 쓰기를 지원하지 않거나, 쓰기가 먹히지 않았습니다.",
     "orphansCleared": "{records} 를 비웠습니다 — 어느 키도 가리키지 않던 바이트입니다.",
     "orphansFailed": "{records} 를 비우지 못했습니다 — 쓴 대로 읽히지 않습니다. 이번 세션 동안은 다시 시도하지 않습니다.",
     "unmappedSlot": "슬롯 {slot}",
-    "unstableInUse": "이 레이어가 아직 <b>{kinds}</b> 를 쓰고 있지만, 이 앱은 더 이상 제공하지 않습니다 — 펌웨어가 레코드는 해독하지만 안정적으로 실행하지 못해 위 목록에서 빼 두었습니다. 지우려면 격자에서 그 키를 고른 뒤 열리는 패널에서 <b>고급 키 해제</b> 를 누르세요.",
+    "unstableInUse": "아직 <b>{kinds}</b> 를 쓰고 있는 키가 있지만, 이 앱은 더 이상 제공하지 않습니다 — 펌웨어가 레코드는 해독하지만 안정적으로 실행하지 못해서입니다. 지우려면 <b>고급 키</b> 탭에서 그 키를 고른 뒤 <b>고급 키 해제</b> 를 누르세요.",
     "holdMs": "{ms} ms",
     "partnerSlot": "짝 슬롯 {slot}",
     "partnerKey": "{key} 키와 짝",
@@ -366,6 +497,14 @@
       "hold": "홀드 {binding}",
       "sends": "보냄 {binding}",
       "onRelease": "뗄 때 {binding}"
+    },
+    "hints": {
+      "dks": "키를 누른 깊이에 따라 최대 4개 동작합니다.",
+      "tgl": "키를 누르면 다시 누를때 까지 입력이 유지합니다.",
+      "mt": "키를 누르는 시간에 따라 동작합니다.",
+      "rs": "2개의 키중 더 깊게 누른 키를 우선 동작합니다.",
+      "socd": "2개의 키중 설정한 우선순위에 따라 동작합니다.",
+      "oks": ""
     },
     "kinds": {
       "dks": "DKS",
@@ -396,8 +535,7 @@
       "hold": "홀드",
       "time": "유지 시간"
     },
-    "rs": {
-    },
+    "rs": {},
     "socd": {
       "modeNote": "해결 모드는 이 표에 없습니다 — 펌웨어는 이 키의 성능 레코드 상위 니블에서 읽으며, 그 블록은 입력 지점 탭이 다룹니다. 거기서 바꾸세요."
     },
@@ -504,6 +642,9 @@
     "emptySlots": {
       "title": "슬롯 {count}개가 비어 있습니다 ({bytes}바이트 전부 0)"
     },
+    "raw": {
+      "title": "키 성능 블록"
+    },
     "hideRaw": "원본 블록 숨기기",
     "showRaw": "원본 블록 보기 ({slots}슬롯)",
     "copyDump": "덤프 복사",
@@ -515,8 +656,9 @@
       "unsupported": "이 보드의 스펙에 매크로 저장소 명령이 없습니다. 저장소를 읽을 수 없으면 매크로 키를 붙이는 것이 안전한지 확인할 방법도 없습니다.",
       "reading": "저장소를 읽는 중…",
       "unread": "매크로 저장소를 아직 읽지 못했습니다. 다른 분류로 갔다가 돌아오면 다시 시도합니다.",
-      "ready": "저장소 {total}칸이 모두 본문을 가리키고 정지 레코드로 끝납니다. 매크로 키를 붙여도 안전합니다.",
-      "unsafe": "⚠ <b>{slots}칸</b>이 본문을 가리키지 않거나 정지 레코드가 없습니다. 재생기는 커서에 상한이 없어서, 이 상태로 매크로 키를 누르면 플래시를 훑으며 지나가는 레코드마다 키를 눌러 버립니다. <b>매크로 탭에서 저장소 쓰기를 먼저 누르세요</b> — 붙이기는 언제나 두 번째 쓰기입니다.",
+      "unsafeTitle": "주의",
+      "unsafe": "매크로가 정상적으로 기록되지 않았습니다. 사용 전 매크로 저장을 다시하고 시도해 주십시오.",
+      "unsafeDismiss": "확인",
       "slotTitle": "#{slot} · 이벤트 {count}개",
       "slotEmpty": "#{slot} · 비어 있음",
       "slotsUnlocked": "디버그 모드라 {total}칸 전부 열려 있습니다. 순정 드라이버는 앞 10칸만 다루므로, 순정으로 돌아가 저장소를 쓰면 나머지 칸의 본문이 사라집니다.",
@@ -534,17 +676,15 @@
     "apply": "보드에 적용",
     "picked": "{key} 선택됨",
     "pickedRecord": "레코드 {record}",
-    "pickNone": "캡을 눌러 키를 고르세요",
+    "pickNone": "맵핑할 키를 고르세요",
     "reset": "공장값으로",
     "layers": "레이어",
-    "unread": "아직 보드에서 읽지 않았습니다. 먼저 읽어야 지금 무엇이 걸려 있는지 볼 수 있습니다.",
-    "layerNote": "이 보드에 저장 공간이 있는 레이어는 <b>2장뿐</b>입니다. 펌웨어는 4장을 인덱싱하지만 레이어 2·3 의 주소는 키별 RGB · 매크로 영역과 겹칩니다. 레이어를 바꾸는 것은 Fn 같은 키 동작뿐이고, 호스트에서는 바꿀 수 없습니다. 쓰기는 보드가 준 512바이트를 고쳐 되돌려 보내고, 쓴 뒤 다시 읽어 바이트를 대조합니다.",
+    "unread": "아직 보드에서 읽지 않았습니다.",
     "layer": {
       "main": "기본 레이어",
       "fn1": "FN 레이어 1"
     },
     "unmapped": "슬롯을 찾지 못한 키 {count}개는 읽지도 쓰지도 못했습니다: {keys}",
-    "appliedOne": "{key} 적용 후 다시 읽어 확인했습니다",
     "noChange": "보드에 이미 같은 값이 들어 있어 아무것도 보내지 않았습니다.",
     "mismatch": "기록한 값과 다르게 읽힌 슬롯 {count}개: {detail}",
     "resetUnavailable": "공장 키맵 읽기가 이 슬롯까지 닿지 않아 되돌릴 수 없습니다.",
@@ -592,7 +732,7 @@
       "momentary": "레이어 {layer}",
       "action": "동작 0x{code}"
     },
-    "trnsNote": "<c>KC_TRNS</c> 는 이 보드의 레코드가 아닙니다. 이 보드 펌웨어에는 투명 키가 없어서, 이 버튼은 기본 레이어의 값을 이 칸에 <b>복사</b>합니다. 연결이 아니라 복사라, 나중에 기본 레이어를 바꿔도 따라오지 않습니다.",
+    "trnsNote": "<c>KC_TRNS</c>는 미지원 키 코드입니다. 따라서 현재 앱은 기본 레이어에서 키를 복사하는 기능으로 대체됩니다.",
     "writeWhat": "키맵 쓰기",
     "writeNote": "키맵 명령은 대개 길이가 길어 여러 리포트로 쪼개져 전송됩니다. 순정 드라이버에서 <b>한 키만</b> 바꿔 저장한 뒤 캡처를 비교하면, 바뀐 바이트 위치가 곧 그 키의 인덱스입니다 — 매트릭스 순서를 역산하는 가장 확실한 방법입니다."
   },
@@ -607,18 +747,42 @@
     "waiting": "키를 누르세요…"
   },
 
+  "keyInfo": {
+    "title": "키 정보",
+    "welcome": {
+      "body": "사이드바에서 키보드 설정을 시작하세요."
+    },
+    "pick": "또는 키보드에서 키를 누르거나, 위 격자에서 키를 골라 키 정보를 확인하세요.",
+    "key": "키",
+    "sends": "보내는 값",
+    "rtPress": "RT 트리거",
+    "rtRelease": "RT 해제",
+    "viaAdvanced": "고급 키로 대체됨",
+    "advanced": "고급 키",
+    "addresses": "주소",
+    "addressList": "색인 {index} · 펌웨어 {keyIndex} · LED {lightIndex} · 기본 usage {usage}"
+  },
+
   "overview": {
-    "todo": "아직 만들지 않은 탭입니다. 자리만 잡아 두었습니다."
+    "section": {
+      "keys": "키 정보",
+      "input": "입력 지점",
+      "advanced": "고급 키"
+    },
+    "sections": "개요 구역",
+    "foot": {
+      "pending": "보내지 않은 편집 {count}키"
+    }
   },
 
   "macro": {
     "what": "매크로",
     "title": "매크로",
     "layers": "레이어",
-    "storeUnsafe": "⚠ <b>{slots}칸</b>이 본문을 가리키지 않거나 정지 레코드가 없습니다. 재생기는 커서에 상한이 없어서, 이 상태로 매크로 키를 누르면 플래시를 4바이트씩 훑으며 지나가는 레코드마다 키를 눌러 버립니다. <b>먼저 저장소 쓰기</b>를 눌러 새로 깔아 주세요 — 바인딩은 그때까지 막혀 있습니다.",
+    "storeUnsafe": "매크로가 정상적으로 기록되지 않았습니다. 사용 전 매크로 저장을 다시하고 시도해 주십시오.",
     "storeUse": "저장소 사용량",
     "storeFree": "{free} Byte / {total} Byte",
-    "aliasOf": "이 칸은 <b>M{owner} 와 같은 곳을 가리킵니다.</b> 순정은 빈 칸의 오프셋을 다음 본문에 그대로 두기 때문에, 순정에서 비워 둔 칸은 이렇게 보입니다. 여기서는 빈 칸으로 취급하지만 <b>지금 보드는 M{owner} 의 본문을 재생합니다</b> — 저장소 쓰기를 한 번 하면 진짜 빈 칸이 됩니다.",
+    "aliasOf": "이 칸은 <b>M{owner} 와 같은 곳을 가리킵니다.</b> 저장시 오프셋을 다시 지정합니다.",
     "slot": "슬롯",
     "slotPlain": "M{slot} - 이벤트 {count}개",
     "events": "이벤트",
@@ -638,15 +802,15 @@
     "recordingNow": "녹화 중입니다. 녹화를 마치려면 녹화 중단을 누르세요.",
     "addTitle": "직접 넣기",
     "addKey": "키",
-    "holdMs": "누름 유지 (ms)",
-    "gapMs": "뗀 뒤 간격 (ms)",
+    "holdMs": "누름 유지",
+    "gapMs": "뗀 뒤 간격",
     "addTap": "누르고 떼기",
     "addDown": "누름만",
     "addUp": "뗌만",
     "tools": "일괄 편집",
     "repeatTimes": "반복 횟수",
-    "repeatGap": "회차 사이 간격 (ms)",
-    "fixedDelay": "고정 지연 (ms)",
+    "repeatGap": "회차 사이 간격",
+    "fixedDelay": "고정 지연",
     "repeatApply": "목록 반복",
     "flattenApply": "지연 일괄 적용",
     "apply": "저장",
@@ -746,6 +910,9 @@
   },
 
   "settings": {
+    "driver": {
+      "title": "드라이버 설정"
+    },
     "theme": {
       "title": "테마",
       "system": "시스템 설정",
@@ -755,6 +922,16 @@
     "accent": {
       "title": "포인트 색상",
       "swatch": "포인트 색상 {color}"
+    },
+    "background": {
+      "title": "배경 이미지",
+      "choose": "이미지 선택",
+      "clear": "제거",
+      "blur": "흐림",
+      "dim": "밝기",
+      "notImage": "이미지 파일이 아닙니다.",
+      "tooLarge": "{max}MB 이하의 이미지만 사용할 수 있습니다.",
+      "failed": "이미지를 저장하지 못했습니다. 브라우저 저장소를 사용할 수 없습니다."
     }
   },
 
@@ -780,6 +957,9 @@
       },
       "log": {
         "label": "로그"
+      },
+      "perf": {
+        "label": "키 성능 블록"
       }
     }
   },
@@ -916,9 +1096,6 @@
   },
 
   "sensors": {
-    "title": "실시간 키 깊이 · ADC",
-    "start": "시작",
-    "stop": "정지",
     "clear": "비우기",
     "listenOnly": "<c>{arm}</c> 없이 수신만",
     "focus": "포커스 #{index} {key} — 키를 클릭해 바꿉니다",
@@ -929,8 +1106,12 @@
     "staleTable": "<b>내장 식별표가 이 보드와 맞지 않습니다.</b> 지문으로 식별해야 하는 키에서 표에 없는 센서값이 관측되었거나, 한 센서값 아래 키 수보다 많은 기준값이 관측되었습니다. 지금 상태에서는 수정자가 <b>다른 키로 잘못 해석될 수 있습니다</b> — 디버그 모드의 <b>센서값 목록</b> 패널에서 어느 값이 문제인지 확인하고, <b>설정</b> 탭에서 <b>내장 식별표 무시</b>를 켠 뒤 <b>이벤트</b> 탭에서 직접 연결하세요.",
     "armFailed": "스트림을 켜지 못했습니다:",
     "armFailedHint": "<b>장치</b> 탭에서 <b>권장</b> 표시가 붙은 인터페이스가 열려 있는지 확인하세요.",
-    "armed": "아날로그 보고를 켰습니다 (<c>{arm}</c> → <c>{disarm}</c>). 보고는 켜진 채 유지되고 테스트 모드는 빠져나왔으므로 타이핑은 그대로 동작하며 보정도 일어나지 않습니다.",
-    "gridLegend": "채움은 <b>현재 깊이</b>, 아래 숫자는 <b>깊이 mm / 현재 ADC</b> 입니다.",
+    "alert": {
+      "armFailed": "스트림을 켜지 못했습니다",
+      "staleTable": "내장 식별표가 맞지 않습니다",
+      "uncalibrated": "보정되지 않은 키가 있습니다",
+      "dismiss": "확인"
+    },
     "identitiesTitle": "관측된 식별자 {count}개",
     "col": {
       "key": "키",
@@ -1006,13 +1187,11 @@
       "sourceFlag": "모호 — 직접 확인 필요"
     },
     "trace": {
-      "title": "트레이스 — #{index} {key}",
-      "current": "현재 {mm} mm",
-      "min": "최소 {mm}",
-      "max": "최대 {mm}",
-      "adc": "현재 ADC {value}",
-      "baseline": "기준 ADC {value}",
-      "noise": "정지 시 흔들림 {mm} mm — 래피드 트리거 민감도는 이 값보다 커야 합니다"
+      "title": "#{index} {key}",
+      "current": "현재 스트로크",
+      "adc": "현재 ADC",
+      "baseline": "기준 ADC",
+      "scale": "보정 계수"
     },
     "sensorTable": {
       "title": "센서값 목록 — 내장 식별표 대비",
@@ -1041,9 +1220,9 @@
   },
 
   "bottomOut": {
-    "title": "바닥까지 눌렀을 때 항상 트리거 (전역)",
+    "hint": "키가 바닥에 도달시 즉시 입력됩니다.",
     "what": "전역 설정 쓰기 (0x06)",
-    "enable": "바닥까지 누르면 항상 트리거",
+    "enable": "바닥까지 누르면 트리거",
     "applied": "적용 후 전역 블록을 다시 읽어 확인했습니다.",
     "noChange": "보드에 이미 같은 값이 들어 있어 아무것도 보내지 않았습니다.",
     "mismatch": "기록한 값과 다르게 읽혔습니다: {detail}"

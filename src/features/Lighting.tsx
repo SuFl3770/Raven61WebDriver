@@ -5,6 +5,7 @@ import { supports } from '../protocol/codec'
 import { UNLIT, hexOf, isUnlit, luminanceOf, sameRgb, type Rgb } from '../protocol/keyRgb'
 import type { KeyRgbSnapshot } from '../protocol/types'
 import { link, useCodec, useConnection } from '../state/link'
+import { take } from '../state/prefetch'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { boardSync } from '../state/sync'
 import { GridFrame } from '../ui/GridFrame'
@@ -144,7 +145,10 @@ export function Lighting() {
     setError(null)
     setMismatch(null)
     try {
-      const snapshot = await codec.readKeyColors(link)
+      /* Read the moment the board was attached, if this is the first visit —
+         see state/prefetch.ts. */
+      const ahead = take<KeyRgbSnapshot>('keyColors')
+      const snapshot = await (ahead ?? codec.readKeyColors(link))
       setStored(snapshot)
       setEdits({})
       setStatus(null)
