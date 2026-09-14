@@ -14,7 +14,8 @@ import { settings } from './settings'
  * or with a value that is not on the list any more, the page keeps what the
  * stylesheet says — see styles.css.
  */
-export const ACCENTS = ['#f8f7b9', '#77ec77'] as const
+export const ACCENTS = ["#6366F1", "#7C3AED", "#E11D48", "#0284C7",
+ "#0D9488", "#D97706", "#D8BD68", "#0891B2"] as const
 
 /**
  * Not `ACCENTS[0]`: this is the colour the stylesheet already declares, so a
@@ -22,7 +23,7 @@ export const ACCENTS = ['#f8f7b9', '#77ec77'] as const
  * written look the same. Reordering the list above must not silently change
  * what an existing user sees.
  */
-export const DEFAULT_ACCENT = '#77ec77'
+export const DEFAULT_ACCENT = '#D8BD68'
 
 export function resolveAccent(value: string): string {
   return (ACCENTS as readonly string[]).includes(value) ? value : DEFAULT_ACCENT
@@ -30,11 +31,9 @@ export function resolveAccent(value: string): string {
 
 /*
  * Written as `--accent-src` — the colour as chosen — rather than as `--accent`,
- * which is what the app actually paints with. The two are the same in the dark
- * theme; in the light one the stylesheet derives `--accent` by knocking the
- * chosen colour down until it can be read as ink on a white panel, and it can
- * only do that if the raw choice arrives under a name it is allowed to sit
- * above. An inline `--accent` would beat every rule in the sheet.
+ * which is what the app actually paints with. The two hold the same colour in
+ * both themes, but the sheet mixes the fills and edges it needs off `--accent`,
+ * and an inline `--accent` would beat every rule that does so.
  */
 function apply(): void {
   document.documentElement.style.setProperty(

@@ -3,7 +3,7 @@ import { AccentPicker } from '../ui/AccentPicker'
 import { BackgroundPicker } from '../ui/BackgroundPicker'
 import { BoardSettings } from '../ui/BoardSettings'
 import { FactoryReset } from '../ui/FactoryReset'
-import { FirmwareInfo } from '../ui/FirmwareInfo'
+import { DeviceInfo } from '../ui/DeviceInfo'
 import { Panel, PanelGroup } from '../ui/Panel'
 import { ProfileStorage } from '../ui/ProfileStorage'
 import { ThemePicker } from '../ui/ThemePicker'
@@ -18,13 +18,20 @@ import { ThemePicker } from '../ui/ThemePicker'
  * a thing follows the board to another machine — so it is the one the headings
  * draw, and the eight separate panels this used to be are groups under them.
  *
- * Inside the board panel the order is the same as it was: the two settings the
- * board holds, the profile panel that saves all of it to a file and puts a file
- * back, and last the one control that throws them away. In the driver panel the
- * theme comes first because it decides which surfaces the accent has to work
- * against, and the wallpaper is last because it is drawn under both.
+ * Inside each panel the groups sit in two columns rather than a stack. Every
+ * one of them is a couple of rows tall, and stacked they left a column of empty
+ * page down the right of a tab that has nothing else to put there. Reading
+ * order is unchanged — left column first, then right: the board panel keeps the
+ * two settings the board holds on the left and the profile file on the right,
+ * and the driver panel keeps the theme and accent on the left, because the theme
+ * decides which surfaces the accent has to work against, with the wallpaper on
+ * the right because it is drawn under both.
  *
- * The firmware panel stays outside both. It is not a setting — nothing on it
+ * The factory reset stays out of the columns, across the foot of the board
+ * panel. It is the one control here that can lose something, and a destructive
+ * button beside an ordinary one reads as another ordinary one.
+ *
+ * The device panel stays outside both. It is not a setting — nothing on it
  * can be changed — and it is what identifies the board the panel below is
  * talking to, so it reads as a header for the tab rather than an item in it.
  *
@@ -42,28 +49,31 @@ export function Settings() {
 
   return (
     <>
-      <FirmwareInfo />
+      <DeviceInfo />
 
       <Panel title={t('board.title')}>
-        {/* Untitled: the panel heading above already names these two. */}
-        <BoardSettings />
-        <hr className="panel-sep" />
-        <ProfileStorage />
-        <hr className="panel-sep" />
-        {/*
-          Last, and on purpose. Nothing else in this panel can lose anything,
-          and a control that can should not sit next to the ones that cannot.
-        */}
-        <FactoryReset />
+        <div className="settings-cols">
+          <div>
+            {/*
+              Untitled: the panel heading above already names these two. The
+              hidden line is what keeps the first select level with the first
+              button of the titled group beside it — see `.ghost-title`.
+            */}
+            <BoardSettings />
+          </div>
+          <ProfileStorage />
+          <FactoryReset />
+        </div>
       </Panel>
 
       <Panel title={t('settings.driver.title')}>
-        <PanelGroup>
-          <ThemePicker />
+        <div className="settings-cols">
+          <div>
+              <ThemePicker />
+          </div>
           <AccentPicker />
-        </PanelGroup>
-        <hr className="panel-sep" />
-        <BackgroundPicker />
+          <BackgroundPicker />
+        </div>
       </Panel>
     </>
   )

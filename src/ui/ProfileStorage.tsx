@@ -208,13 +208,13 @@ export function ProfileStorage() {
   }
 
   return (
-    <PanelGroup title={t('profile.title')}>
+    <PanelGroup>
       <div className="row">
+        <span className="small dim" style={{ minWidth: 140 }}>
+          {t('profile.fileSave')}
+        </span>
         <button disabled={!connected || busy !== null} onClick={() => void startSave()}>
           {t('profile.save.start')}
-        </button>
-        <button disabled={!connected || busy !== null} onClick={() => picker.current?.click()}>
-          {t('profile.load.start')}
         </button>
         {busy !== null && (
           <span className="small dim">
@@ -222,6 +222,14 @@ export function ProfileStorage() {
             {stage ? ` · ${stage}` : ''}
           </span>
         )}
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <span className="small dim" style={{ minWidth: 140 }}>
+          {t('profile.fileLoad')}
+        </span>
+        <button disabled={!connected || busy !== null} onClick={() => picker.current?.click()}>
+          {t('profile.load.start')}
+        </button>
       </div>
 
       <input

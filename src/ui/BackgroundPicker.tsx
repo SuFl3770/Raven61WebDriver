@@ -59,8 +59,11 @@ export function BackgroundPicker() {
   }
 
   return (
-    <PanelGroup title={t('settings.background.title')}>
+    <PanelGroup>
       <div className="row">
+        <span className="small dim" style={{ minWidth: 96 }}>
+            {t('settings.background.title')}
+        </span>
         <button onClick={() => picker.current?.click()}>{t('settings.background.choose')}</button>
         <button disabled={!image} onClick={() => void background.clear()}>
           {t('settings.background.clear')}
@@ -86,7 +89,7 @@ export function BackgroundPicker() {
       />
 
       <div className="row" style={{ alignItems: 'center', marginTop: 12 }}>
-        <span className="small dim" style={LABEL}>
+        <span className="small dim" style={{ minWidth: 96 }}>
           {t('settings.background.blur')}
         </span>
         <Slider
@@ -103,8 +106,8 @@ export function BackgroundPicker() {
         </span>
       </div>
 
-      <div className="row" style={{ alignItems: 'center', marginTop: 8 }}>
-        <span className="small dim" style={LABEL}>
+      <div className="row" style={{ alignItems: 'center', marginTop: 12 }}>
+        <span className="small dim" style={{ minWidth: 96 }}>
           {t('settings.background.dim')}
         </span>
         <Slider

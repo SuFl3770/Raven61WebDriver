@@ -285,13 +285,10 @@
     }
   },
 
-  "firmware": {
-    "title": "Keyboard firmware",
-    "what": "reading the firmware build (0x03)",
+  "deviceInfo": {
+    "title": "Device info",
     "device": "Device",
-    "ids": "VID : PID",
-    "build": "Build",
-    "built": "Compiled"
+    "ids": "VID : PID"
   },
 
   "board": {
@@ -1122,9 +1119,6 @@
   },
 
   "sensors": {
-    "title": "Live key travel · ADC",
-    "start": "Start",
-    "stop": "Stop",
     "clear": "Clear",
     "listenOnly": "listen only, without <c>{arm}</c>",
     "focus": "Focus #{index} {key} — click a key to change it",
@@ -1136,8 +1130,12 @@
     "staleTable": "<b>The built-in table does not describe this board.</b> A key that needs fingerprint identification reported a sensor value the table has never heard of, or one sensor value showed more baselines than it has keys. A modifier <b>can resolve to the wrong key</b> in this state — the <b>Sensor values</b> panel in debug mode shows which value is at fault. Turn on <b>Ignore the built-in table</b> in <b>Settings</b> and bind the keys by hand in the <b>Events</b> tab.",
     "armFailed": "Could not arm the stream:",
     "armFailedHint": "Check that the interface marked <b>recommended</b> on the <b>Device</b> tab is the one that is open.",
-    "armed": "Analog reporting is on (<c>{arm}</c> → <c>{disarm}</c>). Reporting stays enabled while the test mode has been exited, so typing keeps working and nothing is recalibrated.",
-    "gridLegend": "The fill is the <b>current travel</b>; the number below it is <b>travel mm / current ADC</b>.",
+    "alert": {
+      "armFailed": "Could not arm the stream",
+      "staleTable": "The built-in table does not match",
+      "uncalibrated": "Some keys are not calibrated",
+      "dismiss": "OK"
+    },
     "identitiesTitle_one": "{count} identity observed",
     "identitiesTitle_other": "{count} identities observed",
     "col": {
@@ -1216,12 +1214,10 @@
     },
     "trace": {
       "title": "Trace — #{index} {key}",
-      "current": "now {mm} mm",
-      "min": "min {mm}",
-      "max": "max {mm}",
-      "adc": "current ADC {value}",
-      "baseline": "baseline ADC {value}",
-      "noise": "resting jitter {mm} mm — rapid trigger sensitivity must be larger than this"
+      "current": "Current stroke",
+      "adc": "Current ADC",
+      "baseline": "Baseline ADC",
+      "scale": "Calibration scale"
     },
     "sensorTable": {
       "title": "Sensor values vs the built-in table",

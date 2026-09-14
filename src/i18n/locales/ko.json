@@ -147,15 +147,16 @@
 
   "reset": {
     "title": "공장 초기화",
-    "what": "공장 초기화 (0xee)",
+    "what": "공장 초기화",
+    "button": "초기화",
     "start": "공장 초기화",
     "startNote": "누르면 확인 창이 열립니다. 확인하기 전까지는 보드에 아무것도 보내지 않습니다.",
     "cancel": "취소",
     "confirm": {
       "title": "공장 초기화",
       "body": "키보드의 모든 설정이 삭제됩니다.",
-      "go": "공장 초기화",
-      "wait": "공장 초기화 ({seconds})"
+      "go": "확인",
+      "wait": "({seconds})"
     },
     "stage": {
       "sending": "초기화 명령을 보내는 중…",
@@ -173,6 +174,8 @@
   },
 
   "profile": {
+    "fileSave": "프로파일 내보내기",
+    "fileLoad": "프로파일 가져오기",
     "title": "프로파일",
     "cancel": "취소",
     "block": {
@@ -194,7 +197,7 @@
       "fields": "{count}항목"
     },
     "save": {
-      "start": "파일로 저장",
+      "start": "내보내기",
       "reading": "보드 읽는 중",
       "title": "프로파일 저장",
       "json": "JSON 으로 저장",
@@ -207,7 +210,7 @@
     },
     "load": {
       "noStockFormat": "{board} 은 순정 파일 형식이 정의되어 있지 않아 XML 을 읽을 수 없습니다.",
-      "start": "파일에서 불러오기",
+      "start": "가져오기",
       "title": "프로파일 불러오기",
       "empty": "이 파일에는 적용할 수 있는 블록이 없습니다.",
       "apply": "보드에 적용 ({count})"
@@ -277,27 +280,24 @@
     }
   },
 
-  "firmware": {
-    "title": "키보드 펌웨어",
-    "what": "펌웨어 빌드 정보 읽기 (0x03)",
+  "deviceInfo": {
+    "title": "장치 정보",
     "device": "장치",
-    "ids": "VID : PID",
-    "build": "빌드",
-    "built": "빌드 시각"
+    "ids": "VID : PID"
   },
 
   "board": {
     "title": "보드 설정",
     "what": "전역 설정 읽기 (0x05)",
-    "applied": "적용 후 전역 블록을 다시 읽어 확인했습니다.",
+    "applied": "적용 되었습니다.",
     "mismatch": "기록한 값과 다르게 읽혔습니다: {detail}",
     "rate": {
       "label": "폴링 레이트",
       "hz": "{hz} Hz",
       "unknown": "알 수 없는 값 {value}",
-      "warn": "폴링 레이트를 바꾸면 보드가 USB 를 다시 잡을 수 있습니다. 그러면 브라우저의 연결이 끊기고 다시 연결해야 합니다.",
-      "confirmTitle": "폴링 레이트를 바꿉니다",
-      "confirmChange": "<b>{from}</b> 에서 <b>{to}</b> 로 바꿉니다.",
+      "warn": "폴링 레이트를 바꾸면 연결이 해제됩니다.",
+      "confirmTitle": "안내",
+      "confirmChange": "폴링 레이트를 바꾸면 연결이 해제됩니다.",
       "writeLost": "폴링 레이트 변경으로 장치가 다시 열렸을 수 있습니다. 다시 연결한 뒤 값을 확인하세요."
     },
     "debounce": {
@@ -923,7 +923,7 @@
       "choose": "이미지 선택",
       "clear": "제거",
       "blur": "흐림",
-      "dim": "어둡게",
+      "dim": "밝기",
       "notImage": "이미지 파일이 아닙니다.",
       "tooLarge": "{max}MB 이하의 이미지만 사용할 수 있습니다.",
       "failed": "이미지를 저장하지 못했습니다. 브라우저 저장소를 사용할 수 없습니다."
@@ -1091,9 +1091,6 @@
   },
 
   "sensors": {
-    "title": "실시간 키 깊이 · ADC",
-    "start": "시작",
-    "stop": "정지",
     "clear": "비우기",
     "listenOnly": "<c>{arm}</c> 없이 수신만",
     "focus": "포커스 #{index} {key} — 키를 클릭해 바꿉니다",
@@ -1104,8 +1101,12 @@
     "staleTable": "<b>내장 식별표가 이 보드와 맞지 않습니다.</b> 지문으로 식별해야 하는 키에서 표에 없는 센서값이 관측되었거나, 한 센서값 아래 키 수보다 많은 기준값이 관측되었습니다. 지금 상태에서는 수정자가 <b>다른 키로 잘못 해석될 수 있습니다</b> — 디버그 모드의 <b>센서값 목록</b> 패널에서 어느 값이 문제인지 확인하고, <b>설정</b> 탭에서 <b>내장 식별표 무시</b>를 켠 뒤 <b>이벤트</b> 탭에서 직접 연결하세요.",
     "armFailed": "스트림을 켜지 못했습니다:",
     "armFailedHint": "<b>장치</b> 탭에서 <b>권장</b> 표시가 붙은 인터페이스가 열려 있는지 확인하세요.",
-    "armed": "아날로그 보고를 켰습니다 (<c>{arm}</c> → <c>{disarm}</c>). 보고는 켜진 채 유지되고 테스트 모드는 빠져나왔으므로 타이핑은 그대로 동작하며 보정도 일어나지 않습니다.",
-    "gridLegend": "채움은 <b>현재 깊이</b>, 아래 숫자는 <b>깊이 mm / 현재 ADC</b> 입니다.",
+    "alert": {
+      "armFailed": "스트림을 켜지 못했습니다",
+      "staleTable": "내장 식별표가 맞지 않습니다",
+      "uncalibrated": "보정되지 않은 키가 있습니다",
+      "dismiss": "확인"
+    },
     "identitiesTitle": "관측된 식별자 {count}개",
     "col": {
       "key": "키",
@@ -1182,12 +1183,10 @@
     },
     "trace": {
       "title": "트레이스 — #{index} {key}",
-      "current": "현재 {mm} mm",
-      "min": "최소 {mm}",
-      "max": "최대 {mm}",
-      "adc": "현재 ADC {value}",
-      "baseline": "기준 ADC {value}",
-      "noise": "정지 시 흔들림 {mm} mm — 래피드 트리거 민감도는 이 값보다 커야 합니다"
+      "current": "현재 스트로크",
+      "adc": "현재 ADC",
+      "baseline": "기준 ADC",
+      "scale": "보정 계수"
     },
     "sensorTable": {
       "title": "센서값 목록 — 내장 식별표 대비",

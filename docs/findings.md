@@ -1018,7 +1018,7 @@ UI 는 읽기 전에 쓰기 버튼을 잠급니다.
 | 보정 표를 보드에서 직접 읽기 (`0xaa`) | `src/protocol/engine.ts` — `readCalTable` |
 | **한 번에 하나 — 모든 쓰기를 직렬화** (오류 #20 의 산물) | `src/hid/link.ts` — `enqueue`, 검사 `tools/check/link-queue.ts` |
 | 모드 전환은 ACK 를 받고 넘어간다 (`0xa8` 15.9 ms, `0xa9` 34.5 ms) | `src/protocol/engine.ts` — `sendMode` |
-| **펌웨어 빌드 식별자 (`0x03`), 버전이 아니라 빌드** | `src/protocol/engine.ts` — `readFirmware`, `src/ui/FirmwareInfo.tsx` |
+| **펌웨어 빌드 식별자 (`0x03`), 버전이 아니라 빌드** | `src/protocol/engine.ts` — `readFirmware`, `src/profile/capture.ts` |
 | 폴링 레이트 · 디바운스 값의 의미 (§2.8) | `src/device/boards/raven61/index.ts` — `RAVEN61_REPORT_RATES`, `src/protocol/types.ts` — `DEBOUNCE_LEVELS` |
 | ms 를 모르면 ms 로 적지 않는다 | `src/ui/BoardSettings.tsx` — 이름과 원본 값만 |
 | **공장 초기화가 무엇을 남기는지 (§2.10)** | `src/protocol/engine.ts` — `factoryReset`, `src/protocol/global.ts` — `FACTORY_GLOBAL` |

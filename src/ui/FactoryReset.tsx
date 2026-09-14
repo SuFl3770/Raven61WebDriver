@@ -124,13 +124,15 @@ export function FactoryReset() {
   }
 
   return (
-    <PanelGroup title={t('reset.title')}>
+    <PanelGroup>
       {!running && (
         <div className="row">
+          <span className="small dim" style={{ minWidth: 96 }}>
+          {t('reset.title')}
+        </span>
           <button className="danger" disabled={!connected} onClick={arm}>
-            {t('reset.start')}
+            {t('reset.button')}
           </button>
-          <span className="small dim">{t('reset.startNote')}</span>
         </div>
       )}
 

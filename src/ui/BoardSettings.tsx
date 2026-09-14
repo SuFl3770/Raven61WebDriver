@@ -173,9 +173,6 @@ export function BoardSettings() {
             })),
           ]}
         />
-        <span className="small dim">
-          {t('actuation.board')} <b className="mono">{reportRateName(rateOnBoard ?? undefined)}</b>
-        </span>
       </div>
 
       <div className="row" style={{ marginTop: 12 }}>
@@ -203,10 +200,6 @@ export function BoardSettings() {
             })),
           ]}
         />
-        <span className="small dim">
-          {t('actuation.board')}{' '}
-          <b className="mono">{debounceLevelName(debounceOnBoard ?? undefined)}</b>
-        </span>
       </div>
 
       {/*
@@ -272,9 +265,6 @@ export function BoardSettings() {
               to: reportRateName(rate ?? undefined),
             }}
           />
-        </div>
-        <div className="small dim" style={{ marginTop: 8 }}>
-          <T k="board.rate.warn" />
         </div>
         <DialogActions>
           {/* First in the source, so the dialog opens with the keyboard on the

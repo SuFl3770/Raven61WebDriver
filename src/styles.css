@@ -120,13 +120,12 @@
    */
   --accent-src: #77ec77;
   /*
-   * What the app paints with, which in this theme is the choice itself.
+   * What the app paints with, which is the choice itself in both themes.
    *
-   * The indirection exists for the light theme, where the same choice has to
-   * be knocked down before it can be ink on a white panel — see the
-   * `[data-theme="light"]` block at the foot of this section. state/accent.ts
-   * writes `--accent-src` inline for exactly that reason: an inline `--accent`
-   * would beat the rule that derives it.
+   * The two names are kept apart because `--accent-dim` and anything else the
+   * sheet mixes reads `--accent`: state/accent.ts writes the raw choice to
+   * `--accent-src` inline, and everything derived stays in the sheet where it
+   * can be changed in one place.
    */
   --accent: var(--accent-src);
   /* What any of these colours becomes when it has to be a fill: knocked back
@@ -299,20 +298,7 @@
   --fg-dim: #5c6675;
   --dim-base: #eaedf2;
   /*
-   * The point colour, knocked down until it can be read.
-   *
-   * The accents are picked to glow on a near-black page; on a white panel the
-   * same green is a highlighter, and it is *text* here as often as it is a
-   * fill — a hovered button's label, a sub-legend on a cap, an outgoing packet
-   * in the log. Mixed towards black rather than replaced by a second list, so
-   * the choice stays one colour with two renderings instead of two colours that
-   * can drift apart. 40% is where both accents clear 4.9:1 against the darkest
-   * surface they ever land on — a field, a log — and still read as the hue
-   * that was chosen.
-   */
-  --accent: color-mix(in srgb, var(--accent-src) 40%, #000);
-  /*
-   * The state colours, same roles, darkened to the same purpose.
+   * The state colours, same roles, restated for a light page.
    *
    * Each of these is a label or a hairline as often as it is a dot — the log
    * colours an incoming packet with `--ok` and a pending binding with `--warn`,
@@ -1834,11 +1820,56 @@ div.rail { position: sticky; top: 0; }
 /* The heading of one group inside a panel — see ui/Panel.tsx. Not uppercase,
    because the uppercase belongs to the panel heading above it and a second one
    in the same block would compete with it for the eye. */
-.panel-group > h3 {
+.panel-group > h3,
+.ghost-title {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--fg-dim);
   margin: 0 0 10px;
+}
+
+/*
+ * The settings tab's groups, two to a row — see features/Settings.tsx.
+ *
+ * Even halves: each group is a label-and-control column on the left and a row
+ * of buttons on the right, and neither wants the width more than the other.
+ * `align-items: start` so the shorter of the two does not stretch itself to
+ * the height of the taller, which would put its rows in the middle of a column
+ * of its own whitespace. The column gap is wider than the row gap on purpose —
+ * nothing is drawn down the middle, so the space is what says the two columns
+ * are not one wrapped row.
+ */
+.settings-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 1.5rem;
+  row-gap: 14px;
+}
+/*
+ * One blank heading line, so an untitled group starts level with the titled
+ * one beside it — the same thing `.panel.ghost-head` does for two panels.
+ *
+ * A hidden line rather than a measured offset: it is the heading's own rule
+ * that sets the height, so the two stay in step if that rule ever changes.
+ */
+.ghost-title {
+  visibility: hidden;
+}
+/*
+ * Stacked below the width the app asks for (`MIN_VIEWPORT`, 1000), which is
+ * only reachable by pressing past the too-small screen — see ui/TooSmall.tsx.
+ * Two columns still fit at exactly 1000; this is for the window that carried
+ * on anyway. There is nothing beside a group any more, so the blank heading
+ * line goes too — stacked it is just a gap above the first control.
+ */
+@media (max-width: 900px) {
+  .settings-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ghost-title {
+    display: none;
+  }
 }
 
 /*
@@ -2440,11 +2471,9 @@ div.rail { position: sticky; top: 0; }
   border: 1px solid var(--line);
   transition: box-shadow 120ms ease;
 }
-/* The dot is the colour, so it is the colour this theme actually paints with —
-   see the light block at the top. The raw choice arrives as `--swatch` from
-   ui/AccentPicker.tsx; the mix here is the same one `--accent` gets. */
+/* The dot is the colour, exactly as it will be painted in either theme. The
+   choice arrives as `--swatch` from ui/AccentPicker.tsx. */
 .accent-swatch { background: var(--swatch); }
-:root[data-theme="light"] .accent-swatch { background: color-mix(in srgb, var(--swatch) 40%, #000); }
 .accent-swatch:hover:not(:disabled) { border-color: var(--fg-dim); }
 /* The ring is offset by a band of the panel behind it, so it reads as drawn
    around the dot rather than as part of the colour. */
@@ -2996,6 +3025,49 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
    yet — see `.keycap .sub .pending`. The readout under the keymap grid says
    what the picked cap is set to, and it has to say pending the same way. */
 .gridfoot .pending { color: var(--warn); }
+
+/*
+ * The travel trace and its readouts, side by side.
+ *
+ * The numbers used to be a row under the canvas, which put the value being
+ * watched as far from the line drawing it as the panel allowed. Beside it they
+ * read against the trace, and the panel is no taller than the graph.
+ *
+ * They wrap under it below the breakpoint rather than squeezing the canvas to
+ * nothing: a trace 120px wide says less than one on its own line.
+ */
+.trace {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+}
+.trace > canvas {
+  /* `min-width: 0` because a canvas carries its attribute width as an
+     intrinsic minimum, and 880px of it would push the readouts off the row. */
+  flex: 1 1 20rem;
+  min-width: 0;
+  max-width: 880px;
+  height: 160px;
+}
+.trace > .sep {
+  flex: 0 0 auto;
+  /* Stretch rather than the row's `flex-start`, so the rule is as tall as the
+     graph it divides instead of as tall as nothing. */
+  align-self: stretch;
+  width: 0;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+}
+.trace-read {
+  flex: 0 0 auto;
+  min-width: 9rem;
+  /* Sized to its own contents, so the graph gets every pixel the numbers are
+     not using — the values are four short ones and the column should not be
+     reserving width for a fifth. */
+  align-content: start;
+}
 
 .gridband {
   padding: 0.875rem 0 1.125rem;
