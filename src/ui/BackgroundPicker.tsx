@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from 'react'
+import { useRef, useState } from 'react'
 import { useT } from '../i18n'
 import {
   background,
@@ -13,8 +13,6 @@ import {
 import { settings, useSettings } from '../state/settings'
 import { Notice, PanelGroup } from './Panel'
 import { Slider } from './Slider'
-
-const LABEL: CSSProperties = { width: '3.5rem' }
 
 /**
  * A picture behind the app, and the two amounts that make it a background

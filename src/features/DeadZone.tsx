@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react'
 import { useT } from '../i18n'
-import { T } from '../i18n/T'
 import { MM_PER_COUNT, countsToMm, quantizeMm } from '../protocol/encoding'
 import { KEY_PERF_LIMITS } from '../protocol/keyPerf'
 import { configStore, useKeyConfigs } from '../state/config'
