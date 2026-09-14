@@ -30,13 +30,17 @@ import { Sensors } from './tools/Sensors'
 import { useWindowHeld } from './state/windowHold'
 import { DebugGesture } from './ui/DebugGesture'
 import { DeviceCard } from './ui/DeviceCard'
+import { Reconnect } from './ui/Reconnect'
 import { TabActionSlot } from './ui/TabActions'
 import { TabPinnedSlot } from './ui/TabPinned'
 import { useExit } from './ui/useExit'
 import { VersionBadge } from './ui/VersionBadge'
 import { selection } from './state/selection'
+import { useAttaching } from './state/attach'
 import { useLegendSync } from './state/legends'
+import { usePrefetch } from './state/prefetch'
 import { useCodecAutoSelect, useConnection } from './state/link'
+import { useReconnect } from './state/reconnect'
 import { useSettings } from './state/settings'
 
 interface Tab {
@@ -108,6 +112,13 @@ const DEBUG_TABS: Tab[] = [
 
 export default function App() {
   useCodecAutoSelect()
+  /*
+   * Reads what the tabs will ask for while the grid is still lighting up —
+   * see state/prefetch.ts. Ahead of the sync below on purpose: that one is a
+   * reader of this, and it has to find the entry rather than send a second
+   * request for the same block.
+   */
+  usePrefetch()
   // Reads the base layer on connect, so every grid's caps say what its keys
   // actually send rather than what is printed on them — see state/legends.ts.
   useLegendSync()
@@ -132,6 +143,20 @@ export default function App() {
    */
   const [pinnedSlot, setPinnedSlot] = useState<HTMLElement | null>(null)
   const { connected } = useConnection()
+  /*
+   * A board has answered, and its picture on the connect screen is lighting up
+   * — see state/attach.ts. The window stays where it is until that has played
+   * out: the one thing the animation is about is the connect screen's own
+   * board, and switching away mid-wave would be the cut it exists to replace.
+   */
+  const attaching = useAttaching()
+  /*
+   * The board went away on its own, and the window is being held open for it to
+   * come back — see state/reconnect.ts. Behind the dialog is the tab that was
+   * open, which is the whole point: a knocked cable should cost the ten seconds
+   * the dialog counts down, not the session.
+   */
+  const { waiting } = useReconnect()
   const { debug } = useSettings()
   const t = useT()
   const locale = useLocale()
@@ -159,6 +184,23 @@ export default function App() {
   // A selection belongs to the tab it was made in. Carrying it to another tab
   // and back leaves invisible context that the next write would silently obey.
   useEffect(() => selection.clear(), [active])
+
+  /*
+   * A session that is over takes its tab with it. The rail is not on screen
+   * while the connect screen is — there is nothing there to move the window
+   * back to the top with — so the next board would open on whichever panel the
+   * last one was left on, which is not where anyone starts.
+   *
+   * Done on the way out rather than on the way in, which comes to the same
+   * thing: nothing between here and the next board can change the tab. A board
+   * coming back inside its ten seconds never reaches this — the window is held
+   * (state/reconnect.ts), `waiting` is true the whole way through, and the tab
+   * that was open is still open behind the dialog.
+   */
+  const idle = !connected && !waiting
+  useEffect(() => {
+    if (idle) setActive(TOP_TABS[0]!.id)
+  }, [idle])
 
   // Escape closes the drawer, the way it closes everything else that covers
   // what is behind it. Bound only while it is open, so nothing is listening
@@ -195,11 +237,16 @@ export default function App() {
 
   // Everything the chrome carries — which board, which codec, disconnect, the
   // tabs — is about an attached device, so with none attached there is nothing
-  // left to put in it and the connect screen has the window to itself.
-  if (!connected) {
+  // left to put in it and the connect screen has the window to itself. Unless a
+  // board is on its way back: a session being held open still has somewhere to
+  // return to, and leaving here would be the thing the wait exists to prevent.
+  if ((!connected && !waiting) || attaching) {
     return (
       <div className="app">
         <Connect />
+        {/* Mounted here too, so the dialog is not cut off mid-exit by the
+            switch back to this screen when the wait is given up on. */}
+        <Reconnect />
         <DebugGesture />
       </div>
     )
@@ -395,6 +442,12 @@ export default function App() {
         gesture behind it declines to fire while the window is held anyway.
       */}
       <DebugGesture />
+      {/*
+        Over everything, including a held window: it is a `<dialog>` in the top
+        layer, and what it is about — the board being gone — has already ended
+        whatever run was holding the chrome.
+      */}
+      <Reconnect />
     </div>
   )
 }

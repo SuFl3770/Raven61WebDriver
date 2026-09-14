@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { BASELINE_TOLERANCE, KEY_FINGERPRINTS, type KeyFingerprint } from '../keyboard/fingerprints'
 import { activeLayout, activeSpec, useLayout } from '../device/active'
+import { travelMmFor } from '../device/tables'
+import { useKeyConfigs } from '../state/config'
 import { t as translate, useT, type MessageKey } from '../i18n'
 import { T } from '../i18n/T'
 import { isActiveEvent, parseActiveEvent } from '../protocol/events'
@@ -1000,8 +1002,21 @@ function LiveGrid({
   physical,
 }: LiveProps & { selected: ReadonlySet<number>; physical?: boolean }) {
   useDisplayClock(running)
-  // The cap fill is a fraction of full travel, which is the board's own.
-  const travelMm = useLayout().travelMm
+  /*
+   * The cap fill is a fraction of that key's *own* full travel.
+   *
+   * Not the layout's nominal 4.00 mm: the board reports a switch type per key
+   * and the table behind `travelMmFor` gives five different strokes across the
+   * types (2.50 to 4.00 mm). Measured against 4 mm a 3.40 mm switch tops out
+   * at 85% and a 2.50 mm one at 62%, so a key that is bottomed out never
+   * finishes filling and the grid reads as if the board were under-reporting.
+   * The event's own `travelMm` is no help here — this board reports 200 counts
+   * for every key whatever is fitted, see boards/raven61/layout.ts.
+   *
+   * Before the perf block has been read there is no switch type and this falls
+   * back to the nominal, which is what it always did.
+   */
+  const configs = useKeyConfigs()
   return (
     <KeyGrid
       /*
@@ -1017,7 +1032,9 @@ function LiveGrid({
       // every other cap's line does — see `subLive`.
       subLive
       onSelect={(i) => selection.replace([i])}
-      fill={(k) => (current.current?.get(k.index)?.depthMm ?? 0) / travelMm}
+      fill={(k) =>
+        (current.current?.get(k.index)?.depthMm ?? 0) / travelMmFor(configs[k.index]?.switchType)
+      }
       sub={(k) => {
         const r = current.current?.get(k.index)
         return r ? `${r.depthMm.toFixed(2)} / ${r.adcLast}` : undefined
@@ -1035,6 +1052,9 @@ function LiveTrace({
   const t = useT()
   const canvas = useRef<HTMLCanvasElement>(null)
   const history = useRef<number[]>([])
+  // The top of the graph is this key's bottom-out, for the same reason the
+  // caps fill against their own stroke — see LiveGrid.
+  const fullMm = travelMmFor(useKeyConfigs()[focus]?.switchType)
 
   // The trace belongs to one key, so it starts over when the focus moves.
   useEffect(() => {
@@ -1044,7 +1064,7 @@ function LiveTrace({
   useDisplayClock(running, () => {
     history.current.push(current.current?.get(focus)?.depthMm ?? 0)
     if (history.current.length > HISTORY) history.current.shift()
-    drawTrace(canvas.current, history.current)
+    drawTrace(canvas.current, history.current, fullMm)
   })
 
   const row = current.current?.get(focus)
@@ -1085,8 +1105,12 @@ function LiveTrace({
   )
 }
 
-/** Trace of one key's travel, oldest sample at the left. */
-function drawTrace(el: HTMLCanvasElement | null, data: readonly number[]): void {
+/** Trace of one key's travel, oldest sample at the left, `fullMm` at the top. */
+function drawTrace(
+  el: HTMLCanvasElement | null,
+  data: readonly number[],
+  fullMm: number,
+): void {
   const ctx = el?.getContext('2d')
   if (!el || !ctx) return
   const { width: w, height: h } = el
@@ -1110,8 +1134,7 @@ function drawTrace(el: HTMLCanvasElement | null, data: readonly number[]): void 
   ctx.beginPath()
   data.forEach((mm, i) => {
     const x = (i / (HISTORY - 1)) * w
-    const full = activeSpec().layout.travelMm
-    const y = (Math.min(mm, full) / full) * h
+    const y = (Math.min(mm, fullMm) / fullMm) * h
     if (i === 0) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
   })

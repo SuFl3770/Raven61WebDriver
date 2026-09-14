@@ -257,7 +257,7 @@ export function parseStockProfile(
   const keymap = readKeymap(info, stock, indexByUsage, keys, notes)
   if (keymap) doc.blocks.keymap = keymap
 
-  const macros = readMacros(info, spec, stock, notes)
+  const macros = readMacros(info, spec, notes)
   if (macros) doc.blocks.macros = macros
 
   const rgb = readKeyLight(info, indexByUsage, keys)
@@ -423,12 +423,7 @@ function bindingFromStock(item: Element): KeyBinding | null {
   }
 }
 
-function readMacros(
-  info: Element,
-  spec: DeviceSpec,
-  stock: StockProfileSpec,
-  notes: string[],
-): Macro[] | undefined {
+function readMacros(info: Element, spec: DeviceSpec, notes: string[]): Macro[] | undefined {
   const items = [...info.querySelectorAll('macro_info > macro_item')]
   if (items.length === 0) return undefined
 
@@ -465,15 +460,7 @@ function readMacros(
   }
 
   if (unconverted > 0) notes.push(`macroEvents:${unconverted}`)
-  /*
-   * The store is written whole — the offset table is its only index — so
-   * applying a file that describes ten slots empties the rest. That is the
-   * right outcome for "put this profile back" and it is still someone's macros
-   * going away, so it is said before the write rather than found afterwards.
-   */
-  if (spec.macros.slots > stock.macroSlots) {
-    notes.push(`macroSlotsCleared:${spec.macros.slots - stock.macroSlots}`)
-  }
+
   return macros
 }
 

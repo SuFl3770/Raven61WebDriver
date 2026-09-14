@@ -64,7 +64,12 @@ export function loadProfile(bytes: Uint8Array, spec: DeviceSpec): LoadedProfile 
 export { ProfileParseError, StockParseError }
 export * from './model'
 export { checkProfile, anyApplicable, type BlockReport, type ProfileReport } from './check'
-export { captureProfile, type CaptureResult, type CaptureStage } from './capture'
-export { applyProfile, type ApplyResult, type BlockOutcome } from './apply'
+export {
+  captureProfile,
+  type CaptureProgress,
+  type CaptureResult,
+  type CaptureStage,
+} from './capture'
+export { applyProfile, type ApplyProgress, type ApplyResult, type BlockOutcome } from './apply'
 export { encodeJsonProfile, JSON_PROFILE } from './json'
 export { encodeStockProfile, lossless, STOCK_PROFILE, type StockLoss } from './stock'

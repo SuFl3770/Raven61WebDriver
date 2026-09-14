@@ -46,6 +46,20 @@ export interface ApplyResult {
   disconnected: boolean
 }
 
+/**
+ * A block about to be written, and how much of the run is already behind it.
+ *
+ * `total` is what was ticked, not `PROFILE_BLOCKS` — a bar that measured three
+ * chosen blocks against six would stop at half with nothing left to do. `done`
+ * counts blocks finished, so it is 0 while the first is in flight, and a block
+ * skipped for want of a capability still advances it: it came off the list.
+ */
+export interface ApplyProgress {
+  block: ProfileBlock
+  done: number
+  total: number
+}
+
 /** Capabilities each block needs, so a skip can say what is missing. */
 const NEEDS: Record<ProfileBlock, Capability> = {
   keyPerf: 'writeKeyPerf',
@@ -73,22 +87,28 @@ export async function applyProfile(
   spec: DeviceSpec,
   doc: ProfileDocument,
   chosen: ReadonlySet<ProfileBlock>,
-  onStage?: (block: ProfileBlock) => void,
+  onStage?: (progress: ApplyProgress) => void,
 ): Promise<ApplyResult> {
   const outcomes: BlockOutcome[] = []
   let disconnected = false
+  // The run's own list, so the progress it reports is measured against the
+  // work that was asked for rather than against every block that exists.
+  const queue = PROFILE_BLOCKS.filter((block) => chosen.has(block))
+  let done = 0
 
-  for (const block of PROFILE_BLOCKS) {
-    if (!chosen.has(block)) continue
+  for (const block of queue) {
     if (!link.connected) {
       disconnected = true
       break
     }
+    // Announced before the capability check, not after: a block this codec
+    // cannot write is still one the bar has to walk past, and announcing it
+    // keeps the label and the fill talking about the same block.
+    onStage?.({ block, done: done++, total: queue.length })
     if (!supports(codec, NEEDS[block])) {
       outcomes.push({ block, status: 'skipped', detail: NEEDS[block] })
       continue
     }
-    onStage?.(block)
     try {
       outcomes.push(await writeBlock(link, codec, spec, doc, block))
     } catch (e) {

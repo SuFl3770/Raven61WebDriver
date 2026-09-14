@@ -22,22 +22,27 @@
   "viewport": {
     "tooSmall": {
       "title": "This window is too small",
-      "body": "Placeholder — write this text yourself (viewport.tooSmall.body in locales/*.json).",
-      "size": "Now {width} × {height} · needs {minWidth} × {minHeight} or more",
-      "dismiss": "Carry on anyway"
+      "body": "Make the window larger, or lower the browser's zoom level.",
+      "size": "{minWidth} × {minHeight} or more recommended",
+      "dismiss": "Continue"
     }
   },
 
   "connect": {
-    "title": "Connect your device",
-    "body": "",
+    "body": "Waiting for a connection.",
     "connecting": "Connecting…",
-    "remembered": "Reconnect {device}",
-    "requirements": "Works in desktop Chrome, Edge and Opera, served over HTTPS or from localhost.",
+    "remembered": "Reconnect",
+    "requirements": "Requires a browser with WebHID support",
     "demo": {
-      "action": "Try the demo",
-      "body": "Runs the whole app against a simulated board, with no keyboard attached. Works in browsers without WebHID too."
+      "action": "Demo mode"
     }
+  },
+
+  "reconnect": {
+    "title": "Keyboard disconnected",
+    "waiting": "Waiting to reconnect",
+    "seconds": "{seconds}s",
+    "stop": "Start screen"
   },
 
   "demo": {
@@ -77,10 +82,9 @@
   "apply": {
     "reading": "Reading…",
     "writing": "Applying…",
-    "mismatch": "{count} slots read back differently from what was written — the values below are what the board actually holds.",
-    "retry": "Try again",
     "mismatch_one": "1 slot read back differently from what was written — the value below is what the board actually holds.",
     "mismatch_other": "{count} slots read back differently from what was written — the values below are what the board actually holds.",
+    "retry": "Try again",
     "pending": "Applying shortly…",
     "failed": "Not applied — the board does not have this",
     "readOnly": "Read-only",
@@ -139,14 +143,12 @@
     "keymapLayerRange": "Layer {layer} does not exist on this board. Only {layers} layers have storage behind them.",
     "keymapUnsafe": "The action bound to {key} is not safe on this board, so nothing was sent. The layer latches (0x04 and 0x05) make the firmware read another block as a keymap.",
     "chunkNak": "The board did not acknowledge chunk {index}/{total} (offset {offset}).",
-    "writeUnmapped": "{count} keys have no slot and were not written: {keys}",
-    "writeMismatch": "{count} slots read back differently from what was written: {detail}",
-    "writeNeedsKeymap": "The write was aborted because the slot mapping did not come from the board. When the keymap read fails the guessed mapping is used, and that mapping does not match the real board — settings would land on the wrong keys. Try reading again.",
-    "globalNak": "The board did not acknowledge the global settings write.",
     "writeUnmapped_one": "1 key has no slot and was not written: {keys}",
     "writeUnmapped_other": "{count} keys have no slot and were not written: {keys}",
     "writeMismatch_one": "1 slot read back differently from what was written: {detail}",
     "writeMismatch_other": "{count} slots read back differently from what was written: {detail}",
+    "writeNeedsKeymap": "The write was aborted because the slot mapping did not come from the board. When the keymap read fails the guessed mapping is used, and that mapping does not match the real board — settings would land on the wrong keys. Try reading again.",
+    "globalNak": "The board did not acknowledge the global settings write.",
     "firmwareEmpty": "The board answered 0x03 with nothing. This firmware appears not to report its build.",
     "resetNak": "The board did not acknowledge the factory reset. It appears not to have started.",
     "noAnalogMode": "This board’s spec ({board}) names no analog test-mode command, so live travel cannot be started.",
@@ -155,24 +157,27 @@
 
   "reset": {
     "title": "Factory reset",
-    "what": "the factory reset (0xee)",
+    "what": "the factory reset",
+    "button": "Reset",
     "start": "Factory reset…",
     "startNote": "One press opens a confirmation, and nothing is sent until it is answered.",
     "cancel": "Cancel",
     "confirm": {
       "title": "Factory reset",
       "body": "Every setting on the keyboard will be erased.",
-      "go": "Reset the board",
-      "wait": "Wait {seconds}s to confirm"
+      "go": "Confirm",
+      "wait": "({seconds})"
     },
     "stage": {
       "sending": "Sending the reset…",
       "waiting": "The board is erasing flash…",
       "reading": "Reading the result back…",
-      "note": "The same {seconds} seconds the stock driver waits, then the global block is read back. Do not unplug the board while this runs."
+      "note": "Do not unplug the cable."
+    },
+    "toast": {
+      "ok": "Reset complete"
     },
     "done": {
-      "ok": "Reset done — what came back matches the firmware's own defaults.",
       "different": "The board came back with values that differ from this firmware's defaults table.",
       "unread": "The command was delivered, but the result could not be read.",
       "unreadNote": "The board may still be writing flash, or re-enumerating on USB. <b>This does not mean it failed.</b> Give it a moment and read again from <b>Board settings</b>.",
@@ -181,6 +186,8 @@
   },
 
   "profile": {
+    "fileSave": "Export profile",
+    "fileLoad": "Import profile",
     "title": "Profile",
     "cancel": "Cancel",
     "block": {
@@ -202,12 +209,12 @@
       "fields": "{count} fields"
     },
     "save": {
-      "start": "Save to file",
+      "start": "Export",
       "reading": "Reading board",
       "title": "Save profile",
+      "body": "Choose how to save it.",
       "json": "Save as JSON",
-      "jsonNote": "This app's format, nothing dropped",
-      "stock": "Save as stock XML",
+      "stock": "Save in compatibility mode",
       "noStock": "No stock file format is defined for this board.",
       "noLoss": "Nothing dropped",
       "lossTitle": "Saving as stock XML drops",
@@ -215,14 +222,20 @@
     },
     "load": {
       "noStockFormat": "{board} has no stock file format, so this XML cannot be read.",
-      "start": "Load from file",
+      "start": "Import",
       "title": "Load profile",
       "empty": "This file has no block that can be applied.",
       "apply": "Apply to board ({count})"
     },
     "apply": {
       "writing": "Writing to board",
+      "disconnectedTitle": "Board disconnected",
+      "failedTitle": "Some steps did not land",
+      "dismiss": "OK",
       "disconnected": "The board disconnected part way through."
+    },
+    "toast": {
+      "ok": "Import complete"
     },
     "outcome": {
       "written": "applied",
@@ -240,7 +253,6 @@
       "roundTrip": "Values kept only to write back exactly what was read, on {count} keys"
     },
     "note": {
-      "macroSlotsCleared": "A stock file describes ten macro slots, so applying it empties the other {count}.",
       "advanced": "The file has advanced keys, which this app does not yet apply from stock XML.",
       "perfShort": "The performance section did not cover every key on this board, so it was left out.",
       "layers": "{count} layers this board has no storage for were skipped.",
@@ -294,16 +306,14 @@
   "board": {
     "title": "Board settings",
     "what": "reading global settings (0x05)",
-    "applied": "Read the global block back after applying, and it matches.",
+    "applied": "Applied.",
     "mismatch": "Read back differently from what was written: {detail}",
     "rate": {
       "label": "Polling rate",
       "hz": "{hz} Hz",
       "unknown": "unknown value {value}",
-      "warn": "Changing the polling rate can make the board re-enumerate on USB. If it does, the browser loses this connection and you will have to connect again.",
-      "confirmTitle": "Change the polling rate",
-      "confirmChange": "From <b>{from}</b> to <b>{to}</b>.",
-      "writeLost": "the polling-rate change may have re-opened the device. Connect again and check the value."
+      "confirmTitle": "Notice",
+      "confirmChange": "Changing the polling rate disconnects the board."
     },
     "debounce": {
       "label": "Debounce",
@@ -325,7 +335,7 @@
     "title": "Device interface",
     "unsupported": {
       "title": "This browser does not support WebHID.",
-      "body": "Open it in desktop Chrome, Edge or Opera. The page must be served over HTTPS or from localhost."
+      "body": "Open it in desktop Chrome, Edge or Opera."
     },
     "pick": "Choose device…",
     "disconnect": "Disconnect",
@@ -375,16 +385,16 @@
       "deadzone": "Dead zone"
     },
     "hint": {
-      "trigger": "",
-      "rt": "",
-      "switch": "",
-      "deadzone": ""
+      "trigger": "Sets the point at which a key press starts.",
+      "rt": "Sets the release and re-press points dynamically.",
+      "switch": "Sets which switch is fitted.",
+      "deadzone": "Sets the range ignored to keep stray input out."
     },
     "sections": "Input point sections",
     "switchWarning": {
-      "title": "The switch type has to match what is actually fitted",
-      "body": "What is picked here is <b>the scale every depth in this app is measured against</b>. Choosing a type the board does not have will not break it, but it makes the millimetres shown for actuation and rapid trigger wrong.",
-      "dismiss": "Understood"
+      "title": "Careful",
+      "body": "Run a calibration pass after changing switches. Without one the keys can misbehave.",
+      "dismiss": "OK"
     }
   },
 
@@ -396,7 +406,7 @@
     "board": "board",
     "pending": "pending",
     "mixed": "mixed",
-    "travel": "{travel} mm travel",
+    "travel": "{travel} mm total travel",
     "magnet": "{gauss}Gs",
     "mm": "{travel}mm",
     "deeper": "{count} key(s) are set deeper than this switch can travel. Fix them in the <b>Actuation</b> panel.",
@@ -405,33 +415,24 @@
 
   "actuation": {
     "title": "Actuation point",
-    "counts": "mm = {counts} counts (in steps of {step} mm) · out of {travel} mm total travel",
-    "preset": {
-      "fast": "Fast {mm} mm",
-      "default": "Default {mm} mm",
-      "deep": "Deep {mm} mm"
-    },
+    "counts": "mm",
     "board": "Board",
     "mixed": "mixed",
     "unread": "The board has not been read yet. Read it in \"Current board settings\" above, then adjust.",
-    "deeperThanTravel": "{count} keys have an actuation point deeper than their switch travel.",
     "deeperThanTravel_one": "1 key has an actuation point deeper than its switch travel.",
     "deeperThanTravel_other": "{count} keys have an actuation point deeper than their switch travel."
   },
 
   "rt": {
     "title": "Rapid trigger",
-    "enable": "Enable rapid trigger on the selected keys",
+    "enable": "Enable rapid trigger",
     "hint": {
-      "enable": "",
-      "continuous": ""
+      "enable": "Sets the key release point dynamically.",
+      "continuous": "Keeps rapid trigger active above the actuation point too."
     },
     "pressSensitivity": "Press sensitivity",
     "releaseSensitivity": "Release sensitivity",
-    "continuous": "Continuous mode (works above the actuation point too)",
-    "counts": "press {press} / release {release} counts (field max {max})",
-    "belowFactory": "{count} keys have a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
-    "noRoom": "{count} keys have no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity.",
+    "continuous": "Continuous mode",
     "belowFactory_one": "1 key has a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
     "belowFactory_other": "{count} keys have a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
     "noRoom_one": "1 key has no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity.",
@@ -453,8 +454,7 @@
     "limit": "The field is 5 bits, so {mm} mm ({counts} counts) is the maximum. Past that the value wraps.",
     "offConfirm": {
       "title": "Turn the dead zone off",
-      "body_one": "The top and bottom of the stroke go back to being read as input on {count} selected key. Noise at either end can leak through.",
-      "body_other": "The top and bottom of the stroke go back to being read as input on {count} selected keys. Noise at either end can leak through.",
+      "body": "With the dead zone off, stray presses can come through and input can drop out.",
       "continue": "Continue"
     }
   },
@@ -472,13 +472,13 @@
     "param": "Argument",
     "bytes": "Bytes",
     "apply": "Apply",
-    "bindsNothing": "Nothing is bound, so there is nothing to apply. A record that binds nothing reads back as a free one, and the next advanced key would be given the same number.",
+    "bindsNothing": "Nothing is bound.",
     "applying": "Applying…",
     "revert": "Revert",
     "unbind": "Unbind",
-    "unboundToast": "임시2",
+    "unboundToast": "Unbound.",
     "unbindUnavailable": "The board's factory table has no binding for this key, so there is nothing to put back.",
-    "appliedToast": "임시1",
+    "appliedToast": "Applied.",
     "noSlot": "The slot map has no slot for {key}, so the two keys cannot be told about each other.",
     "mismatch": "Record #{record} did not read back as written: {wanted} → {got}. The keymap was left alone.",
     "keymapMismatch": "The record was written, but the keymap entry did not read back as sent: {detail}. The key is not bound to it.",
@@ -507,14 +507,14 @@
       "onRelease": "on release {binding}"
     },
     "hints": {
-      "dks": "",
-      "tgl": "",
-      "mt": "",
-      "rs": "",
-      "socd": "",
+      "dks": "Runs up to four actions, by how deep the key is pressed.",
+      "tgl": "One press holds the input down until the key is pressed again.",
+      "mt": "Acts on how long the key is held.",
+      "rs": "Of two keys, the one pressed deeper wins.",
+      "socd": "Of two keys, the one set as priority wins.",
       "oks": ""
     },
-        "kinds": {
+    "kinds": {
       "dks": "DKS",
       "tgl": "TGL",
       "mt": "MT",
@@ -565,10 +565,10 @@
     "title": "Bottom-out calibration",
     "start": "Start calibration",
     "stop": "Stop (restore typing)",
-    "progress": "Bottomed out <b>{done}</b>/{total}",
+    "progress": "Calibrated keys: <b>{done}</b> / {total}",
     "enter": "Calibration",
     "exit": "Leave calibration",
-    "gridLegend": "Calibration progress — the border is the board’s LED, the number is the key’s <b>calibration scale</b>, the fill is how deep it went.",
+    "gridLegend": "Calibration progress",
     "guide": "",
     "restart": "Start again",
     "health": {
@@ -578,11 +578,10 @@
       "unknown": "Nothing known yet"
     },
     "copyDump": "Copy the numbers (per-key scale and firmware state)",
-    "ledMirror": "Keys the board is lighting right now: <b>{lit}</b>.",
+    "ledMirror": "Trouble detected on <b>{lit}</b> keys.",
     "tableFailed": "Could not read the board’s stored calibration table (command 0xaa). The pass still works, but keys nobody has pressed yet will have nothing to show.",
-    "ledDisagree": "<b>{count}</b> of them, listed below.",
-    "ledDisagree_one": "One, listed below.",
-    "ledDisagree_other": "<b>{count}</b> of them, listed below.",
+    "ledDisagree_one": "<b>{count}</b> — the LED cannot be trusted on it.",
+    "ledDisagree_other": "<b>{count}</b> — the LED cannot be trusted on these.",
     "ledDisagreeNote": "LED colours are the firmware’s own palette: red {red}, amber {amber}. Dark on an uncalibrated key means the firmware latched \"calibrated\" too early; lit on a calibrated key means its state byte never left the value it shipped with.",
     "led": {
       "red": "Red",
@@ -596,11 +595,11 @@
       "verdict": "Verdict"
     },
     "ledState": {
-      "red": "<b>Red</b> — the board has <b>never</b> committed a scale for this key (state 0x00)",
-      "amber": "<b>Amber</b> — committed <b>once</b> (state 0x01). One more full press",
-      "green": "<b>Green</b> — the board calls this key <b>done</b>. On the keyboard itself the override simply stops and the lighting effect shows through"
+      "red": "Not calibrated.",
+      "amber": "Calibrated, but not accurately.",
+      "green": "Calibrated properly."
     },
-    "gridNote": "The border is <b>the board’s own LED</b>, so the screen and the keyboard on the desk always agree. What that colour counts is <b>how many times the scale was committed</b>, not how good it is: a fresh firmware shows every key red however well calibrated, and two shallow presses turn one green. The number on the cap is the honest one — a <b>scale</b> of 0.62 means the key has never been calibrated.",
+    "gridNote": "Put the keyboard on a flat surface and press each key that needs calibrating slowly, several times.",
     "ledDisagreeTitle": "Keys where the board’s LED and the scale disagree (debug mode only)"
   },
 
@@ -669,9 +668,9 @@
       "unsupported": "This board's spec has no macro-store command. Without reading the store there is no way to tell whether binding a macro key is safe.",
       "reading": "Reading the store…",
       "unread": "The macro store has not been read yet. Leaving this category and coming back tries again.",
-      "unsafeTitle": "The macro store is not safe to bind from",
-      "unsafe": "<b>{slots} slots</b> do not point at a body, or have no stop record. The player has no upper bound on its cursor, so a macro key pressed in this state walks flash and presses whatever it reads. <b>Write the store from the Macro tab first</b> — binding is always the second write.",
-      "unsafeDismiss": "Understood",
+      "unsafeTitle": "Careful",
+      "unsafe": "The macros were not recorded properly. Write the macro store again before using them.",
+      "unsafeDismiss": "OK",
       "slotTitle": "#{slot} · {count} events",
       "slotEmpty": "#{slot} · empty",
       "slotsUnlocked": "Debug mode, so all {total} slots are open. The stock driver only manages the first ten, so writing the store from it would take the bodies in the rest with it.",
@@ -689,17 +688,15 @@
     "apply": "Apply to board",
     "picked": "{key} selected",
     "pickedRecord": "record {record}",
-    "pickNone": "Click a cap to pick a key",
+    "pickNone": "Pick a key to map",
     "reset": "Factory binding",
     "layers": "Layers",
-    "unread": "Not read from the board yet. Read it first to see what is bound now.",
-    "layerNote": "This board has storage for <b>two layers</b>. The firmware indexes four, but layers 2 and 3 land on the per-key RGB and macro areas. Only a key action such as Fn changes the layer — the host cannot. A write edits the 512 bytes the board just returned, sends them back, then reads them again and compares.",
+    "unread": "Not read from the board yet.",
     "layer": {
       "main": "Main layer",
       "fn1": "FN layer 1"
     },
     "unmapped": "{count} keys have no slot, so they could not be read or written: {keys}",
-    "appliedOne": "Applied {key} and read it back to check",
     "noChange": "The board already holds these bytes, so nothing was sent.",
     "mismatch": "{count} slots did not read back as written: {detail}",
     "resetUnavailable": "The factory keymap read does not reach this slot, so it cannot be reset.",
@@ -747,7 +744,7 @@
       "momentary": "Layer {layer}",
       "action": "Action 0x{code}"
     },
-    "trnsNote": "<c>KC_TRNS</c> is not a record this board has. Its firmware has no transparent key, so this button <b>copies</b> the base layer's binding into this key. It is a copy and not a link: a later edit to the base layer does not follow it.",
+    "trnsNote": "<c>KC_TRNS</c> is an unsupported key code, so this app copies the key from the base layer instead.",
     "writeWhat": "keymap write",
     "writeNote": "The keymap command is usually long enough to be split across several reports. Change <b>one key</b> in the stock driver, save, and diff the captures: the byte that moved is that key's index — the most reliable way to work out the matrix order."
   },
@@ -765,7 +762,7 @@
   "keyInfo": {
     "title": "Key info",
     "welcome": {
-      "body": "Placeholder — write this text yourself (keyInfo.welcome.body in locales/*.json)."
+      "body": "Start setting your keyboard up from the sidebar."
     },
     "pick": "Press a key on your keyboard, or pick one on the grid above.",
     "key": "Key",
@@ -786,9 +783,6 @@
     },
     "sections": "Overview sections",
     "foot": {
-      "keys": "{count} keys",
-      "read": "read {time}",
-      "unread": "not read yet",
       "pending": "{count} keys not sent"
     }
   },
@@ -797,15 +791,15 @@
     "what": "macros",
     "title": "Macros",
     "layers": "Layer",
-    "storeUnsafe": "⚠ Slots with no body or no stop record: <b>{slots}</b>. The player has no bound on its cursor, so pressing a macro key in this state sends it walking through flash four bytes at a time, emitting a keystroke for every record it passes. <b>Write the store first</b> — binding stays refused until you do.",
+    "storeUnsafe": "The macros were not recorded properly. Write the macro store again before using them.",
     "storeUse": "Store use",
-    "storeFree": "{free} B free of {total} B",
-    "aliasOf": "This slot <b>names the same offset as M{owner}.</b> The stock driver leaves an empty slot pointing at the next body, so that is what a slot it left empty looks like. This app treats it as empty, but <b>right now the board would play M{owner}'s body</b> — one store write makes it really empty.",
+    "storeFree": "{free} B / {total} B",
+    "aliasOf": "This slot <b>points at the same place as M{owner}.</b> Writing the store gives it an offset of its own.",
     "slot": "Slot",
     "slotPlain_one": "M{slot} - {count} event",
     "slotPlain_other": "M{slot} - {count} events",
     "events": "Events",
-    "noEvents": "This slot is empty. Record one below, or add keys by hand. An empty slot is still written with a stop record, so pressing it does nothing.",
+    "noEvents": "This slot is empty. Record one below, or add keys by hand.",
     "eventKey": "Key",
     "eventDir": "Direction",
     "eventUnknown": "unknown (nibble {nibble}, value {value})",
@@ -818,12 +812,12 @@
     "remove": "Remove",
     "record": "Record",
     "recordStop": "Stop recording",
-    "recordingNow": "Recording — the keys you press now go into this list instead of to the page. The gap between two keystrokes is rounded and stored as the delay on the earlier event.",
+    "recordingNow": "Recording. Press Stop recording when you are done.",
     "addTitle": "Add by hand",
     "addKey": "Key",
     "holdMs": "Hold for",
     "gapMs": "Gap after",
-    "addTap": "Tap",
+    "addTap": "Press and release",
     "addDown": "Press only",
     "addUp": "Release only",
     "tools": "Bulk edits",
@@ -832,10 +826,10 @@
     "fixedDelay": "Fixed delay",
     "repeatApply": "Repeat the list",
     "flattenApply": "Set every delay",
-    "apply": "Write the store",
+    "apply": "Save",
     "applying": "Writing…",
     "revert": "Revert",
-    "applied": "Applied to {slots} of {total} slots — {bytes} bytes sent, and the read-back matched byte for byte.",
+    "applied": "Applied to {slots} slots — {bytes} bytes sent, and the read-back matched byte for byte.",
     "unchanged": "The board already held these bodies, so nothing was sent.",
     "capacityFull": "The store holds {total} event records and this needs {used}. Shorten it and apply again.",
     "mismatch": "Slots did not read back as written — {detail}",
@@ -850,7 +844,7 @@
     "title": "Per-key colour",
     "sections": "Lighting sections",
     "section": {
-      "effect": "Effect"
+      "effect": "Backlight"
     },
     "brightness": "Brightness",
     "speed": "Speed",
@@ -1213,7 +1207,7 @@
       "sourceFlag": "ambiguous — check by hand"
     },
     "trace": {
-      "title": "Trace — #{index} {key}",
+      "title": "#{index} {key}",
       "current": "Current stroke",
       "adc": "Current ADC",
       "baseline": "Baseline ADC",
@@ -1246,9 +1240,9 @@
   },
 
   "bottomOut": {
-    "hint": "",
+    "hint": "Input is sent the moment the key bottoms out.",
     "what": "global settings write (0x06)",
-    "enable": "Always trigger when the key bottoms out (global)",
+    "enable": "Trigger on bottom-out",
     "applied": "Applied, and the global block was read back to confirm.",
     "noChange": "The board already held this value, so nothing was sent.",
     "mismatch": "The byte read back differently from what was written: {detail}"

@@ -53,6 +53,22 @@ export interface KeyGridProps {
    */
   subKey?: string
   /**
+   * A name for what the *legend* is about, when that can change under the grid.
+   *
+   * `subKey` for the first line. Only one grid needs it: the overview's, where
+   * a strip in the band picks the layer and every cap is then naming what it
+   * sends on a different one. Without it eighty-seven names are rewritten
+   * between two frames, which is the one kind of change a cap cannot make
+   * quietly — a legend is the thing a reader uses to find a key, and finding
+   * them all renamed with no motion at all reads as a redraw rather than an
+   * answer.
+   *
+   * Left off everywhere else on purpose. The legend is normally the key's own
+   * name and is the same name on the tab just left, and a name that fades in
+   * reads as a name that changed — see `cap-info-in` in styles.css.
+   */
+  legendKey?: string
+  /**
    * The second line is a live reading, not a setting.
    *
    * It changes what happens when a cap starts having something to say: the
@@ -241,6 +257,7 @@ export function KeyGrid({
   advanced,
   physical,
   legends,
+  legendKey,
 }: KeyGridProps) {
   // The board's own key table and size in units. A different keyboard is a
   // different grid, and nothing here knows which one it is drawing.
@@ -566,7 +583,18 @@ export function KeyGrid({
             >
               {cap?.adv ? t(kindKey(cap.adv)) : null}
             </span>
-            <span className="cap-label">{given ?? legend?.text ?? k.label}</span>
+            {/*
+              Keyed only where a caller said the legend can change meaning —
+              see `legendKey`. A new key is a new element, which is what
+              replays the fade; with no key the span is reused and the text is
+              simply swapped, which is what every other grid wants.
+            */}
+            <span
+              key={legendKey}
+              className={`cap-label${legendKey === undefined ? '' : ' relegend'}`}
+            >
+              {given ?? legend?.text ?? k.label}
+            </span>
             {/*
               Always here, the way the two bands above it are, even on the caps
               and in the sections where there is nothing to put on it — an empty

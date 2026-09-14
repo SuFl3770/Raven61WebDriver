@@ -12,7 +12,9 @@
  * from the number row by half a unit the way the physical board is. Codes are
  * the USB standard usages, which is also what `keyboard/hostKeys.ts` maps the host's
  * `KeyboardEvent.code` to — so every key here answers to the same key on the
- * reader's own keyboard.
+ * reader's own keyboard. The one exception is Fn, code 0xff: no host key sends
+ * it, because it is the board's own layer selector rather than a usage, and it
+ * is the one cap on this layout the reader cannot press from their keyboard.
  *
  * `keyIndex` and `lightIndex` are the table's own index. On a real board they
  * are the firmware's addressing and neither can be computed (see
@@ -89,7 +91,11 @@ const ROWS: readonly { y: number; cells: readonly Cell[] }[] = [
     cells: [
       ['Ctrl', 224, 1.25], ['Win', 227, 1.25], ['Alt', 226, 1.25],
       ['Space', 44, 6.25],
-      ['Alt', 230, 1.25], ['Win', 231, 1.25], ['Menu', 101, 1.25], ['Ctrl', 228, 1.25],
+      // Fn where a tenkeyless puts Menu. 0xff is not a usage the host can send
+      // — it is the layout's marker for the key that selects a layer, and
+      // `factoryBinding` encodes it as the momentary-layer action, so the grid
+      // shows it as MO(1) and holding it reaches layer 1 of the live keymap.
+      ['Alt', 230, 1.25], ['Win', 231, 1.25], ['Fn', 0xff, 1.25], ['Ctrl', 228, 1.25],
       { gap: 0.15 },
       ['←', 80], ['↓', 81], ['→', 79],
     ],

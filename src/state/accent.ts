@@ -23,7 +23,7 @@ export const ACCENTS = ["#6366F1", "#7C3AED", "#E11D48", "#0284C7",
  * written look the same. Reordering the list above must not silently change
  * what an existing user sees.
  */
-export const DEFAULT_ACCENT = '#D8BD68'
+export const DEFAULT_ACCENT = '#E11D48'
 
 export function resolveAccent(value: string): string {
   return (ACCENTS as readonly string[]).includes(value) ? value : DEFAULT_ACCENT

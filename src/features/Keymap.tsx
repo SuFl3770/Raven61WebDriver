@@ -23,6 +23,7 @@ import { isMacroEmpty, macroSlotsExposed } from '../protocol/macros'
 import type { KeymapEntry, MacroSnapshot } from '../protocol/types'
 import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
+import { take } from '../state/prefetch'
 import { useSettings } from '../state/settings'
 import { Dialog, DialogActions } from '../ui/Dialog'
 import { KeyGrid } from '../ui/KeyGrid'
@@ -338,7 +339,11 @@ export function Keymap() {
       setError(null)
       setMismatch(null)
       try {
-        const entries = await codec.readKeymap(link, which)
+        /* The base layer was read the moment the board was attached — see
+           state/prefetch.ts. Taken, so only this first visit gets it and
+           every one after reads for itself. */
+        const ahead = which === 0 ? take<KeymapEntry[]>('keymap0') : undefined
+        const entries = await (ahead ?? codec.readKeymap(link, which))
         setReads((prev) => ({ ...prev, [which]: { entries } }))
         // Every other grid in the app reads its caps off the base layer. This
         // is the tab that has it, so this is where it is handed over — see
@@ -508,12 +513,7 @@ export function Keymap() {
         // stale. Dropping the snapshot re-reads it, and only while that category
         // is the one open (see the effect above).
         setMacros(null)
-        const key = keys.find((k) => k.index === index)
-        setStatus(
-          result.slots.length === 0
-            ? t('keymap.noChange')
-            : t('keymap.appliedOne', { key: key?.label ?? `#${index}` }),
-        )
+
         if (result.mismatched.length > 0) {
           setMismatch(
             t('keymap.mismatch', {

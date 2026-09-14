@@ -45,6 +45,7 @@ import type { AdvancedKeySnapshot, AdvancedKeyUse, KeymapEntry } from '../protoc
 import { useKeyConfigs } from '../state/config'
 import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
+import { take } from '../state/prefetch'
 import { useSettings } from '../state/settings'
 import { boardSync } from '../state/sync'
 import { GridFrame } from '../ui/GridFrame'
@@ -515,7 +516,10 @@ export function Advanced() {
     setError(null)
     setMismatch(null)
     try {
-      let snap = await codec.readAdvancedKeys(link)
+      /* Read the moment the board was attached, if this is the first visit —
+         see state/prefetch.ts. */
+      const ahead = take<AdvancedKeySnapshot>('advancedKeys')
+      let snap = await (ahead ?? codec.readAdvancedKeys(link))
       // Inside the read rather than in an effect watching the snapshot: the
       // sweep re-reads, and a re-read drops the draft. Here there is no draft
       // to drop — nothing can be drafted against a snapshot that has not been

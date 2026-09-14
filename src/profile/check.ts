@@ -400,7 +400,6 @@ function checkGlobal(doc: ProfileDocument, spec: DeviceSpec): BlockReport {
      * rather than about the file: the rate the board enumerates at is the rate
      * the host polls it at, so changing it can take the WebHID handle with it.
      */
-    row.warnings.push(t('profile.check.rateReplug'))
   }
   if (patch.debounceLevel !== undefined) {
     if (!Number.isInteger(patch.debounceLevel) || patch.debounceLevel < 0 || patch.debounceLevel > 3) {

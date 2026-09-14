@@ -28,7 +28,13 @@ import type { DeviceSpec } from '../device/spec'
 import type { GlobalPatch } from '../protocol/global'
 import type { GlobalSettings } from '../protocol/types'
 import { profileEnvelope } from './json'
-import { toBase64, type ProfileBlock, type ProfileDocument, type ProfileLayer } from './model'
+import {
+  PROFILE_BLOCKS,
+  toBase64,
+  type ProfileBlock,
+  type ProfileDocument,
+  type ProfileLayer,
+} from './model'
 
 export interface CaptureResult {
   doc: ProfileDocument
@@ -38,6 +44,24 @@ export interface CaptureResult {
 
 /** Where a capture has got to, for the progress line. */
 export type CaptureStage = ProfileBlock | 'firmware'
+
+/**
+ * A stage about to start, and how much of the run is already behind it.
+ *
+ * `done` counts stages *finished*, so it is 0 while the first one is in flight
+ * and `total - 1` while the last one is — a bar drawn from it fills as blocks
+ * land rather than as they are announced, which is the only reading of it that
+ * is never ahead of the board.
+ *
+ * The firmware line counts as a stage here even though it is not a block: it
+ * is a read, it takes as long as any other, and a bar that stood still through
+ * it would be a bar that stalls at the start of every save.
+ */
+export interface CaptureProgress {
+  stage: CaptureStage
+  done: number
+  total: number
+}
 
 function reason(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -54,9 +78,16 @@ export async function captureProfile(
   link: HidLink,
   codec: KeyboardCodec,
   spec: DeviceSpec,
-  onStage?: (stage: CaptureStage) => void,
+  onStage?: (progress: CaptureProgress) => void,
 ): Promise<CaptureResult> {
   const failed: CaptureResult['failed'] = []
+  // Every block is announced whether or not this codec can read it, so the
+  // total is the block list plus the firmware line when there is one.
+  const total = PROFILE_BLOCKS.length + (supports(codec, 'readFirmware') ? 1 : 0)
+  // `done++` after reading it: the count handed over is the number of stages
+  // already behind this call, and this call is what marks the last one done.
+  let done = 0
+  const begin = (stage: CaptureStage) => onStage?.({ stage, done: done++, total })
   const doc = profileEnvelope({
     specId: spec.id,
     name: spec.name,
@@ -66,7 +97,7 @@ export async function captureProfile(
   })
 
   if (supports(codec, 'readFirmware')) {
-    onStage?.('firmware')
+    begin('firmware')
     // No `failed` entry: the firmware line is a label on the file, not a block
     // anyone asked to save, and a board that will not name itself still has
     // every setting worth keeping.
@@ -77,7 +108,7 @@ export async function captureProfile(
     }
   }
 
-  onStage?.('keyPerf')
+  begin('keyPerf')
   try {
     if (supports(codec, 'readKeyPerf')) {
       doc.blocks.keyPerf = (await codec.readKeyPerf!(link)).configs
@@ -88,7 +119,7 @@ export async function captureProfile(
     failed.push({ block: 'keyPerf', reason: reason(e) })
   }
 
-  onStage?.('advancedKeys')
+  begin('advancedKeys')
   try {
     if (supports(codec, 'readAdvancedKeys')) {
       const { blobs } = await codec.readAdvancedKeys!(link)
@@ -103,7 +134,7 @@ export async function captureProfile(
     failed.push({ block: 'advancedKeys', reason: reason(e) })
   }
 
-  onStage?.('macros')
+  begin('macros')
   try {
     if (supports(codec, 'readMacros')) {
       // `uses: false` — the sweep answers which keys start which body, which is
@@ -115,7 +146,7 @@ export async function captureProfile(
     failed.push({ block: 'macros', reason: reason(e) })
   }
 
-  onStage?.('keymap')
+  begin('keymap')
   try {
     if (supports(codec, 'readKeymap')) {
       const layers: ProfileLayer[] = []
@@ -129,7 +160,7 @@ export async function captureProfile(
     failed.push({ block: 'keymap', reason: reason(e) })
   }
 
-  onStage?.('keyRgb')
+  begin('keyRgb')
   try {
     if (supports(codec, 'readKeyColors')) {
       const snapshot = await codec.readKeyColors!(link)
@@ -145,7 +176,7 @@ export async function captureProfile(
     failed.push({ block: 'keyRgb', reason: reason(e) })
   }
 
-  onStage?.('global')
+  begin('global')
   try {
     if (supports(codec, 'readGlobalSettings')) {
       doc.blocks.global = globalToPatch(await codec.readGlobalSettings!(link))

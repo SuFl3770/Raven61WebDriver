@@ -32,6 +32,7 @@
  */
 
 import { DEFAULT_PROTOCOL } from '../device/protocols/default'
+import { FACTORY_GLOBAL } from '../protocol/global'
 import { RAVEN61_PROFILE_SUPPORT } from '../protocol/layers'
 import { RAVEN61_REPORT_RATES } from '../device/boards/raven61/index'
 import { RAVEN61_LIGHT_EFFECTS } from '../device/boards/raven61/lighting'
@@ -54,6 +55,18 @@ export const DEMO_PRODUCT_ID = 0xffff
 /** Calibration records, one per slot of the per-key blocks. */
 const DEMO_CAL_RECORDS = DEFAULT_PROTOCOL.keyPerf.slots
 
+/**
+ * The effect the demo board lights up with: Custom Light, mode 0.
+ *
+ * The family's defaults table holds 6 — Wave — and that is what a real board
+ * comes up in. This one differs because Custom Light is the only effect whose
+ * rule this project has decoded: it paints the per-key colour block, which the
+ * demo board fills (`buildKeyRgb` in `board.ts`), so what the panels show is a
+ * frame this app can account for byte by byte instead of a stand-in for an
+ * animation nobody has read.
+ */
+const DEMO_LIGHT_MODE = 0
+
 export const demoSpec: DeviceSpec = {
   id: 'demo-tkl-87',
   name: 'Demo TKL',
@@ -72,6 +85,10 @@ export const demoSpec: DeviceSpec = {
   layout: DEMO_TKL_LAYOUT,
   ...DEFAULT_PROTOCOL,
   calibration: { ...DEFAULT_PROTOCOL.calibration, records: DEMO_CAL_RECORDS },
+  global: {
+    ...DEFAULT_PROTOCOL.global,
+    factoryDefaults: { ...FACTORY_GLOBAL, lightMode: DEMO_LIGHT_MODE },
+  },
   slotMap: { ...DEFAULT_PROTOCOL.slotMap, unusedSlots: [] },
   switchTypes: RAVEN61_SWITCH_TYPES,
   reportRates: RAVEN61_REPORT_RATES,

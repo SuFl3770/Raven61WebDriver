@@ -4,7 +4,7 @@ import { BackgroundPicker } from '../ui/BackgroundPicker'
 import { BoardSettings } from '../ui/BoardSettings'
 import { FactoryReset } from '../ui/FactoryReset'
 import { DeviceInfo } from '../ui/DeviceInfo'
-import { Panel, PanelGroup } from '../ui/Panel'
+import { Panel } from '../ui/Panel'
 import { ProfileStorage } from '../ui/ProfileStorage'
 import { ThemePicker } from '../ui/ThemePicker'
 

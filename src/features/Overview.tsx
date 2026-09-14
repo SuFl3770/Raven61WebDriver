@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useT } from '../i18n'
-import { useDeviceSpec, useLayout } from '../device/active'
+import { useDeviceSpec } from '../device/active'
 import { layerName } from '../protocol/layers'
-import { useDirtyKeys, useLastRead } from '../state/config'
+import { useDirtyKeys } from '../state/config'
 import { suppressDebugGesture } from '../state/debugGesture'
 import { useLayerKeymap } from '../state/legends'
 import type { KeymapEntry } from '../protocol/types'
@@ -80,13 +80,9 @@ function sectionsFor(
 }
 
 export function Overview() {
-  const { connected } = useConnection()
+  const { connected, device } = useConnection()
   const { debug } = useSettings()
-  const { keys } = useLayout()
   const spec = useDeviceSpec()
-  // The store timestamps its own loads, so "when was the board read" has one
-  // source here and in the sections below it — see state/config.ts.
-  const readAt = useLastRead()
   const dirty = useDirtyKeys()
   const t = useT()
   /*
@@ -248,12 +244,16 @@ export function Overview() {
         }
         foot={
           <>
-            <span>{t('overview.foot.keys', { count: keys.length })}</span>
-            <span>
-              {readAt
-                ? t('overview.foot.read', { time: readAt.toLocaleTimeString() })
-                : t('overview.foot.unread')}
-            </span>
+            {/*
+              Which keyboard this is, as its firmware introduces itself — the
+              same name the rail's card carries. The key count used to sit here
+              and said less: every grid in the app draws the whole board, so
+              "87 keys" was a fact about the picture directly above it rather
+              than about the tables below. On a narrow window the rail is a
+              drawer that is shut, and then this is the only thing on screen
+              naming what the report is a report *of*.
+            */}
+            <span>{device?.productName || t('device.unnamed')}</span>
             {/* The warn colour the caps use for an edit that has not gone out
                 — see `.gridfoot .pending` in styles.css. */}
             {dirty.length > 0 && (
@@ -274,6 +274,10 @@ export function Overview() {
             otherwise look like. */}
         <KeyGrid
           legends={keymap ?? undefined}
+          /* Which layer the names belong to, so that switching the strip fades
+             them rather than rewriting eighty-seven caps between two frames —
+             the same treatment the remap tab gives its second line. */
+          legendKey={String(layer)}
           advanced={advanced.snapshot ? (key) => byKey.get(key.index) : true}
           selected={picking && picked !== null ? new Set([picked]) : undefined}
           onSelect={picking ? pickKey : undefined}

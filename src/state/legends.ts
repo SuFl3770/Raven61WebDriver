@@ -6,6 +6,7 @@ import { supports } from '../protocol/codec'
 import { RECORD_TYPE, bindingLabel, factoryBinding, sameBinding } from '../protocol/keymap'
 import type { KeymapEntry } from '../protocol/types'
 import { link, useCodec, useConnection } from './link'
+import { peek } from './prefetch'
 
 /**
  * What the caps read, once the keymap has been changed.
@@ -185,7 +186,15 @@ export function useLegendSync(): void {
     // the remap tab — has filled the store for the attached board.
     if (inFlight.current || legends.current().length > 0) return
     inFlight.current = true
-    void read(link, 0)
+    /*
+     * The base layer is usually already on its way: it is one of the blocks
+     * fetched the moment the board was attached — see state/prefetch.ts.
+     * Peeked rather than taken, because the remap tab wants this same read and
+     * neither of us is the only asker. A prefetch that failed falls through to
+     * a request of our own, which is where this was before there was one.
+     */
+    const ahead = peek<KeymapEntry[]>('keymap0')
+    void (ahead ? ahead.catch(() => read(link, 0)) : read(link, 0))
       .then((entries) => legends.set(entries))
       .catch(() => {})
       .finally(() => {

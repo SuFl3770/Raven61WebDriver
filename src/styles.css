@@ -1,20 +1,23 @@
 /*
- * The wordmark's face — Cafe24 Lovingu, a free display font from Cafe24
- * (https://fonts.cafe24.com/), vendored at src/assets/fonts rather than
- * pulled from a CDN so the app still draws its own mark offline and on a
- * file:// build.
+ * The wordmark's face — SUIT, an open-source Korean UI face (SIL OFL),
+ * vendored at src/assets/fonts rather than pulled from a CDN so the app still
+ * draws its own mark offline and on a file:// build.
  *
  * woff2 only. Every browser that can run this app can read it: the whole
  * thing is built on WebHID, which no engine without woff2 support ships.
  *
- * One weight, and it is `normal` — the family has no bold cut, so asking for
- * one would get a synthesised smear of the real thing rather than a heavier
- * face. Weight on the mark comes from its size, not from the browser.
+ * The vendored file is the variable face cut down to Basic Latin — the mark
+ * is two letters, and the full family is mostly Hangul the wordmark never
+ * asks for. See src/assets/fonts/README.md for the cut. Hangul anywhere in
+ * the app is Noto Sans KR's job, not this family's.
+ *
+ * One axis, `wght` 100–900, declared as a range so the browser picks a real
+ * instance instead of synthesising one.
  */
 @font-face {
-  font-family: "Cafe24 Lovingu";
-  src: url("./assets/fonts/Cafe24Lovingu.woff2") format("woff2");
-  font-weight: normal;
+  font-family: "SUIT Variable";
+  src: url("./assets/fonts/SUIT-Variable-latin.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
   /* The mark is chrome, not content: show the fallback immediately and swap
      when the file lands, rather than holding the top bar empty. */
@@ -41,6 +44,44 @@
   inherits: true;
   initial-value: #2a3441;
 }
+
+/*
+ * The fifteen colours a theme change — or a point-colour change — actually
+ * moves, registered so that they can be eased rather than cut.
+ *
+ * A second reason to register, and a different one from the two above. An
+ * unregistered custom property has no type, so the browser cannot work out
+ * what is halfway between two of them: it swaps the old text for the new one
+ * in a single frame, and every switch lands as a cut. Declared as `<color>`,
+ * the same property interpolates.
+ *
+ * These are the leaves of the sheet's colour graph. Everything else it paints
+ * with — `--line`, `--accent-dim`, `--sunk-accent`, `--thumb-hi`, `--hatch`,
+ * the two trace colours — is mixed from one of them, and a mix re-resolves
+ * against whatever its input is worth at that moment. So registering this set
+ * is enough to carry the whole interface across, and no derived token has to
+ * be named a second time to keep up.
+ *
+ * Every initial value is the dark theme's, which is what `:root` declares
+ * below. An initial value is only reached by a declaration the browser
+ * refuses, and if one ever is, what shows should look like the app rather than
+ * like a hole in it.
+ */
+@property --bg { syntax: '<color>'; inherits: true; initial-value: #161616; }
+@property --surface { syntax: '<color>'; inherits: true; initial-value: #181818; }
+@property --surface-hi { syntax: '<color>'; inherits: true; initial-value: #303131; }
+@property --sunk { syntax: '<color>'; inherits: true; initial-value: #20242a; }
+@property --keycap { syntax: '<color>'; inherits: true; initial-value: #000; }
+@property --line-base { syntax: '<color>'; inherits: true; initial-value: #2f3138; }
+@property --fg { syntax: '<color>'; inherits: true; initial-value: #e8edf4; }
+@property --fg-dim { syntax: '<color>'; inherits: true; initial-value: #99a3b2; }
+@property --dim-base { syntax: '<color>'; inherits: true; initial-value: #232830; }
+@property --accent-src { syntax: '<color>'; inherits: true; initial-value: #77ec77; }
+@property --ok { syntax: '<color>'; inherits: true; initial-value: #3fc9a8; }
+@property --warn { syntax: '<color>'; inherits: true; initial-value: #e8bd52; }
+@property --press { syntax: '<color>'; inherits: true; initial-value: #6ea8ff; }
+@property --release { syntax: '<color>'; inherits: true; initial-value: #ff6b6b; }
+@property --err { syntax: '<color>'; inherits: true; initial-value: #f4787a; }
 
 :root {
   /*
@@ -314,6 +355,45 @@
   --release: #b83430;
   --err: #b32f2f;
   color-scheme: light;
+}
+
+/*
+ * How one theme becomes the other, and one point colour the next.
+ *
+ * As far as the sheet is concerned the two switches are the same event: a
+ * handful of root-level colours are replaced, and everything drawn from them
+ * follows. So easing the leaves is the whole of it — the mixes above resolve
+ * against whatever their input is worth mid-transition, which means a hairline
+ * tinted with the accent and a tab filled with 18% of it travel *with* the
+ * colour rather than jumping to meet it once it arrives.
+ *
+ * On `:root` and not on `*`. A blanket rule would put this duration on every
+ * hover in the app, fight the shorter transitions those controls already
+ * carry, and animate the same colour again at every level of the tree it is
+ * inherited through. Nothing outside the root declares any of these.
+ *
+ * Nothing fires on load. state/theme.ts and state/accent.ts both write their
+ * value before the first render — before the root has been given a computed
+ * style at all — so there is no earlier colour for the browser to start from,
+ * and the app is still painted once in the theme and the colour it keeps.
+ *
+ * `color-scheme` is not in the list and cannot be. It is what the *browser*
+ * draws the scrollbars and the native controls with, and those swap in one
+ * frame whatever the page asks for; 200ms is short enough that the swap and
+ * the fade still read as one event rather than as two.
+ */
+:root {
+  transition-property:
+    /* The ladder, and the two surfaces off it. */
+    --bg, --surface, --surface-hi, --sunk, --keycap, --line-base,
+    /* The ink, and the near-black anything accented is knocked back into. */
+    --fg, --fg-dim, --dim-base,
+    /* The point colour as chosen — `--accent` is mixed from this, not set. */
+    --accent-src,
+    /* The states, which are restated per theme rather than derived. */
+    --ok, --warn, --press, --release, --err;
+  transition-duration: 200ms;
+  transition-timing-function: ease;
 }
 
 * { box-sizing: border-box; }
@@ -1111,6 +1191,29 @@ textarea { width: 100%; resize: vertical; }
 .app { display: flex; flex-direction: column; height: 100vh; }
 
 /*
+ * Attaching a board and letting one go both replace everything in the window,
+ * and what is swapped in used to simply be there, mid-frame, fully drawn.
+ *
+ * Whichever side arrives fades up. The three elements named here are exactly
+ * the ones that mount when the window changes hands — the connect screen on
+ * one side, the bar and the page under it on the other (see App.tsx, which
+ * returns one or the other) — so this plays on that change and on nothing
+ * else: switching tabs, opening the rail and every other thing that happens
+ * inside a session leaves all three where they are.
+ *
+ * Opacity only, and nothing on the way out. A transform here would make this
+ * the containing block for anything inside it positioned against the window —
+ * the rail on a narrow one — and slide it for the length of the fade; and a
+ * leaving screen would have to be taken out of the flow and held over the
+ * arriving one, which is a great deal of arrangement for a quarter of a second
+ * on a ground both sides share.
+ */
+@keyframes screen-in {
+  from { opacity: 0; }
+}
+.connect, .app > .topbar, .app > .body { animation: screen-in 260ms ease-out; }
+
+/*
  * Full-bleed — the background and bottom border should span the window — while
  * what sits inside lines up with the column below. Doing that with padding
  * rather than a wrapper element keeps it out of the markup: a percentage
@@ -1156,15 +1259,13 @@ textarea { width: 100%; resize: vertical; }
   /* Named rather than left to auto-placement: the first column is empty, and
      the mark would otherwise fall into it and sit against the left edge. */
   grid-column: 2;
-  /* Nudged down: the face hangs high in its em box, and centred by the box it
-     reads as sitting above the middle of the bar. */
-  margin: 0.6rem 0 0;
-  font-family: "Cafe24 Lovingu", var(--display-fallback);
-  font-size: 1.75rem;
-  /* See the @font-face at the top of this file: the family has one cut, and
-     naming a heavier one only gets a synthesised copy of it. */
-  font-weight: normal;
-  letter-spacing: 0.05em;
+  font-family: "SUIT Variable", var(--display-fallback);
+  font-size: 1.5rem;
+  /* A real instance off the wght axis — see the @font-face at the top of this
+     file. The face is a UI grotesque, so the mark carries its weight here
+     rather than from size alone. */
+  font-weight: 800;
+  letter-spacing: 0.08em;
   /*
    * The one piece of chrome that carries the point colour. Everything else up
    * here is ink on a surface; the mark is the app's own, so it changes with
@@ -1732,51 +1833,373 @@ div.rail { position: sticky; top: 0; }
 
 /* --- connect screen ------------------------------------------------------
    Everything else in the app is a view onto an attached board, so with none
-   attached the window holds one card and nothing to be distracted by. */
-.connect { flex: 1; overflow: auto; display: grid; place-items: center; padding: 2rem 1rem; }
-/* Spaced with a gap rather than margins: the body copy is a bundle string that
-   may be blank, and its absence should close the gap instead of leaving one. */
-.connect-card {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  width: min(33rem, 100%);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  padding: 1.75rem 1.75rem 1.25rem;
-  text-align: center;
-}
-.connect-card h2 { font-size: 1.125rem; margin: 0; }
-.connect-card p { margin: 0; }
-.connect-art {
-  width: 6rem;
-  height: auto;
-  align-self: center;
-  fill: none;
-  stroke: var(--fg-dim);
-  stroke-width: 2;
-  stroke-linecap: round;
-  opacity: 0.7;
-}
-.connect-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.connect-actions button { padding: 0.5rem 1rem; }
-.connect-card .notice { text-align: left; }
-.connect-foot { border-top: 1px solid var(--line); padding-top: 0.875rem; }
+   attached the window holds a picture of the board and the one button that
+   gets you one. */
 /*
- * The way in without a keyboard. Above the language picker's rule and under one
- * of its own, so it reads as a second offer rather than as part of the connect
- * button's row — it is not another way to reach the same board.
+ * Three rows, the middle one the board.
+ *
+ * The two `1fr` rows either side of it are the whole point: they are equal, so
+ * the keyboard is in the middle of the *window* rather than in the middle of
+ * whatever is left over once the text under it has taken its room. Only the
+ * lower one is filled — with everything else on the screen — and it is allowed
+ * to outgrow its share on a short window, which pushes the board up rather
+ * than off the bottom.
+ *
+ * Side padding only. A bottom padding would be room the top does not have, and
+ * the board would sit that far above centre; what needs the space down there
+ * is the foot, and it carries its own.
  */
-.connect-demo {
+.connect {
+  flex: 1;
+  overflow: auto;
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  justify-items: center;
+  padding: 0 1rem;
+}
+/* Everything under the board. Spaced with a gap rather than margins: the body
+   copy is a bundle string that may be blank, and its absence should close the
+   gap instead of leaving one. */
+.connect-stage {
+  grid-row: 3;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  border-top: 1px solid var(--line);
-  padding-top: 0.875rem;
+  gap: 1rem;
+  width: min(46rem, 100%);
+  padding-top: 1.25rem;
+  text-align: center;
 }
-.connect-demo button { padding: 0.5rem 1rem; }
+.connect-stage h2 { font-size: 1.125rem; margin: 0; }
+.connect-stage p { margin: 0; }
+/* The line under the board, which says one thing while nothing is attached and
+   names the keyboard once one has answered. It arrives rather than being
+   swapped: `screen-in` is the same fade the window itself comes in with, and
+   the element is rebuilt by its key in Connect.tsx so this replays. */
+.connect-said { animation: screen-in 320ms ease-out; }
+/*
+ * The buttons that open a board, drawn the way the layer strip is drawn: a
+ * label on a line, and nothing else. See `.subtabs, .layer-tabs` above.
+ *
+ * There is no box because there is nothing here to box off. A raised control
+ * is telling you where it ends in a row of other controls, and on this screen
+ * there is a keyboard, a line of text, and these — so the thickened piece of
+ * line under the label is the whole of what they need to be.
+ *
+ * Side by side, since they are two ways to reach the same board: the chooser,
+ * and the one the browser already remembers.
+ */
+.connect-actions { display: flex; justify-content: center; gap: 0.5rem; }
+.connect-actions button {
+  background: none;
+  border: none;
+  /* The line the label stands on. Every one of them has it — on a layer strip
+     the unlit tabs stand on the strip's own rule, and these have no strip, so
+     each carries its piece of it. `--line` rather than the accent until the
+     button is the one to press, so the line never has to appear or grow and
+     nothing under it moves. */
+  border-bottom: 2px solid var(--line);
+  border-radius: 0;
+  padding: 0.35rem 0.75rem;
+}
+/* The strip's own hover, in place of the fill every other button takes. */
+.connect-actions button:hover:not(:disabled) {
+  background: none;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+/* `.primary` here is the lit label of the open tab rather than the accent edge
+   it is elsewhere — the box it would have coloured is gone. */
+.connect-actions button.primary { color: var(--accent); border-bottom-color: var(--accent); }
+.connect-stage .notice { text-align: left; }
+/*
+ * The strip along the bottom of the window: the demo and the language picker,
+ * centred. `margin-top: auto` rather than a place of its own in the grid —
+ * the row this is in is as tall as the window allows, and this takes the end
+ * of it. No rule and no fill: there is nothing above them to be separated from
+ * by the time the eye is down here.
+ */
+.connect-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+/* --- the board on the connect screen -------------------------------------
+   Drawn, not driven: see ui/BoardArt.tsx. */
+/* The case the keys sit in: its height comes from the keys, so the padding is
+   the bezel and nothing here has to know how tall a board is. */
+.board-plate {
+  grid-row: 2;
+  /*
+   * Wider than the column of text under it. The board is what this screen is
+   * about and the text is a caption on it, so the two do not share a measure:
+   * `.connect-stage` stays at the width a line of type wants to be read at.
+   */
+  width: min(52rem, 100%);
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.board-keys {
+  position: relative;
+  width: 100%;
+  /* The board's own ratio arrives inline; this is the fallback for the frame
+     before it does. */
+  aspect-ratio: 15 / 5;
+  /* The caps' legends are sized off the width of the board rather than off the
+     root, so a narrow window shrinks the writing with the keys it is on. */
+  container-type: inline-size;
+}
+.board-cap {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--keycap);
+  border: 1px solid var(--line);
+  color: var(--fg-dim);
+  font-size: clamp(6px, 1.4cqw, 0.75rem);
+  font-weight: 600;
+  overflow: hidden;
+  /* A legend too long for its cap is cut off rather than wrapped into two
+     lines of unreadable type — it is a picture of a keyboard, and "Backspace"
+     across two lines is not what one looks like. */
+  white-space: nowrap;
+  padding: 0 2px;
+}
+/*
+ * The board is idling, and says so.
+ *
+ * Nothing is attached yet, so there is no reading to show and no key that is
+ * more interesting than any other — what the glow is for is that the picture
+ * is not a screenshot. The whole board breathes at once, in one slow pass up
+ * and back down with no rest at the top of it: sixty-one caps taking a breath
+ * together is a board sitting there waiting, where the same light crossing
+ * them one after another was a board doing something.
+ *
+ * It stays under the level a real signal would need — the edge only warms
+ * towards the accent, and neither it nor the halo reaches the weight the key
+ * grid gives a key you have actually picked.
+ */
+@keyframes board-breathe {
+  0%, 100% {
+    border-color: var(--line);
+    box-shadow: none;
+  }
+  50% {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+    box-shadow: 0 0 0.55rem color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+}
+.board-cap { animation: board-breathe 4.5s ease-in-out infinite; }
+/*
+ * The legend, and the one thing on a cap that is there in every show.
+ *
+ * It *moves* when a second line arrives rather than being pushed by it: the
+ * line is out of the flow (below), so what happens here is a transform, and a
+ * transform is something the browser can carry from one place to the other.
+ * Laid out as the only thing in the cap, it is centred; with something to
+ * share the cap with, it rides up by its own share of the room. Sixty-one
+ * legends gliding together is the difference between a board changing what it
+ * is showing and a board being redrawn.
+ */
+.board-cap-label {
+  position: relative;
+  z-index: 1;
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1), color 260ms ease;
+}
+/*
+ * How far, and the sub's place below, are the real grid's — measured off a cap
+ * on the input-point tab rather than guessed: there the legend's line box and
+ * the value's sit one on the other and come out at -0.626em and +0.749em from
+ * the middle of the cap, in the cap's own type. Written as those two numbers
+ * because this cap stacks them differently (the value is out of the flow, so
+ * the legend can move rather than be pushed) and only the result has to match.
+ */
+.board-cap.saying .board-cap-label { transform: translateY(-0.626em); }
+/*
+ * What the caps say while the board waits — see ui/BoardArt.tsx, which works
+ * through four of them.
+ *
+ * Drawn the way the real grid draws each one rather than approximately: the
+ * second line in the accent, a rapid-trigger pair in the two colours that pair
+ * is always in, a switch band along the bottom edge, an advanced-key chip
+ * across it. What is on this board is an example and the numbers are invented,
+ * but somebody who plugs a keyboard in should recognise what they were shown.
+ *
+ * Sized off the cap's own type (`em`), so all of it shrinks with the board on
+ * a narrow window the way the legends already do.
+ */
+/*
+ * All of it goes out together and comes back together — `.quiet` is the blink
+ * in the middle of a change, put on the plate by ui/BoardArt.tsx while the
+ * example underneath is exchanged. One class on one element rather than
+ * sixty-one arrivals: what is changing is what the *board* is showing, and a
+ * board that changed key by key would read as sixty-one things happening.
+ */
+.board-cap-sub { transition: opacity 320ms ease; }
+.board-plate.quiet .board-cap-sub { opacity: 0; }
+/*
+ * The band leaves and arrives by moving, not by fading.
+ *
+ * It is a thing on the edge of the cap rather than a value written on it, so
+ * it goes the way the real grid's switch band goes — down through the bottom
+ * edge, which the cap clips, and back up out of it. See `.keycap .stripe`,
+ * where the same movement is chosen over a fade for the same reason: a colour
+ * that fades to nothing looks like the switch changing rather than like the
+ * board being asked something else.
+ */
+.board-cap-band { transition: transform 320ms ease; }
+.board-plate.quiet .board-cap-band { transform: translateY(100%); }
+/*
+ * Out of the flow, so the legend above is moved by a transform rather than by
+ * this arriving under it. Hung off the middle of the cap rather than its
+ * bottom edge, which is where the bands are: the two lines belong together and
+ * a taller cap should not open a gap between them.
+ */
+.board-cap-sub {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Half its own line box above where its middle has to end up, which is
+     +0.749em — see the legend's rule above. */
+  top: 50%;
+  margin-top: 0.124em;
+  z-index: 1;
+  text-align: center;
+  /* The real grid's 0.625rem against a 0.75rem cap, and the line box that
+     comes with it. */
+  font-size: 0.834em;
+  line-height: 1.5;
+  font-weight: 500;
+  color: var(--accent);
+}
+/* Two numbers on one line, never wrapped — `.keycap .sub.pair` again, and at
+   the same proportion of the legend above it that the real grid uses. */
+.board-cap-sub.pair { font-size: 0.75em; letter-spacing: -0.02em; white-space: nowrap; }
+.board-cap-sub .press { color: var(--press); }
+.board-cap-sub .release { color: var(--release); }
+/*
+ * The band along the bottom edge, which both of the last two shows draw on.
+ *
+ * One element for the switch's colour and the advanced key's chip, because it
+ * is the same strip of cap: two elements would mean one being built as the
+ * other is thrown away at the moment of a change, and neither could fade. A
+ * hairline of colour on its own is the switch; `.chip` is the same band with a
+ * word on it, in the near-black ink all six advanced fills carry — see
+ * `--adv-dks` and the rest, where that one ink for six colours is explained.
+ */
+.board-cap-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  height: 0.28em;
+}
+.board-cap-band.chip {
+  height: auto;
+  font-size: 0.62em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  text-align: center;
+  color: #16181d;
+}
+/* The legend over a key that carries one, in the accent — the same thing
+   `.keycap.remapped .cap-label` does on the real grid. */
+.board-cap.lit .board-cap-label { color: var(--accent); }
+/*
+ * And the light that crosses the board, once, each time the round comes back
+ * to the bare keyboard.
+ *
+ * The caps do not arrive — they are all there the whole time, and what travels
+ * is the light in them: a cap lights up, brightly, and goes back down as the
+ * next ring of them comes on. Which is why this is an overlay on the cap
+ * rather than anything about the cap itself. It is the cap's own backlight,
+ * and it leaves the breathing above to the edge, where the two cannot get in
+ * each other's way.
+ *
+ * Tied to the bare board rather than left running under everything: a light
+ * crossing a board that is in the middle of showing what rapid trigger looks
+ * like is two things asking to be watched at once. On the bare board there is
+ * nothing else to read, so it is the only thing happening — and it is what
+ * marks the round starting over.
+ *
+ * `--phase` is how far the cap is from where the light starts, 0 to 1, put on
+ * it by ui/BoardArt.tsx — the stylesheet has no idea where any cap is. Spent
+ * as a delay, so the far corners come on 0.8s after the middle of the top row;
+ * with the pass itself that is 2.2s inside a scene that lasts twice as long.
+ */
+@keyframes board-sweep {
+  0%, 65%, 100% { opacity: 0; }
+  22% { opacity: 0.32; }
+}
+.board-cap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  opacity: 0;
+}
+.board-plate.bare .board-cap::after {
+  animation: board-sweep 1.4s ease-out;
+  animation-delay: calc(var(--phase) * 800ms);
+}
+
+/*
+ * The same wave, once, when a board answers — and the one animation in the app
+ * that something waits for. `state/attach.ts` holds the connect screen for
+ * exactly as long as this takes, so the two sets of numbers have to agree:
+ * 700ms for the wave to reach the furthest cap, 520ms for one cap to come up.
+ *
+ * Brighter than the idle pass, and it does not go out: each cap settles lit
+ * and stays there (`both`), so the last thing on screen before the window
+ * changes hands is a board that is fully on rather than one still flickering.
+ * The wash stops short of hiding the legends — what says "bright" past that
+ * point is the halo around the cap, which has nothing written on it.
+ *
+ * The idling is switched off for the length of it. A board being lit is not a
+ * board waiting to be plugged in, and the breath underneath would be pulling
+ * the edge the other way while this pushes it.
+ */
+@keyframes board-attach {
+  0% { opacity: 0; }
+  45% { opacity: 0.6; }
+  100% { opacity: 0.46; }
+}
+@keyframes board-attach-edge {
+  0% {
+    border-color: var(--line);
+    box-shadow: none;
+  }
+  45% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0.85rem color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  100% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0.6rem color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+}
+.board-plate.attaching .board-cap {
+  animation: board-attach-edge 520ms ease-out both;
+  animation-delay: calc(var(--phase) * 700ms);
+}
+/* After the bare board's own pass in the sheet, and at the same weight, which
+   is what lets it win: both classes are on the plate while a board is being
+   lit, since the examples are put away for the wave. */
+.board-plate.attaching .board-cap::after {
+  animation: board-attach 520ms ease-out both;
+  animation-delay: calc(var(--phase) * 700ms);
+}
 
 .panel {
   padding: 1rem 1.1rem;
@@ -2764,11 +3187,18 @@ div[class="small dim"] { margin-bottom: 8px; }
  * tab just left, and a name that fades in reads as a name that changed. So is
  * the travel bar, which is live data on the monitor and has no business
  * fading every time it is drawn.
+ *
+ * Except where the name really did change. The overview's grid has a layer
+ * strip in its band, and switching layers is exactly "these caps now send
+ * something else" — so that one grid asks for the legend to be keyed (see
+ * `legendKey` in ui/KeyGrid.tsx) and the same fade carries it. The rule above
+ * still holds everywhere the legend is only the key's own name.
  */
 @keyframes cap-info-in {
   from { opacity: 0; }
 }
-.keycap .sub { animation: cap-info-in 240ms ease-out; }
+.keycap .sub,
+.keycap .cap-label.relegend { animation: cap-info-in 240ms ease-out; }
 
 /*
  * A keyboard appearing where there was none: a board just plugged in, or a
@@ -2871,6 +3301,21 @@ div[class="small dim"] { margin-bottom: 8px; }
      for waiting. */
   .keycap .sub, .keycap.tinted { animation: none; }
   .gridband.arriving { animation: none; }
+  /* The board on the connect screen is idling, not saying anything — there is
+     nothing under the movement to keep. Nor is there under the fade the window
+     arrives with when a board is attached or let go: what changed is the whole
+     screen, which is not something that needs easing into. */
+  .board-cap, .board-cap::after, .connect, .app > .topbar, .app > .body { animation: none; }
+  /* Both waves — the bare board's own, and the one a keyboard is greeted with.
+     The second is not merely silenced: state/attach.ts stops holding the window
+     for it, so there is nothing to wait through either. Written as specifically
+     as the rules they override, which name the plate. */
+  .board-plate.bare .board-cap::after,
+  .board-plate.attaching .board-cap,
+  .board-plate.attaching .board-cap::after { animation: none; }
+  /* The board stops working through its examples for this preference too —
+     see ui/BoardArt.tsx — so this is only the fade of the one it settles on. */
+  .board-cap-label, .board-cap-sub, .board-cap-band { transition: none; }
   /* Written as specifically as the rules they override — `.keycap` alone does
      not reach a span inside it. */
   .keycap .stripe, .keycap .sub-slot { transition: none; }
@@ -2893,6 +3338,15 @@ div[class="small dim"] { margin-bottom: 8px; }
      an animation to cover. */
   .modal, .modal.closing { animation: none; }
   .modal::backdrop, .modal.closing::backdrop { animation: none; }
+  /*
+   * The theme and the point colour, which change by fading rather than by
+   * moving — but the reading is the same one the caps get above: what the fade
+   * does is hold a value the reader asked for 200ms away from them. Someone
+   * who has asked for less of this wants the new colour, not an easing into
+   * it. Written on `:root` because that is where it is set, and specificity
+   * does the rest — this rule comes later in the sheet.
+   */
+  :root { transition-property: none; }
 }
 
 /* A step down from the panel, because a notice is something the panel is
@@ -3591,6 +4045,30 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 .log .feature-set, .log .feature-get { color: var(--warn); }
 .log .note { color: var(--fg-dim); font-style: italic; }
 
+/* --- progress rail -------------------------------------------------------
+ * How far a run has got, as a rail beside the control that started it — the
+ * profile save and the profile apply, see ui/ProfileStorage.tsx.
+ *
+ * Fixed width, like the macro store's gauge and for the same reason: what it
+ * shows is a proportion, and stretched across whatever the row had left over it
+ * reads as a rule drawn under the button rather than as a measurement. The
+ * stage name sits beside it and is the precise answer; this is the rough one.
+ */
+.progress {
+  flex: 0 0 8rem;
+  height: 0.4rem;
+  border-radius: var(--r-sm);
+  background: var(--sunk);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  /* Long enough to read as a step landing, short enough that a block which
+     finishes quickly does not leave the rail still travelling behind it. */
+  transition: width 160ms ease;
+}
+
 /*
  * The scrollbars, which are surface too.
  *
@@ -3685,6 +4163,22 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
 .modal.closing::backdrop { animation: scrim-out 160ms ease-in forwards; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 @keyframes modal-out { to { opacity: 0; transform: translateY(8px) scale(0.98); } }
+
+/* --- the reconnect wait --------------------------------------------------
+ * The dialog a pulled cable puts up — see ui/Reconnect.tsx. The board's name
+ * and the seconds left on one line, the rail under it.
+ *
+ * The rail is the one from the profile runs, taken off its fixed width: there
+ * it sits in a row beside the button that started the run, and here it has the
+ * dialog to itself and measures something that is always the same length.
+ */
+.reconnect { display: grid; gap: 8px; }
+.reconnect-line { display: flex; justify-content: space-between; gap: 8px; }
+.reconnect .progress { flex: none; width: 100%; }
+/* Linear, and the length of one tick — what drains it is a timer running at a
+   steady rate, so anything eased would be reporting a wait that speeds up and
+   slows down. See TICK_MS in state/reconnect.ts. */
+.reconnect .progress-fill { transition: width 250ms linear; }
 
 /* Buttons against the trailing edge, which is where a dialog's answer goes.
    `wrap-reverse` so that on a narrow window the last button — the one being
