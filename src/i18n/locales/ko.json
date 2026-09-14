@@ -67,6 +67,12 @@
     }
   },
 
+  "unit": {
+    "mm": "mm",
+    "ms": "ms",
+    "times": "회"
+  },
+
   "apply": {
     "reading": "읽는 중…",
     "writing": "적용 중…",
@@ -363,6 +369,12 @@
       "switch": "스위치",
       "deadzone": "데드존"
     },
+    "hint": {
+      "trigger": "키 입력이 시작되는 지점을 설정합니다.",
+      "rt": "키 입력이 해제/재입력이 되는 지점을 동적으로 설정합니다.",
+      "switch": "장착된 스위치를 설정합니다.",
+      "deadzone": "오입력을 방지하기 위해 무시되는 지점을 설정합니다."
+    },
     "sections": "입력 지점 구역",
     "switchWarning": {
       "title": "주의",
@@ -388,12 +400,7 @@
 
   "actuation": {
     "title": "액추에이션 포인트",
-    "counts": "mm = {counts} counts ({step}mm 단위) · 총 스트로크 {travel}mm 기준",
-    "preset": {
-      "fast": "빠름 {mm}mm",
-      "default": "기본 {mm}mm",
-      "deep": "깊음 {mm}mm"
-    },
+    "counts": "mm",
     "board": "보드",
     "mixed": "여러 값",
     "unread": "아직 보드를 읽지 않았습니다. 위 “보드 현재 설정”에서 읽은 뒤 조절하세요.",
@@ -402,20 +409,30 @@
 
   "rt": {
     "title": "래피드 트리거",
-    "enable": "선택한 키에 래피드 트리거 사용",
-    "pressSensitivity": "누름 민감도 (mm)",
-    "releaseSensitivity": "뗌 민감도 (mm)",
-    "continuous": "연속 모드 (액추에이션 위에서도 동작)",
-    "counts": "누름 {press} / 뗌 {release} counts (필드 최대 {max})",
+    "enable": "래피드 트리거 황성화",
+    "hint": {
+      "enable": "키 입력 해제 지점을 동적으로 설정합니다.",
+      "continuous": "입력 지점보다 높은 지점에서도 래피드 트리거를 활성화 합니다."
+    },
+    "pressSensitivity": "누름 민감도",
+    "releaseSensitivity": "뗌 민감도",
+    "continuous": "연속 모드",
     "belowFactory": "{count}개 키의 민감도가 공장 기본값 {mm}mm 보다 낮습니다. 정지 상태 노이즈가 입력으로 새어 나올 수 있습니다.",
     "noRoom": "{count}개 키는 래피드 트리거가 동작할 구간이 없습니다 — 민감도가 액추에이션 아래 남은 스트로크보다 큽니다. 연속 모드를 켜거나 민감도를 줄이세요."
   },
 
+  "liveDepth": {
+    "title": "실시간 깊이"
+  },
+
   "deadzone": {
     "title": "데드존",
+    "hint": {
+      "enable": ""
+    },
     "enable": "선택한 키에 데드존 사용",
-    "top": "위쪽 (mm)",
-    "bottom": "아래쪽 (mm)",
+    "top": "위쪽",
+    "bottom": "아래쪽",
     "limit": "필드가 5비트라 최대 {mm}mm({counts} counts)입니다. 넘기면 값이 접혀 들어갑니다.",
     "offConfirm": {
       "title": "데드존 해제",
@@ -441,9 +458,9 @@
     "applying": "적용 중…",
     "revert": "되돌리기",
     "unbind": "고급 키 해제",
-    "unboundToast": "임시2",
+    "unboundToast": "해제 되었습니다.",
     "unbindUnavailable": "보드의 공장 표에 이 키의 매핑이 없어 되돌릴 것이 없습니다.",
-    "appliedToast": "임시1",
+    "appliedToast": "적용 되었습니다.",
     "noSlot": "슬롯 맵에 {key} 의 슬롯이 없어 두 키를 서로 알려줄 수 없습니다.",
     "mismatch": "레코드 #{record} 가 쓴 대로 읽히지 않았습니다: {wanted} → {got}. 키맵은 건드리지 않았습니다.",
     "keymapMismatch": "레코드는 썼지만 키맵 레코드가 보낸 대로 읽히지 않았습니다: {detail}. 키는 연결되지 않았습니다.",
@@ -471,7 +488,15 @@
       "sends": "보냄 {binding}",
       "onRelease": "뗄 때 {binding}"
     },
-    "kinds": {
+    "hints": {
+      "dks": "키를 누른 깊이에 따라 최대 4개 동작합니다.",
+      "tgl": "키를 누르면 다시 누를때 까지 입력이 유지합니다.",
+      "mt": "키를 누르는 시간에 따라 동작합니다.",
+      "rs": "2개의 키중 더 깊게 누른 키를 우선 동작합니다.",
+      "socd": "2개의 키중 설정한 우선순위에 따라 동작합니다.",
+      "oks": ""
+    },
+        "kinds": {
       "dks": "DKS",
       "tgl": "TGL",
       "mt": "MT",
@@ -622,7 +647,7 @@
       "reading": "저장소를 읽는 중…",
       "unread": "매크로 저장소를 아직 읽지 못했습니다. 다른 분류로 갔다가 돌아오면 다시 시도합니다.",
       "unsafeTitle": "주의",
-      "unsafe": "<b>{slots}칸</b>이 본문을 가리키지 않거나 정지 레코드가 없습니다. 재생기는 커서에 상한이 없어서, 이 상태로 매크로 키를 누르면 플래시를 훑으며 지나가는 레코드마다 키를 눌러 버립니다. <b>매크로 탭에서 저장소 쓰기를 먼저 누르세요</b> — 붙이기는 언제나 두 번째 쓰기입니다.",
+      "unsafe": "매크로가 정상적으로 기록되지 않았습니다. 사용 전 매크로 저장을 다시하고 시도해 주십시오.",
       "unsafeDismiss": "확인",
       "slotTitle": "#{slot} · 이벤트 {count}개",
       "slotEmpty": "#{slot} · 비어 있음",
@@ -749,10 +774,10 @@
     "what": "매크로",
     "title": "매크로",
     "layers": "레이어",
-    "storeUnsafe": "⚠ <b>{slots}칸</b>이 본문을 가리키지 않거나 정지 레코드가 없습니다. 재생기는 커서에 상한이 없어서, 이 상태로 매크로 키를 누르면 플래시를 4바이트씩 훑으며 지나가는 레코드마다 키를 눌러 버립니다. <b>먼저 저장소 쓰기</b>를 눌러 새로 깔아 주세요 — 바인딩은 그때까지 막혀 있습니다.",
+    "storeUnsafe": "매크로가 정상적으로 기록되지 않았습니다. 사용 전 매크로 저장을 다시하고 시도해 주십시오.",
     "storeUse": "저장소 사용량",
     "storeFree": "{free} Byte / {total} Byte",
-    "aliasOf": "이 칸은 <b>M{owner} 와 같은 곳을 가리킵니다.</b> 순정은 빈 칸의 오프셋을 다음 본문에 그대로 두기 때문에, 순정에서 비워 둔 칸은 이렇게 보입니다. 여기서는 빈 칸으로 취급하지만 <b>지금 보드는 M{owner} 의 본문을 재생합니다</b> — 저장소 쓰기를 한 번 하면 진짜 빈 칸이 됩니다.",
+    "aliasOf": "이 칸은 <b>M{owner} 와 같은 곳을 가리킵니다.</b> 저장시 오프셋을 다시 지정합니다.",
     "slot": "슬롯",
     "slotPlain": "M{slot} - 이벤트 {count}개",
     "events": "이벤트",
@@ -772,15 +797,15 @@
     "recordingNow": "녹화 중입니다. 녹화를 마치려면 녹화 중단을 누르세요.",
     "addTitle": "직접 넣기",
     "addKey": "키",
-    "holdMs": "누름 유지 (ms)",
-    "gapMs": "뗀 뒤 간격 (ms)",
+    "holdMs": "누름 유지",
+    "gapMs": "뗀 뒤 간격",
     "addTap": "누르고 떼기",
     "addDown": "누름만",
     "addUp": "뗌만",
     "tools": "일괄 편집",
     "repeatTimes": "반복 횟수",
-    "repeatGap": "회차 사이 간격 (ms)",
-    "fixedDelay": "고정 지연 (ms)",
+    "repeatGap": "회차 사이 간격",
+    "fixedDelay": "고정 지연",
     "repeatApply": "목록 반복",
     "flattenApply": "지연 일괄 적용",
     "apply": "저장",
@@ -1191,9 +1216,9 @@
   },
 
   "bottomOut": {
-    "title": "바닥까지 눌렀을 때 항상 트리거 (전역)",
+    "hint": "키가 바닥에 도달시 즉시 입력됩니다.",
     "what": "전역 설정 쓰기 (0x06)",
-    "enable": "바닥까지 누르면 항상 트리거",
+    "enable": "바닥까지 누르면 트리거",
     "applied": "적용 후 전역 블록을 다시 읽어 확인했습니다.",
     "noChange": "보드에 이미 같은 값이 들어 있어 아무것도 보내지 않았습니다.",
     "mismatch": "기록한 값과 다르게 읽혔습니다: {detail}"

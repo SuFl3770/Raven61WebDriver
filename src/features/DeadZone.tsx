@@ -6,6 +6,7 @@ import { KEY_PERF_LIMITS } from '../protocol/keyPerf'
 import { configStore, useKeyConfigs } from '../state/config'
 import { selection, targetKeys, useSelection } from '../state/selection'
 import { Dialog, DialogActions } from '../ui/Dialog'
+import { Hint } from '../ui/Hint'
 import { Panel } from '../ui/Panel'
 import { SliderRow, SliderRows } from '../ui/Slider'
 import { useHeldWrites } from '../ui/useHeldWrites'
@@ -61,19 +62,15 @@ export function DeadZone() {
   }
 
   return (
-    <Panel title={t('deadzone.title')}>
-      <label className="row row-center">
-        <span>{t('deadzone.enable')}</span>
-        <input
-          type="checkbox"
-          disabled={none}
-          checked={dz.enabled}
-          // Only the off direction asks. Turning it on costs nothing — the two
-          // values are still there and the sliders are one click away — so a
-          // dialog in front of it would be a dialog in front of nothing.
-          onChange={(e) => (e.target.checked ? patch({ enabled: true }) : setConfirmingOff(true))}
-        />
-      </label>
+    <>
+    {/*
+      The same halves as rapid trigger, and for the same reason: the two
+      tracks want the width and the one switch does not. Two sections of one
+      tab that read alike should be built alike, so both use `.split-two` and
+      the column measure that comes with it.
+    */}
+    <div className="split-two">
+      <Panel title={t('deadzone.title')} hintKey="inputPoint.hint.deadzone">
       {/* Laid out like the rapid-trigger sensitivities: a track each, stacked,
           because these two are read against each other the same way. The max
           is 5 bits — the old cap of 1 mm was past the field, and 50 counts
@@ -101,13 +98,32 @@ export function DeadZone() {
             onValue={(mm) => patch({ bottomMm: quantizeMm(mm) })}
           />
         </SliderRows>
-        <div className="small dim" style={{ marginTop: 6 }}>
-          <T
-            k="deadzone.limit"
-            params={{ mm: DZ_MAX_MM.toFixed(2), counts: KEY_PERF_LIMITS.deadZoneMax }}
-          />
-        </div>
       </div>
+      </Panel>
+
+      {/* Carries the left panel's heading as a ghost so its switch starts level
+          with the first track — see `ghostHead`. */}
+      <Panel title={t('deadzone.title')} hintKey="inputPoint.hint.deadzone" ghostHead>
+        <div className="switch-rows">
+          <label className="row switch-row">
+            <span className="switch-label">{t('deadzone.enable')}</span>
+            <input
+              type="checkbox"
+              disabled={none}
+              checked={dz.enabled}
+              // Only the off direction asks. Turning it on costs nothing — the
+              // two values are still there and the sliders are one click away
+              // — so a dialog in front of it would be a dialog in front of
+              // nothing.
+              onChange={(e) =>
+                e.target.checked ? patch({ enabled: true }) : setConfirmingOff(true)
+              }
+            />
+          </label>
+          <Hint k="deadzone.hint.enable" />
+        </div>
+      </Panel>
+    </div>
 
       <Dialog
         open={confirmingOff}
@@ -126,6 +142,6 @@ export function DeadZone() {
           </button>
         </DialogActions>
       </Dialog>
-    </Panel>
+    </>
   )
 }

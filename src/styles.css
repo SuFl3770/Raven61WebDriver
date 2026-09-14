@@ -523,17 +523,45 @@ button.danger:hover:not(:disabled) {
 }
 
 /*
- * The inverse of a button: a field is a step *down* from the surface it sits
- * on, which is the whole of how the two are told apart now that neither is
- * lit — a control you press is lighter than its panel, a field you fill is
- * darker.
+ * A rule under the text, and nothing else: no fill, no box.
+ *
+ * The button/field pair used to be told apart by depth — a control you press
+ * sits above its panel, a field you fill sits below it — but a well is a heavy
+ * way to say "type here" when the line already says it, and the wells stacked
+ * up into slabs wherever a panel holds more than two of them. The line carries
+ * the same meaning with none of the weight: it is the width of the field, it
+ * is under the caret, and it is the only part that has to move to show focus.
+ *
+ * `box-shadow` and not a thicker border for that focus, so the second pixel is
+ * drawn under the first instead of pushing the text up off the baseline.
  */
 input[type="text"], input[type="number"], textarea {
-  background: var(--sunk);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 0.45rem 0.6rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.3rem 0.15rem;
+  text-align: center;
 }
+input[type="text"]:hover:not(:disabled),
+input[type="number"]:hover:not(:disabled),
+textarea:hover:not(:disabled) { border-bottom-color: var(--fg-dim); }
+/*
+ * The one place the app turns its focus ring off. Everywhere else the ring is
+ * drawn clear of a border that is already there; here it would put back the
+ * box this rule just took away, and the line going accent and doubling in
+ * weight is the louder signal of the two anyway.
+ */
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+  box-shadow: 0 1px 0 var(--accent);
+}
+input[type="text"]:disabled,
+input[type="number"]:disabled,
+textarea:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /*
  * The slider, which was the last control still drawn by the platform.
@@ -647,6 +675,52 @@ input[type="range"].slider-v::-webkit-slider-thumb {
 .depth-side { gap: 10px; min-width: 0; }
 
 /*
+ * The live-depth gauge, left of the actuation track.
+ *
+ * Exactly the slider's height, and laid out as a row rather than a column, so
+ * the whole thing is one 200px box: `.depth-stack` centres its children, and a
+ * caption stacked under the bar would have pushed the bar off the axis it
+ * exists to be compared against. The reading therefore sits at mid height on
+ * the left, mirroring the actuation spinner on the right.
+ */
+.depth-live {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 200px;
+}
+.depth-live-read { 
+  text-align: right;
+  margin-right: 1rem;
+}
+
+.depth-live-mm {
+  display: block;
+  font-size: 1.4rem;
+  line-height: 1.3;
+  /* Tabular, so a number climbing through 9.99 does not shuffle the column. */
+  font-variant-numeric: tabular-nums;
+}
+/*
+ * Filled from the top, like the slider, and in `--ok` rather than the accent.
+ *
+ * Two bars side by side in one colour would read as two of the same kind of
+ * thing. This one is a measurement and cannot be dragged; the accent is what
+ * everything you have *chosen* is drawn in, and it stays with the control.
+ */
+.depth-live-bar {
+  width: 1.3rem;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(
+    to bottom,
+    var(--ok) 0 var(--live, 0%),
+    var(--sunk) var(--live, 0%) 100%
+  );
+}
+
+/*
  * The centre line these two sections sit on.
  *
  * Actuation is one standing control and dead zones are two short tracks, and
@@ -656,7 +730,6 @@ input[type="range"].slider-v::-webkit-slider-thumb {
  * shares its row with the global switch, and a centred left column would
  * drift away from the panel beside it.
  */
-.row.row-center { justify-content: center; }
 .fields-center { display: flex; flex-direction: column; align-items: center; }
 /*
  * The rows keep their own width — as a centred flex item the grid would
@@ -669,7 +742,7 @@ input[type="range"].slider-v::-webkit-slider-thumb {
 .fields-center > .slider-rows { width: 100%; max-width: 32rem; }
 
 /*
- * Label, track, spinner, note — one millimetre value per line.
+ * Label, track, spinner, unit, note — one millimetre value per line.
  *
  * A grid rather than a flex row so the stacked pairs line up: the labels share
  * a column and so do the spinners, which is what lets the tracks be read
@@ -677,7 +750,7 @@ input[type="range"].slider-v::-webkit-slider-thumb {
  */
 .slider-rows {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) 5.6rem;
+  grid-template-columns: max-content minmax(0, 1fr) 5.6rem max-content;
   align-items: center;
   gap: 10px;
   /* Capped: a 0.62 mm dead zone on a track the full width of the page moves
@@ -685,31 +758,111 @@ input[type="range"].slider-v::-webkit-slider-thumb {
      the label and its own number are that far apart. */
   max-width: 40rem;
 }
-/* The row owns no columns: its three children are the parent's grid items, so
-   every row in the group shares one label column and one track length. */
+/* The row owns no columns: its children are the parent's grid items, so every
+   row in the group shares one label column and one track length. */
 .slider-row { display: contents; }
 .slider-row-label { text-align: right; }
 .slider-row input[type="number"] { width: 100%; }
-/* Under the track, not squeezed into the row: the note is about the field, and
-   a fourth column would take width from the only part that needs it. */
+/* The unit is a column of its own, at the end. Two characters that never
+   change are worth the width; the note is not, which is why it stays under the
+   track — prose in a column would take the track down to nothing. */
 .slider-row-hint { grid-column: 2 / -1; }
 
 /*
- * Rapid trigger beside its one global switch.
+ * The same idea without a track: a run of labelled fields, one label column.
  *
- * `align-items: start` so the short panel does not stretch to the tall one, and
- * the side column is capped rather than an even half — it holds a checkbox and
- * a word, and half the page of empty panel beside the sliders would be worse
- * than the band it replaced.
+ * The sliders above get their shared column from the group they are already
+ * in; a panel of plain fields had nothing to share, so each row set its own
+ * label width by hand and the fields drifted apart wherever a translation ran
+ * past it. `max-content` reads the longest label in the run and gives every
+ * row that width, in whatever language is loaded, and the gap is the grid's.
+ *
+ * The field side is one item, not the children themselves — a row can hold a
+ * select and the button that fills it, and those two belong to each other, not
+ * to the column.
  */
-.rt-split {
+.field-rows {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  /* Wider across than down: the pair a row makes is only as clear as the space
+     that separates the two halves of it, and 8px between a label and its own
+     field is less than the 8px between one row and the next. */
+  gap: 8px 16px;
+  margin-bottom: 1rem;
+}
+.field-row { display: contents; }
+
+/*
+ * A hint: one line about the control above it, in the reader's own words.
+ *
+ * Dim and small, because it is never the thing being read — the control is. It
+ * is capped at a measure rather than allowed to run the width of a panel, for
+ * the same reason a column of text is: a line that long is one you lose your
+ * place in, and every one of these sits over something to click.
+ *
+ * Nothing is drawn while the string is blank — see ui/Hint — so this style
+ * describes a hint that exists, not a slot waiting for one.
+ */
+.hint {
+  margin-top: 4px;
+  max-width: 44rem;
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--fg-dim);
+}
+/*
+ * The section hint, directly under the panel's heading.
+ *
+ * The heading already carries 12px below it; this takes that space instead and
+ * keeps its own, so a panel with a hint reads as title, hint, controls rather
+ * than as a title with two gaps in it.
+ */
+.panel > h2 + .panel-hint { margin: -6px 0 12px; }
+/* The copy that only holds space — see `ghostHead` in ui/Panel.tsx. It keeps
+   every metric of the real header and gives up only its ink. */
+.panel.ghost-head > h2,
+.panel.ghost-head > .panel-hint {
+  visibility: hidden;
+}
+
+/*
+ * A section in even halves: its values on the left, its switches on the right.
+ *
+ * Rapid trigger and dead zones both have the shape — tracks that want width,
+ * and on/off switches that do not — and they are two sections of one tab, so
+ * they are laid out by one rule rather than each to its own taste. Even halves
+ * because both sides carry a list, and a column sized to one of them would
+ * have made the other the leftovers. `align-items: start` so the shorter panel
+ * does not stretch itself to match the taller one.
+ */
+.split-two {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: start;
   gap: 8px;
+  /*
+   * One measure for both halves.
+   *
+   * Each column is centred in its own panel, so the space left over lands on
+   * both of its sides — and with the two columns the same width, the gap
+   * outside the tracks on the far left is the gap outside the switches on the
+   * far right. Two different caps made the section look like it had been
+   * pushed sideways.
+   *
+   * It is also the only knob on the space down the middle. Two centred columns
+   * put their leftover on four edges, and the two facing ones meet — so the
+   * middle gap is always twice the outer one plus the grid gap, and the way to
+   * close it is to widen the columns. This is as wide as they go before the
+   * switches start drifting away from the words they belong to.
+   */
+  --split-col: 30rem;
 }
+/* Overrides the 32rem the dead-zone section uses; the pair has to agree with
+   each other rather than with the other tab. */
+.split-two .fields-center > .slider-rows { max-width: var(--split-col); }
 @media (max-width: 900px) {
-  .rt-split { grid-template-columns: minmax(0, 1fr); }
+  .split-two { grid-template-columns: minmax(0, 1fr); }
 }
 
 /*
@@ -908,6 +1061,47 @@ input[type="checkbox"]:checked::after {
    */
   transform: translate(0.917em, -50%);
 }
+/*
+ * A row of settings switches, all landing on one x.
+ *
+ * The label takes the slack, so whatever is left — the switch, and any note
+ * that goes with it — is pushed to the row's right edge. That is what aligns
+ * them: no label width to keep in step by hand, and a longer translation moves
+ * nothing. The switch is last in every row for the same reason, which is why
+ * the "mixed" and on/off notes sit *before* it rather than after.
+ *
+ * Capped rather than the full width of the panel: a switch at the far right of
+ * a half-page panel is a long way from the two words it belongs to, and the
+ * pointer has to cross all of it.
+ */
+/*
+ * The group, centred in its half of the split.
+ *
+ * The cap lives here rather than on each row so the hints under them are held
+ * to the same measure and start on the same left edge — a centred column of
+ * rows, not three rows each centred on its own width.
+ *
+ * The width itself is `--split-col`, which the tracks on the other side use too:
+ * see `.split-two`.
+ */
+.switch-rows {
+  max-width: var(--split-col);
+  margin-inline: auto;
+}
+.switch-row > .switch-label { flex: 1; }
+/*
+ * Bigger here than elsewhere. The whole switch is drawn in `em` — track, knob
+ * and the knob's travel — so its size is one number, and this is it. Setting
+ * width and height directly would have left the knob and its 0.917em crossing
+ * behind at the old scale.
+ */
+.switch-row input[type="checkbox"] {
+  font-size: 1.3rem;
+  /* The 0.2em that separated it from a following note; it is last now, and
+     that margin only pushed it off the row's right edge. */
+  margin-right: 0;
+}
+
 /* Neither end. The track takes the tint rather than the fill, so a mixed row
    does not read as an on row at a glance. */
 input[type="checkbox"]:indeterminate { background: var(--sunk-accent); }
@@ -3024,12 +3218,37 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
    * property would take the transform away from it and hand back a band that
    * simply blinks. A keyboard appearing where there was none brings its bands
    * with it — see `.gridband.arriving`.
+   *
+   * `visibility` rides along with no delay, which is the half of the pair that
+   * brings the band back: see `.gone` below for what the other half is for.
    */
-  transition: transform 240ms ease;
+  transition: transform 240ms ease, visibility 0s;
 }
-/* Nothing to say: pushed out through the edge, with the colour it last had
-   still on it. */
-.keycap .stripe.gone { transform: translateY(100%); }
+/*
+ * Nothing to say: pushed out through the edge, with the colour it last had
+ * still on it — and then taken out of the rendering altogether, a quarter
+ * second later, once the travel is done.
+ *
+ * The transform on its own was not enough. A band moved by exactly its own
+ * height comes to rest with its top edge exactly on the clip, and the caps are
+ * placed as percentages of a box with the board's aspect ratio — so at most
+ * window sizes a cap's bottom edge falls between device pixels, and the clip
+ * and the band land on different sides of it. What that leaves is a hairline
+ * of the band's colour along the bottom of the cap: on some caps and not
+ * others, at some window sizes and not others, which is exactly how it was
+ * reported. Overshooting the transform only moves the ratios it happens at.
+ *
+ * `visibility` is not interpolated — it switches — so the delay is the whole
+ * of the trick: the band is still visible for as long as it is leaving, and
+ * hidden for good once it has left, at every size and every zoom. On the way
+ * back in the base rule's undelayed `0s` puts it back before the first frame
+ * of travel, so the band arrives moving rather than appearing.
+ */
+.keycap .stripe.gone {
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 240ms ease, visibility 0s 240ms;
+}
 
 /*
  * The advanced key's band — the stripe above, with its own name written in it.
@@ -3065,9 +3284,15 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
   overflow: hidden;
   /* The ink, on all six fills — see `.advkind` for why one and not white. */
   color: #0b0d10;
-  transition: transform 240ms ease;
+  transition: transform 240ms ease, visibility 0s;
 }
-.keycap .advband.gone { transform: translateY(100%); }
+/* Hidden once it is out, not merely pushed out — see `.keycap .stripe.gone`
+   for the hairline that leaves behind. */
+.keycap .advband.gone {
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform 240ms ease, visibility 0s 240ms;
+}
 
 /*
  * A cap painted with the colour stored for that key — the lighting tab.
@@ -3130,11 +3355,19 @@ pre.dump { font-family: var(--mono); font-size: 0.8125rem; background: var(--sun
   border-right: 6px solid transparent;
   border-bottom: 7px solid currentColor;
   pointer-events: none;
-  /* Its own height below the edge, and so behind it. */
+  /* Its own height below the edge, and so behind it — and then out of the
+     rendering, for the reason `.keycap .stripe.gone` gives. Resting hidden
+     rather than resting shown, so the delay is on this rule and the selected
+     cap below is the one that switches back instantly. */
   transform: translateY(100%);
-  transition: transform 120ms ease;
+  visibility: hidden;
+  transition: transform 120ms ease, visibility 0s 120ms;
 }
-.keygrid.painted .keycap.selected::after { transform: translateY(-1px); }
+.keygrid.painted .keycap.selected::after {
+  transform: translateY(-1px);
+  visibility: visible;
+  transition: transform 120ms ease, visibility 0s;
+}
 
 /*
  * The lighting effect picker: two dozen cards rather than a dropdown.

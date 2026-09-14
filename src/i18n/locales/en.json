@@ -68,6 +68,12 @@
     }
   },
 
+  "unit": {
+    "mm": "mm",
+    "ms": "ms",
+    "times": "times"
+  },
+
   "apply": {
     "reading": "Reading…",
     "writing": "Applying…",
@@ -371,6 +377,12 @@
       "switch": "Switch",
       "deadzone": "Dead zone"
     },
+    "hint": {
+      "trigger": "",
+      "rt": "",
+      "switch": "",
+      "deadzone": ""
+    },
     "sections": "Input point sections",
     "switchWarning": {
       "title": "The switch type has to match what is actually fitted",
@@ -413,8 +425,12 @@
   "rt": {
     "title": "Rapid trigger",
     "enable": "Enable rapid trigger on the selected keys",
-    "pressSensitivity": "Press sensitivity (mm)",
-    "releaseSensitivity": "Release sensitivity (mm)",
+    "hint": {
+      "enable": "",
+      "continuous": ""
+    },
+    "pressSensitivity": "Press sensitivity",
+    "releaseSensitivity": "Release sensitivity",
     "continuous": "Continuous mode (works above the actuation point too)",
     "counts": "press {press} / release {release} counts (field max {max})",
     "belowFactory": "{count} keys have a sensitivity below the factory default of {mm} mm. Resting sensor noise can come through as real input.",
@@ -425,11 +441,18 @@
     "noRoom_other": "{count} keys have no stroke left for rapid trigger to work in — the sensitivity is wider than what remains below the actuation point. Turn on continuous mode or reduce the sensitivity."
   },
 
+  "liveDepth": {
+    "title": "Live depth"
+  },
+
   "deadzone": {
     "title": "Dead zone",
+    "hint": {
+      "enable": ""
+    },
     "enable": "Enable dead zone on the selected keys",
-    "top": "Top (mm)",
-    "bottom": "Bottom (mm)",
+    "top": "Top",
+    "bottom": "Bottom",
     "limit": "The field is 5 bits, so {mm} mm ({counts} counts) is the maximum. Past that the value wraps.",
     "offConfirm": {
       "title": "Turn the dead zone off",
@@ -486,7 +509,15 @@
       "sends": "sends {binding}",
       "onRelease": "on release {binding}"
     },
-    "kinds": {
+    "hints": {
+      "dks": "",
+      "tgl": "",
+      "mt": "",
+      "rs": "",
+      "socd": "",
+      "oks": ""
+    },
+        "kinds": {
       "dks": "DKS",
       "tgl": "TGL",
       "mt": "MT",
@@ -793,15 +824,15 @@
     "recordingNow": "Recording — the keys you press now go into this list instead of to the page. The gap between two keystrokes is rounded and stored as the delay on the earlier event.",
     "addTitle": "Add by hand",
     "addKey": "Key",
-    "holdMs": "Hold for (ms)",
-    "gapMs": "Gap after (ms)",
+    "holdMs": "Hold for",
+    "gapMs": "Gap after",
     "addTap": "Tap",
     "addDown": "Press only",
     "addUp": "Release only",
     "tools": "Bulk edits",
-    "repeatTimes": "Repeat times",
-    "repeatGap": "Gap between passes (ms)",
-    "fixedDelay": "Fixed delay (ms)",
+    "repeatTimes": "Repeat",
+    "repeatGap": "Gap between passes",
+    "fixedDelay": "Fixed delay",
     "repeatApply": "Repeat the list",
     "flattenApply": "Set every delay",
     "apply": "Write the store",
@@ -1219,9 +1250,9 @@
   },
 
   "bottomOut": {
-    "title": "Always trigger on bottom-out (global)",
+    "hint": "",
     "what": "global settings write (0x06)",
-    "enable": "Always trigger when the key bottoms out",
+    "enable": "Always trigger when the key bottoms out (global)",
     "applied": "Applied, and the global block was read back to confirm.",
     "noChange": "The board already held this value, so nothing was sent.",
     "mismatch": "The byte read back differently from what was written: {detail}"

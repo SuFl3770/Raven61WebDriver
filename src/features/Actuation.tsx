@@ -1,4 +1,4 @@
-import { useT, type MessageKey } from '../i18n'
+import { useT } from '../i18n'
 import { useLayout } from '../device/active'
 import { travelMmFor } from '../device/tables'
 import { MM_PER_COUNT, mmToCounts, quantizeMm } from '../protocol/encoding'
@@ -8,13 +8,7 @@ import { selection, targetKeys, useSelection } from '../state/selection'
 import { Notice, Panel } from '../ui/Panel'
 import { useHeldWrites } from '../ui/useHeldWrites'
 import { Slider } from '../ui/Slider'
-
-/** 1.5mm is the board's factory default (global_key_actuation = 75). */
-const PRESETS: { labelKey: MessageKey; value: number }[] = [
-  { labelKey: 'actuation.preset.fast', value: 0.5 },
-  { labelKey: 'actuation.preset.default', value: 1.5 },
-  { labelKey: 'actuation.preset.deep', value: 2.5 },
-]
+import { LiveDepth } from './LiveDepth'
 
 /**
  * Full travel of the switch a key has fitted.
@@ -89,7 +83,7 @@ export function Actuation() {
   const none = targets.length === 0
 
   return (
-    <Panel title={t('actuation.title')}>
+    <Panel title={t('actuation.title')} hintKey="inputPoint.hint.trigger">
 
       {lastRead === null && (
         <div style={{ marginBottom: 10 }}>
@@ -109,6 +103,9 @@ export function Actuation() {
         of the range it edits instead of hanging off one end of it.
       */}
       <div className="depth-stack" style={{ marginTop: 16 }}>
+        {/* Left of the track, on the same axis: what the board is reading now,
+            beside the line it is being asked to act at. */}
+        <LiveDepth />
         <Slider
           {...held}
           vertical
@@ -139,18 +136,6 @@ export function Actuation() {
                 travel: limit.toFixed(2),
               })}
             </span>
-          </div>
-
-          <div className="row">
-            {PRESETS.map((p) => (
-              <button
-                key={p.value}
-                disabled={none || p.value > limit}
-                onClick={() => setActuation(p.value)}
-              >
-                {t(p.labelKey, { mm: p.value.toFixed(1) })}
-              </button>
-            ))}
           </div>
         </div>
       </div>

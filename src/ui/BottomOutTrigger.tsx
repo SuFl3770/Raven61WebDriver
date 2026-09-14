@@ -3,7 +3,8 @@ import { supports } from '../protocol/codec'
 import { useGlobalSettings } from '../state/global'
 import { useCodec, useConnection } from '../state/link'
 import { boardSync } from '../state/sync'
-import { NotDecoded, Panel } from './Panel'
+import { Hint } from './Hint'
+import { NotDecoded } from './Panel'
 
 /**
  * "Always trigger when bottoming out" — `perf_bottomrapidtrigger_mode`.
@@ -22,27 +23,31 @@ import { NotDecoded, Panel } from './Panel'
  * — a checkbox cannot be dragged — but it shares the queue with the per-key
  * writes, because the two must not interleave. What came of it is reported by
  * the tab's own status line rather than here; one place for that is enough.
+ *
+ * A row rather than a panel: it sits with the two per-key rapid-trigger
+ * switches, because that is where someone looking for it will look. The price
+ * is that nothing around it says which of the three is the odd one — so the
+ * label carries "(global)" itself, and the readout beside it shows the board's
+ * value rather than a pending one, which is the visible difference.
  */
-export function BottomOutTrigger() {
+export function BottomOutToggle() {
   const codec = useCodec()
   const { connected } = useConnection()
   const t = useT()
   const global = useGlobalSettings()
 
   if (!supports(codec, 'readGlobalSettings')) {
-    return (
-      <Panel title={t('bottomOut.title')}>
-        <NotDecoded what="bottomOut.what" />
-      </Panel>
-    )
+    return <NotDecoded what="bottomOut.what" />
   }
 
   const onBoard = global?.bottomOutTrigger ?? null
 
   return (
-    <Panel title={t('bottomOut.title')}>
-      <label className="row">
-        <span>{t('bottomOut.enable')}</span>
+    <>
+      <label className="row switch-row">
+        <span className="switch-label">{t('bottomOut.enable')}</span>
+        {/* Before the switch: it is the last thing in every switch row, which
+            is what puts all of them on one x. */}
         <input
           type="checkbox"
           checked={onBoard ?? false}
@@ -52,10 +57,8 @@ export function BottomOutTrigger() {
           disabled={!connected || onBoard === null || !supports(codec, 'writeGlobalSettings')}
           onChange={(e) => void boardSync.applyGlobal({ bottomOutTrigger: e.target.checked })}
         />
-        <span className="small dim">
-          {onBoard === null ? '—' : onBoard ? t('perf.on') : t('perf.off')}
-        </span>
       </label>
-    </Panel>
+      <Hint k="bottomOut.hint" />
+    </>
   )
 }

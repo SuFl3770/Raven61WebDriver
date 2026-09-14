@@ -1143,7 +1143,7 @@ export function Advanced() {
    * handing the same element to every tab is what keeps them from drifting.
    */
   const editor = (
-    <Panel title={t(kindKey(kind))}>
+    <Panel title={t(kindKey(kind))} hintKey={`advanced.hints.${kind}` as const}>
       {!complete && (
         <PickPrompt
           picked={pickedKeys}

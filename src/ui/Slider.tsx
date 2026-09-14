@@ -1,4 +1,5 @@
 import type { ComponentProps, CSSProperties, ReactNode } from 'react'
+import { useT } from '../i18n'
 
 /**
  * A range input that knows how far along it is.
@@ -71,7 +72,7 @@ export function SliderRows({ children }: { children: ReactNode }) {
 }
 
 /**
- * A labelled millimetre field: name, slider, spinner, on one line.
+ * A labelled millimetre field: name, slider, spinner, unit, on one line.
  *
  * Rapid trigger and dead zones are each two of these — press and release, top
  * and bottom — and both pairs were spinners alone, which say what a value is
@@ -108,6 +109,7 @@ export function SliderRow({
   /** `useHeldWrites`' props, spread onto both controls. */
   held?: ComponentProps<'input'>
 }) {
+  const t = useT()
   return (
     <div className="slider-row">
       <span className="small dim slider-row-label">{label}</span>
@@ -130,6 +132,17 @@ export function SliderRow({
         value={value}
         onChange={(e) => onValue(Number(e.target.value))}
       />
+      {/*
+        The unit, beside the number rather than inside the name.
+
+        It was "(mm)" on the end of every label, which is a parenthesis a
+        reader has to carry from the left of the row to the right to use, and
+        four labels saying it made a column of them. Against the spinner it is
+        where the number it belongs to is, and it is the same word in both
+        bundles — every value this row can hold is a millimetre, which is what
+        the component is.
+      */}
+      <span className="small dim slider-row-unit">{t('unit.mm')}</span>
       {hint !== undefined && <span className="small dim slider-row-hint">{hint}</span>}
     </div>
   )

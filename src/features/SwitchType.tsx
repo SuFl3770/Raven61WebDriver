@@ -97,7 +97,7 @@ export function SwitchType() {
   )
 
   return (
-    <Panel title={t('switch.title')}>
+    <Panel title={t('switch.title')} hintKey="inputPoint.hint.switch">
       {lastRead === null && (
         <div style={{ marginBottom: 10 }}>
           <Notice kind="warn">{t('switch.unread')}</Notice>
