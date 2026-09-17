@@ -11,10 +11,14 @@ Raven61 및 Arbiter 계열 홀 이펙트 키보드용 브라우저 기반 설정
 ### 일부 수정 대응필요
 - Luminkey magger68 HE Professional
   - 스위치 프로파일, 프로파일 대응 필요
-- WCH CH32V 계열 사용하는 구 Arbiter 계열 키보드
+- WCH CH32V307 계열 사용하는 구 Arbiter 계열 키보드
 
 ## 실행
 
+### 바로 사용
+[브라우저로 링크 접속](https://sufl3770.github.io/Raven61WebDriver/)
+
+### 직접 구축
 ```bash
 npm install
 npm run dev
