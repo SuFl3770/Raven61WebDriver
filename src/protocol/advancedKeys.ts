@@ -502,20 +502,89 @@ export function withOksBindings(
  * two keys of a SOCD pair can disagree, and changing the mode is a `0xa1`
  * write, not an `0xa5` one.
  *
- * Modes 2 and 3 are the two the handler names; 0 and 1 fall through to the same
- * arm, which sends this key and lets the partner alone. See `keyPerf.ts` for
- * where the nibble is read and written.
+ * Each nibble says what *this* key does when it goes down while the partner is
+ * already held (0x9c70–0x9cea; "held" is the scan's own per-slot state at
+ * 0x200022a4, so the partner's physical key, not what was last reported):
+ *
+ *     2        nothing — this key is ignored                       0x9c90
+ *     3        release the partner, and send nothing either        0x9cba
+ *     other    release the partner, then send this key             0x9cc6
+ *
+ * Letting go is the same whatever the nibble: release this key, and press the
+ * partner again if it is still held (0x9cec). So a pair's behaviour is the two
+ * nibbles together, and the four the stock driver offers are four pairs of
+ * them — see `SOCD_MODES`.
  */
-export const SOCD_MODE = {
-  /** Neither key is given priority — both arms fall through to the default. */
-  neutral: 0,
-  /** The other value the default arm covers. Kept apart because the nibble does. */
-  lastInput: 1,
-  /** Ignore this key while the partner is already down. */
-  firstInputWins: 2,
-  /** Release the partner and send this key instead. */
-  lastInputWins: 3,
+export const SOCD_NIBBLE = {
+  /** The default arm: a key pressed last takes over. */
+  wins: 0,
+  /**
+   * Also the default arm. The stock driver writes it for the favoured key of
+   * an absolute priority and 0 for "last input", so it is kept apart to put
+   * back what that driver wrote.
+   */
+  favoured: 1,
+  /** Ignored while the partner is held. */
+  yields: 2,
+  /** Pressed while the partner is held, takes the partner off and sends nothing. */
+  cancels: 3,
 } as const
+
+/**
+ * The four ways a SOCD pair can resolve, as the stock driver's dialog offers
+ * them — 770, 771, 772 and 773 in its language files.
+ *
+ * "First" and "second" are the pair's keys in the order this app was given
+ * them. Neither is stored: each key only holds its own nibble.
+ */
+export const SOCD_MODES = ['lastInput', 'firstKey', 'secondKey', 'neutral'] as const
+
+export type SocdMode = (typeof SOCD_MODES)[number]
+
+/**
+ * The two nibbles a mode is written as, first key then second.
+ *
+ * The stock driver's own table (0x41ac98–0x41ad06), which the handler above
+ * agrees with: an absolute priority is the favoured key taking over and the
+ * other one yielding, and neutral is both keys cancelling.
+ */
+export function socdNibbles(mode: SocdMode): [number, number] {
+  switch (mode) {
+    case 'lastInput':
+      return [SOCD_NIBBLE.wins, SOCD_NIBBLE.wins]
+    case 'firstKey':
+      return [SOCD_NIBBLE.favoured, SOCD_NIBBLE.yields]
+    case 'secondKey':
+      return [SOCD_NIBBLE.yields, SOCD_NIBBLE.favoured]
+    case 'neutral':
+      return [SOCD_NIBBLE.cancels, SOCD_NIBBLE.cancels]
+  }
+}
+
+/** Which of the handler's three arms a nibble takes. */
+function socdArm(nibble: number): 'wins' | 'yields' | 'cancels' {
+  if (nibble === SOCD_NIBBLE.yields) return 'yields'
+  if (nibble === SOCD_NIBBLE.cancels) return 'cancels'
+  return 'wins'
+}
+
+/**
+ * The mode two nibbles amount to, or null for a pair that is none of the four.
+ *
+ * Read by what the handler does rather than by value, so 0 and 1 are the same
+ * thing here: a board holding `0, 2` gives the first key priority exactly as
+ * the stock driver's `1, 2` does. Null is a real setting — both yielding is
+ * "first input wins", say — that this app has no name for.
+ */
+export function socdModeOf(first: number, second: number): SocdMode | null {
+  const a = socdArm(first)
+  const b = socdArm(second)
+  if (a === 'wins' && b === 'wins') return 'lastInput'
+  if (a === 'wins' && b === 'yields') return 'firstKey'
+  if (a === 'yields' && b === 'wins') return 'secondKey'
+  if (a === 'cancels' && b === 'cancels') return 'neutral'
+  return null
+}
 
 /* ------------------------------------------------------------------ TGL -- */
 

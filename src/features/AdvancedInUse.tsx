@@ -14,11 +14,14 @@ import {
   oksBindings,
   pairUsages,
   recordHex,
+  socdModeOf,
   type AdvancedKind,
+  type SocdMode,
 } from '../protocol/advancedKeys'
 import { supports } from '../protocol/codec'
 import { bindingLabel, type KeyBinding } from '../protocol/keymap'
 import type { AdvancedKeySnapshot, AdvancedKeyUse } from '../protocol/types'
+import { useKeyConfigs, useLastRead } from '../state/config'
 import { link, useCodec, useConnection } from '../state/link'
 import { NotDecoded, Notice, Panel } from '../ui/Panel'
 
@@ -310,6 +313,9 @@ export function Argument({
 }) {
   const t = useT()
   const spec = useDeviceSpec()
+  // A SOCD pair's priority is in the per-key block, not in these tables.
+  const configs = useKeyConfigs()
+  const lastRead = useLastRead()
   const first = row.uses[0]
   if (!snapshot || !first) return <>—</>
   const label = (binding: KeyBinding) => bindingLabel(binding, keycodeLabel)
@@ -330,9 +336,29 @@ export function Argument({
       keycodeLabel(pairUsages(decodePairRecord(snapshot.blobs.pair, u.record, kind)).own),
     )
     const partner = snapshot.slotMap.keyBySlot.get(first.param)
+    const [a, b] = row.uses
+    /* Only for a whole pair whose keys' records have been read — a mode
+       read off two default configs would be "last input" for every pair. */
+    const priority =
+      kind === 'socd' && a && b && a.index >= 0 && b.index >= 0 && lastRead
+        ? socdModeLabel(
+            t,
+            socdModeOf(configs[a.index]?.socdNibble ?? 0, configs[b.index]?.socdNibble ?? 0),
+            a.label,
+            b.label,
+          )
+        : null
     return (
       <>
         {sends.join(', ')}
+        {priority && (
+          <>
+            {inline && ' · '}
+            <Part>
+              <span className="dim">{priority}</span>
+            </Part>
+          </>
+        )}
         {/* A half-built pair: the other key is named so the row says what it is
             still waiting for rather than looking like a whole setting. */}
         {row.uses.length === 1 && (
@@ -408,6 +434,33 @@ export function Argument({
   }
 
   return <>—</>
+}
+
+/**
+ * A SOCD priority as words, with the pair's own key names in it.
+ *
+ * Names rather than "key 1" and "key 2": which half is first depends on which
+ * cap was clicked, and a label that changed meaning with the click order would
+ * be a different setting each time it was read.
+ */
+export function socdModeLabel(
+  t: ReturnType<typeof useT>,
+  mode: SocdMode | null,
+  first: string,
+  second: string,
+): string {
+  switch (mode) {
+    case 'lastInput':
+      return t('advanced.socd.lastInput')
+    case 'firstKey':
+      return t('advanced.socd.keyWins', { key: first })
+    case 'secondKey':
+      return t('advanced.socd.keyWins', { key: second })
+    case 'neutral':
+      return t('advanced.socd.neutral')
+    case null:
+      return t('advanced.socd.other')
+  }
 }
 
 function blobOf(snapshot: AdvancedKeySnapshot, kind: AdvancedKind): Uint8Array {

@@ -96,9 +96,9 @@ export interface KeyPerfRecord {
    * with `>> 12` and hands it to the advanced-key runtime struct (0xf82e), and
    * the SOCD handler compares it against 2 and 3. See `advancedKeys.ts`.
    *
-   * Whole rather than split because nothing here edits the high nibble, and
-   * splitting a field this app only carries would invite a write that rebuilt
-   * it from a part.
+   * Whole here, split only in `toKeyConfig` / `fromKeyConfig`: the two halves
+   * are edited by two different tabs, and each must put back the half it does
+   * not own — see `rtModeOf` and `socdNibbleOf`.
    */
   keyMode: number
   actuationCounts: number
@@ -122,6 +122,28 @@ export interface KeyPerfRecord {
 
 const NINE_BITS = 0x1ff
 const FIVE_BITS = 0x1f
+
+/**
+ * The rapid-trigger half of `keyMode`.
+ *
+ * Every comparison against `KEY_MODE_WIRE` goes through this. Comparing the
+ * whole byte was right only while the high nibble was always zero: a key set
+ * to SOCD mode 2 with rapid trigger off is `0x20`, which is not `off`, and read
+ * whole it came back as rapid trigger switched on.
+ */
+export function rtModeOf(keyMode: number): number {
+  return keyMode & 0x0f
+}
+
+/** The SOCD half of `keyMode` — see `SOCD_NIBBLE` in advancedKeys.ts. */
+export function socdNibbleOf(keyMode: number): number {
+  return (keyMode >> 4) & 0x0f
+}
+
+/** `keyMode` with its two halves put together. */
+export function joinKeyMode(rtMode: number, socdNibble: number): number {
+  return ((socdNibble & 0x0f) << 4) | (rtMode & 0x0f)
+}
 
 /** Reads one 8-byte record out of the blob. */
 export function decodeKeyPerfRecord(
@@ -252,15 +274,16 @@ export function toKeyConfig(
   countsPerMm?: number,
 ): KeyConfig {
   const mm = (counts: number) => countsToMm(counts, countsPerMm)
-  const mode: KeyMode = rec.keyMode === spec.keyMode.off ? 'normal' : 'rapidTrigger'
+  const rtMode = rtModeOf(rec.keyMode)
+  const mode: KeyMode = rtMode === spec.keyMode.off ? 'normal' : 'rapidTrigger'
   return {
     actuationMm: mm(rec.actuationCounts),
     mode,
     rapidTrigger: {
-      enabled: rec.keyMode !== spec.keyMode.off,
+      enabled: rtMode !== spec.keyMode.off,
       pressMm: mm(rec.rtPressCounts),
       releaseMm: mm(rec.rtReleaseCounts),
-      continuous: rec.keyMode === spec.keyMode.fullStroke,
+      continuous: rtMode === spec.keyMode.fullStroke,
     },
     deadZone: {
       enabled: rec.deadzoneState,
@@ -270,6 +293,7 @@ export function toKeyConfig(
     switchType: rec.switchType,
     switchFlags: rec.switchFlags,
     rtUnset: rec.rtUnset,
+    socdNibble: socdNibbleOf(rec.keyMode),
   }
 }
 
@@ -286,6 +310,11 @@ export function toKeyConfig(
  * not understand.
  *
  * Same reasoning for `rtUnset`: the 0xff marker belongs to the board.
+ *
+ * And for the SOCD half of `keyMode`. The rapid-trigger toggles rebuild the
+ * low nibble from scratch; the high one comes from `socdNibble` when the
+ * config says, and from the board's record when it does not — so a write from
+ * the input-point tab leaves a SOCD pair's priority where it was.
  */
 export function fromKeyConfig(
   config: KeyConfig,
@@ -295,15 +324,16 @@ export function fromKeyConfig(
 ): KeyPerfRecord {
   const counts = (mm: number) => mmToCounts(mm, countsPerMm)
   const rt = config.rapidTrigger
-  const keyMode = !rt.enabled
+  const rtMode = !rt.enabled
     ? spec.keyMode.off
     : rt.continuous
       ? spec.keyMode.fullStroke
       : spec.keyMode.rapidTrigger
+  const socd = config.socdNibble ?? (current ? socdNibbleOf(current.keyMode) : 0)
   return {
     switchType: config.switchType ?? current?.switchType ?? 0,
     switchFlags: config.switchFlags ?? current?.switchFlags ?? 0,
-    keyMode,
+    keyMode: joinKeyMode(rtMode, socd),
     actuationCounts: counts(config.actuationMm),
     rtPressCounts: counts(rt.pressMm),
     rtReleaseCounts: counts(rt.releaseMm),

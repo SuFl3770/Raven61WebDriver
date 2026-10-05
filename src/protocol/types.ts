@@ -74,6 +74,12 @@ export interface KeyConfig {
    * values — see KeyPerfRecord.rtUnset.
    */
   rtUnset?: boolean
+  /**
+   * The high nibble of `key_mode`: how this key resolves against its SOCD
+   * partner. Edited by the advanced-key tab only, and a write with it unset
+   * keeps the board's — see `SOCD_NIBBLE` and `fromKeyConfig`.
+   */
+  socdNibble?: number
 }
 
 /**

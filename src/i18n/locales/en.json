@@ -545,7 +545,12 @@
     },
     "rs": {},
     "socd": {
-      "modeNote": "The resolution mode is not in this table — the firmware reads it from the high nibble of this key's performance record, which the input-point tab owns. Set it there."
+      "mode": "Priority",
+      "lastInput": "Last input wins",
+      "keyWins": "{key} wins",
+      "neutral": "Neutral (both off)",
+      "other": "Other",
+      "modeFailed": "The priority did not save to the board. The keymap was not touched."
     },
     "oks": {
       "onRelease": "On release"

@@ -52,6 +52,9 @@ import {
   mtBindings,
   oksBindings,
   pairUsages,
+  SOCD_MODES,
+  socdModeOf,
+  socdNibbles,
   withMtBindings,
   withOksBindings,
   withPairUsages,
@@ -529,6 +532,72 @@ function fakeLink(board: FakeBoard): HidLink {
       `${dksStepsToMm(steps)} > ${st.travelMm}`,
     )
   }
+}
+
+// --- SOCD: the four priorities, run through the firmware's own handler -------
+
+{
+  /*
+   * 0x9bc6, transcribed. `held` is the scan's per-slot key state (0x200022a4),
+   * which the scan sets before it dispatches — so on a press the pressing key
+   * is already held, and the handler only asks about the partner. `sent` is
+   * what the host sees.
+   *
+   *   press, nibble 2, partner held  -> nothing                       0x9c90
+   *   press, nibble 3, partner held  -> release partner, stop          0x9cba
+   *   press, otherwise               -> release partner, press self    0x9cc6
+   *   release                        -> release self; partner held ->
+   *                                     press partner                   0x9cec
+   */
+  const run = (nibbles: [number, number], events: string): string => {
+    const held = [false, false]
+    const sent = new Set<number>()
+    for (const ev of events.split(' ')) {
+      const down = ev[0] === '+'
+      const me = ev[1] === 'a' ? 0 : 1
+      const other = 1 - me
+      held[me] = down
+      if (down) {
+        const n = nibbles[me]
+        if (n === 2 && held[other]) continue
+        sent.delete(other)
+        if (n === 3 && held[other]) continue
+        sent.add(me)
+      } else {
+        sent.delete(me)
+        if (held[other]) sent.add(other)
+      }
+    }
+    return ['a', 'b'].filter((_, i) => sent.has(i)).join('') || '-'
+  }
+  // What the host sees with both held, pressed a first then b, and b first then a.
+  const both = (mode: (typeof SOCD_MODES)[number]) => {
+    const n = socdNibbles(mode)
+    return [run(n, '+a +b'), run(n, '+b +a')]
+  }
+  eq('last input: whichever went down second', both('lastInput'), ['b', 'a'])
+  eq('first key: a, in either order', both('firstKey'), ['a', 'a'])
+  eq('second key: b, in either order', both('secondKey'), ['b', 'b'])
+  eq('neutral: nothing while both are held', both('neutral'), ['-', '-'])
+  // Letting go of one of the two hands back to the other in every mode.
+  for (const mode of SOCD_MODES) {
+    const n = socdNibbles(mode)
+    eq(`${mode}: releasing a leaves b`, run(n, '+a +b -a'), 'b')
+    eq(`${mode}: releasing b leaves a`, run(n, '+a +b -b'), 'a')
+    eq(`${mode}: and both up is nothing`, run(n, '+a +b -a -b'), '-')
+  }
+
+  // The stock driver's table, 0x41ac98–0x41ad06.
+  eq('stock nibbles', SOCD_MODES.map(socdNibbles), [[0, 0], [1, 2], [2, 1], [3, 3]])
+  for (const mode of SOCD_MODES) {
+    eq(`${mode} reads back as itself`, socdModeOf(...socdNibbles(mode)), mode)
+  }
+  // Read by arm, not value: 0 and 1 are the same arm, and so is anything past 3.
+  eq('0, 2 is first key too', socdModeOf(0, 2), 'firstKey')
+  eq('1, 1 is last input', socdModeOf(1, 1), 'lastInput')
+  eq('a nibble past 3 is the default arm', socdModeOf(5, 0), 'lastInput')
+  eq('both yielding has no name here', socdModeOf(2, 2), null)
+  eq('nor does one key cancelling', socdModeOf(3, 0), null)
 }
 
 console.log(`${pass} checks passed, ${fails.length} failed`)

@@ -74,6 +74,28 @@ const wire = (c: KeyConfig) => recordHex(encodeKeyPerfRecord(fromKeyConfig(c, bo
   eq('KEY_MODE_WIRE matches', [KEY_MODE_WIRE.off, KEY_MODE_WIRE.rapidTrigger, KEY_MODE_WIRE.fullStroke], [0, 1, 2])
 }
 
+// --- key_mode is two nibbles, and each tab keeps the other's ---
+{
+  // RT off, SOCD nibble 2. Read whole, 0x20 is "not off" — rapid trigger on.
+  const socdOnly = Uint8Array.from([0xa5, 0x20, 0x81, 0x00, 0x19, 0x00, 0x1e, 0x00])
+  const rec = decodeKeyPerfRecord(socdOnly, 0)
+  const cfg = toKeyConfig(rec)
+  eq('a SOCD nibble does not read as rapid trigger', [cfg.mode, cfg.rapidTrigger.enabled], ['normal', false])
+  eq('the nibble is carried', cfg.socdNibble, 2)
+  // The input-point tab turning RT on rebuilds the low half only.
+  const rtOn = { ...cfg, socdNibble: undefined, rapidTrigger: { ...cfg.rapidTrigger, enabled: true } }
+  eq('an RT write keeps the board nibble', recordHex(encodeKeyPerfRecord(fromKeyConfig(rtOn, rec)), 0).slice(3, 5), '21')
+  eq(
+    'and full stroke keeps it too',
+    recordHex(encodeKeyPerfRecord(fromKeyConfig({ ...rtOn, rapidTrigger: { ...rtOn.rapidTrigger, continuous: true } }, rec)), 0).slice(3, 5),
+    '22',
+  )
+  // The advanced tab setting the nibble leaves the RT half where it was.
+  eq('a nibble write keeps RT', wire({ ...boardCfg, socdNibble: 3 }).slice(3, 5), '31')
+  eq('and round-trips', toKeyConfig(decodeKeyPerfRecord(encodeKeyPerfRecord(fromKeyConfig({ ...boardCfg, socdNibble: 3 }, boardRec)), 0)).socdNibble, 3)
+  eq('no current record and no nibble writes 0', recordHex(encodeKeyPerfRecord(fromKeyConfig({ ...boardCfg, socdNibble: undefined })), 0).slice(3, 5), '01')
+}
+
 // --- the two sensitivities are two fields, and stay two ---
 {
   // There used to be a "separate" checkbox here, inferred from the two values

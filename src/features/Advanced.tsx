@@ -29,6 +29,10 @@ import {
   recordBlocks,
   oksBindings,
   pairUsages,
+  SOCD_MODES,
+  SOCD_NIBBLE,
+  socdModeOf,
+  socdNibbles,
   withMtBindings,
   withOksBindings,
   withPairUsages,
@@ -37,12 +41,13 @@ import {
   type DksSpan,
   UNSTABLE_KINDS,
   type PairRecord,
+  type SocdMode,
   type ToggleRecord,
 } from '../protocol/advancedKeys'
 import { supports } from '../protocol/codec'
 import { BINDING_GROUPS, encodeRecord, groupChoices, type KeyBinding } from '../protocol/keymap'
 import type { AdvancedKeySnapshot, AdvancedKeyUse, KeymapEntry } from '../protocol/types'
-import { useKeyConfigs } from '../state/config'
+import { configStore, useKeyConfigs, useLastRead } from '../state/config'
 import { legends } from '../state/legends'
 import { link, useCodec, useConnection } from '../state/link'
 import { take } from '../state/prefetch'
@@ -56,7 +61,7 @@ import { Notice, NotDecoded, Panel } from '../ui/Panel'
 import { Select, type SelectOption } from '../ui/Select'
 import { Slider } from '../ui/Slider'
 import { SubTabs, type SubTab } from '../ui/SubTabs'
-import { Argument, rowsOf } from './AdvancedInUse'
+import { Argument, rowsOf, socdModeLabel } from './AdvancedInUse'
 import { layerName } from '../protocol/layers'
 
 /**
@@ -104,11 +109,14 @@ import { layerName } from '../protocol/layers'
  * hardware**. The panel says so rather than letting a verified write imply a
  * working key.
  *
- * SOCD's resolution mode is deliberately read-only here. It is not in these
- * tables at all: the scan takes it from the high nibble of the key's per-key
- * performance record, so changing it is a write to a block the input-point tab
- * owns. Showing it and pointing at that tab beats a second control that edits
- * the same byte from two places.
+ * ### SOCD's priority is a fifth write, to another block
+ *
+ * It is not in these tables at all: the scan takes it from the high nibble of
+ * each key's per-key performance record (see `SOCD_NIBBLE`), so it goes out
+ * through the same queue as the input-point tab's edits — after both records
+ * and before the keymap, so the pair goes live already resolving the way it
+ * was set. The two tabs share the byte without fighting over it: each half of
+ * `key_mode` is rebuilt only by the tab that owns it (see `fromKeyConfig`).
  */
 
 /**
@@ -167,8 +175,11 @@ function isDuoKind(kind: AdvancedKind): kind is DuoKind {
   return kind === 'rs' || kind === 'socd'
 }
 
-/** The pair's two usages, while they are being edited. */
-type DuoDraft = { kind: DuoKind; usages: [number, number] }
+/**
+ * The pair's two usages, while they are being edited — and SOCD's priority,
+ * once one has been chosen. Unset means "what the board holds".
+ */
+type DuoDraft = { kind: DuoKind; usages: [number, number]; socd?: SocdMode }
 
 /** The first free record that is not already spoken for by this same apply. */
 function freeRecordExcept(
@@ -438,6 +449,13 @@ export function Advanced() {
    * millimetre and a half it cannot reach.
    */
   const configs = useKeyConfigs()
+  /**
+   * Whether `configs` is the board's or the factory defaults it starts as.
+   * SOCD's priority is read from there and written back through it, and
+   * neither is honest before a read.
+   */
+  const lastRead = useLastRead()
+  const canWriteSocd = supports(codec, 'writeKeyPerf') && lastRead !== null
   const [busy, setBusy] = useState<null | 'read' | 'write'>(null)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -730,6 +748,42 @@ export function Advanced() {
   }
 
   /**
+   * SOCD's priority: the one chosen, else the one the two keys' nibbles amount
+   * to. Null before the per-key block has been read, and for a pair the board
+   * holds that is none of the four — the control says "other" rather than
+   * guessing, and apply leaves such a pair's nibbles alone.
+   */
+  const heldSocd: SocdMode | null = (() => {
+    const [a, b] = picked
+    if (a === undefined || b === undefined || lastRead === null) return null
+    return socdModeOf(configs[a]?.socdNibble ?? 0, configs[b]?.socdNibble ?? 0)
+  })()
+  const socd: SocdMode | null = (duo?.kind === kind && duo.socd) || heldSocd
+
+  /**
+   * Puts nibbles on keys' performance records, and says whether they landed.
+   *
+   * Through `configStore` and the sync queue rather than straight to the codec,
+   * because the block is a read-modify-write the input-point tab may have one
+   * of in flight — two writers racing over it would each put back the other's
+   * old values. Landed means the write is done, the keys are no longer dirty,
+   * and the board read back what was sent; a mismatch reloads the store with
+   * the board's values, so that last test catches it too.
+   */
+  const writeSocdNibbles = async (targets: readonly [number, number][]): Promise<boolean> => {
+    const changing = targets.filter(([index, n]) => (configStore.get(index).socdNibble ?? 0) !== n)
+    if (changing.length === 0) return true
+    for (const [index, n] of changing) {
+      configStore.update([index], (c) => ({ ...c, socdNibble: n }))
+    }
+    await boardSync.flush()
+    const dirty = configStore.dirtyIndices()
+    return changing.every(
+      ([index, n]) => !dirty.includes(index) && configStore.get(index).socdNibble === n,
+    )
+  }
+
+  /**
    * Whether the open editor is offering a record that would do nothing.
    *
    * It drives the apply button rather than being checked on the press: the
@@ -796,6 +850,20 @@ export function Advanced() {
               got: written.mismatch.got,
             }),
           )
+          return
+        }
+      }
+      // The priority before the keymap: until the entries are written nothing
+      // runs these records, so the pair comes up resolving the way it was set
+      // rather than spending a moment on whatever the nibbles held before.
+      if (kind === 'socd' && socd !== null && canWriteSocd) {
+        const [na, nb] = socdNibbles(socd)
+        const landed = await writeSocdNibbles([
+          [a, na],
+          [b, nb],
+        ])
+        if (!landed) {
+          setError(t('advanced.socd.modeFailed'))
           return
         }
       }
@@ -951,6 +1019,13 @@ export function Advanced() {
           await codec.writeAdvancedKey(link, use.record, emptyAdvancedRecord(use.kind))
         }
         cleared.push(use.record)
+      }
+      // A SOCD key's priority goes back to the default too. Nothing else reads
+      // the nibble (only 0x9c3a does), so a failure here is not reported: what
+      // is left behind is a value the next pair on these keys would open on.
+      const socdKeys = targets.filter((x) => x.use.kind === 'socd').map((x) => x.index)
+      if (socdKeys.length > 0 && canWriteSocd) {
+        await writeSocdNibbles(socdKeys.map((index) => [index, SOCD_NIBBLE.wins] as [number, number]))
       }
       setDraft(null)
       setDuo(null)
@@ -1178,7 +1253,7 @@ export function Advanced() {
                   onChange={(usage) => {
                     const usages: [number, number] = [sends[0], sends[1]]
                     usages[at] = usage
-                    setDuo({ kind, usages })
+                    setDuo({ kind, usages, socd: duo?.kind === kind ? duo.socd : undefined })
                   }}
                 />
                 {debug && (
@@ -1193,6 +1268,27 @@ export function Advanced() {
               </Row>
             )
           })}
+          {kind === 'socd' && (
+            <Row label={t('advanced.socd.mode')}>
+              <Select
+                label={t('advanced.socd.mode')}
+                value={socd ?? 'other'}
+                options={[
+                  ...SOCD_MODES.map((m) => ({
+                    value: m,
+                    label: socdModeLabel(t, m, pickedKeys[0]?.label ?? '', pickedKeys[1]?.label ?? ''),
+                  })),
+                  // What the board holds when it is none of the four, so the
+                  // control is not blank over a setting that is plainly there.
+                  ...(socd === null
+                    ? [{ value: 'other', label: t('advanced.socd.other'), disabled: true }]
+                    : []),
+                ]}
+                disabled={busy !== null || !canWrite || !canWriteSocd}
+                onChange={(v) => setDuo({ kind, usages: sends, socd: v as SocdMode })}
+              />
+            </Row>
+          )}
           {!pairRecords && (
             <Notice kind="err">
               {t('advanced.noFreeRecord', { limit: spec.advancedKeys.usable })}

@@ -39,6 +39,7 @@ import type { DeviceSpec, StockProfileSpec } from '../device/spec'
 import { MODIFIER_BASE_USAGE, RECORD_TYPE } from '../protocol/keymap'
 import type { KeyBinding } from '../protocol/keymap'
 import { countsToMm, mmToCounts } from '../protocol/encoding'
+import { joinKeyMode, rtModeOf, socdNibbleOf } from '../protocol/keyPerf'
 import { emptyMacro, type Macro, type MacroEvent } from '../protocol/macros'
 import { LIGHT_MODE_OFF, type LightingPatch } from '../protocol/lighting'
 import type { Rgb } from '../protocol/keyRgb'
@@ -293,15 +294,17 @@ function readPerf(
       unplaced++
       continue
     }
-    const mode = requireNum(item, 'key_mode')
+    const keyMode = requireNum(item, 'key_mode')
+    const mode = rtModeOf(keyMode)
     const rtPress = requireNum(item, 'rt_press')
     const rtRelease = requireNum(item, 'rt_release')
     const top = requireNum(item, 'press_deadzone')
     const bottom = requireNum(item, 'release_deadzone')
     configs[index] = {
       actuationMm: countsToMm(requireNum(item, 'key_actuation'), cpm),
-      // The file stores the same three-valued `key_mode` the wire does, and
-      // this app folds its two rapid-trigger variants into `continuous`.
+      // The file stores the same two-nibble `key_mode` the wire does: the
+      // three-valued rapid-trigger mode low, which this app folds into
+      // `continuous`, and the SOCD priority high (0x41ac98 writes it there).
       mode: mode === spec.keyPerf.keyMode.off ? 'normal' : 'rapidTrigger',
       rapidTrigger: {
         enabled: mode !== spec.keyPerf.keyMode.off,
@@ -315,6 +318,7 @@ function readPerf(
         bottomMm: countsToMm(bottom, cpm),
       },
       switchType: attrNum(item, 'switch_type'),
+      socdNibble: socdNibbleOf(keyMode),
     }
   }
 
@@ -762,11 +766,14 @@ function writePerfInfo(doc: ProfileDocument, spec: DeviceSpec, loss: StockLoss):
         ['switch_type', cfg.switchType ?? 0],
         [
           'key_mode',
-          cfg.mode === 'normal'
-            ? mode.off
-            : cfg.rapidTrigger.continuous
-              ? mode.fullStroke
-              : mode.rapidTrigger,
+          joinKeyMode(
+            cfg.mode === 'normal'
+              ? mode.off
+              : cfg.rapidTrigger.continuous
+                ? mode.fullStroke
+                : mode.rapidTrigger,
+            cfg.socdNibble ?? 0,
+          ),
         ],
         ['key_actuation', mmToCounts(cfg.actuationMm, cpm)],
         ['rt_press', mmToCounts(cfg.rapidTrigger.pressMm, cpm)],
